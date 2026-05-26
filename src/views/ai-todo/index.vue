@@ -1,9 +1,7 @@
 <template>
   <div class="ai-todo-page">
-    <!-- Three.js 背景 -->
     <canvas ref="bgCanvas" class="bg-canvas"></canvas>
 
-    <!-- 内容区 -->
     <div class="content-layer">
       <div class="page-header">
         <h2 class="page-title">
@@ -32,6 +30,8 @@
             @dragover.prevent="onDragOver(index)"
             @dragend="onDragEnd"
           >
+            <!-- 流光边框 -->
+            <div class="card-glow"></div>
             <div class="card-rank">{{ index + 1 }}</div>
             <div class="card-body">
               <div class="card-head">
@@ -51,12 +51,8 @@
               </div>
             </div>
             <div class="card-actions">
-              <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">
-                详情
-              </el-button>
-              <el-button type="danger" link size="small" @click="handleRemove(task)">
-                移出
-              </el-button>
+              <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
+              <el-button type="danger" link size="small" @click="handleRemove(task)">移出</el-button>
             </div>
           </div>
         </TransitionGroup>
@@ -76,9 +72,7 @@ import * as THREE from 'three'
 const taskStore = useTaskStore()
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 
-// --- 拖拽排序 ---
 const dragIndex = ref(-1)
-const dragOverIndex = ref(-1)
 
 function onDragStart(index: number, e: DragEvent) {
   dragIndex.value = index
@@ -87,31 +81,24 @@ function onDragStart(index: number, e: DragEvent) {
 
 function onDragOver(index: number) {
   if (dragIndex.value === index) return
-  dragOverIndex.value = index
   const list = taskStore.todoList
-  const from = dragIndex.value
-  const to = index
-  const item = list.splice(from, 1)[0]
-  list.splice(to, 0, item)
-  dragIndex.value = to
+  const item = list.splice(dragIndex.value, 1)[0]
+  list.splice(index, 0, item)
+  dragIndex.value = index
   saveOrder()
 }
 
-function onDragEnd() {
-  dragIndex.value = -1
-  dragOverIndex.value = -1
-}
+function onDragEnd() { dragIndex.value = -1 }
 
 function saveOrder() {
   localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
 }
 
-// --- 数据 ---
-const todoTasks = computed(() => {
-  return taskStore.todoList
+const todoTasks = computed(() =>
+  taskStore.todoList
     .map(id => taskStore.tasks.find(t => t.id === id))
     .filter((t): t is Task => !!t)
-})
+)
 
 function handleRemove(task: Task) {
   taskStore.toggleTodo(task)
@@ -122,34 +109,26 @@ function isOverdue(task: Task) {
   return task.status !== 'completed' && new Date(task.deadline).getTime() < Date.now()
 }
 
-function formatDate(d: string) {
-  return dayjs(d).format('MM-DD')
-}
+function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 
 function getPriorityType(p: string) {
-  const m: Record<string, string> = { urgent: 'danger', high: 'warning', medium: 'info', low: 'success' }
-  return m[p] || 'info'
+  return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, string>)[p] || 'info'
 }
 function getPriorityLabel(p: string) {
-  const m: Record<string, string> = { urgent: '紧急', high: '高', medium: '中', low: '低' }
-  return m[p] || p
+  return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p
 }
 function getStatusType(s: string) {
-  const m: Record<string, string> = { pending: 'info', in_progress: 'warning', self_test: 'primary', submitted: 'success', completed: 'success', rejected: 'danger' }
-  return m[s] || 'info'
+  return ({ pending: 'info', in_progress: 'warning', self_test: 'primary', submitted: 'success', completed: 'success', rejected: 'danger' } as Record<string, string>)[s] || 'info'
 }
 function getStatusLabel(s: string) {
-  const m: Record<string, string> = { pending: '待开发', in_progress: '开发中', self_test: '自测完成', submitted: '已提测', completed: '已完结', rejected: '已驳回' }
-  return m[s] || s
+  return ({ pending: '待开发', in_progress: '开发中', self_test: '自测完成', submitted: '已提测', completed: '已完结', rejected: '已驳回' } as Record<string, string>)[s] || s
 }
 
-// --- Three.js 粒子网格背景 ---
+// --- Three.js ---
 let renderer: THREE.WebGLRenderer | null = null
 let scene: THREE.Scene | null = null
 let camera: THREE.PerspectiveCamera | null = null
 let animId = 0
-let points: THREE.Points | null = null
-let lineSegments: THREE.LineSegments | null = null
 
 function initThree() {
   if (!bgCanvas.value) return
@@ -165,83 +144,61 @@ function initThree() {
 
   resize()
 
-  // 粒子
-  const count = 600
-  const positions = new Float32Array(count * 3)
-  const colors = new Float32Array(count * 3)
+  const count = 500
+  const pos = new Float32Array(count * 3)
+  const col = new Float32Array(count * 3)
   const c1 = new THREE.Color('#667eea')
   const c2 = new THREE.Color('#00d4ff')
 
   for (let i = 0; i < count; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 60
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 40
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 30
+    pos[i * 3] = (Math.random() - 0.5) * 60
+    pos[i * 3 + 1] = (Math.random() - 0.5) * 40
+    pos[i * 3 + 2] = (Math.random() - 0.5) * 30
     const c = c1.clone().lerp(c2, Math.random())
-    colors[i * 3] = c.r
-    colors[i * 3 + 1] = c.g
-    colors[i * 3 + 2] = c.b
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b
   }
 
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-
-  const mat = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0.7 })
-  points = new THREE.Points(geo, mat)
-  scene.add(points)
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0.7 })))
 
   // 连线
-  buildLines(positions, count)
-
-  animate()
-}
-
-function buildLines(positions: Float32Array, count: number) {
-  if (!scene) return
-  if (lineSegments) scene.remove(lineSegments)
-
-  const linePos: number[] = []
-  const threshold = 6
+  const lp: number[] = []
   for (let i = 0; i < count; i++) {
     for (let j = i + 1; j < count; j++) {
-      const dx = positions[i * 3] - positions[j * 3]
-      const dy = positions[i * 3 + 1] - positions[j * 3 + 1]
-      const dz = positions[i * 3 + 2] - positions[j * 3 + 2]
-      if (dx * dx + dy * dy + dz * dz < threshold * threshold) {
-        linePos.push(
-          positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2],
-          positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]
-        )
+      const dx = pos[i*3]-pos[j*3], dy = pos[i*3+1]-pos[j*3+1], dz = pos[i*3+2]-pos[j*3+2]
+      if (dx*dx + dy*dy + dz*dz < 36) {
+        lp.push(pos[i*3], pos[i*3+1], pos[i*3+2], pos[j*3], pos[j*3+1], pos[j*3+2])
       }
     }
   }
+  const lg = new THREE.BufferGeometry()
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3))
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x667eea, transparent: true, opacity: 0.08 }))
+  scene.add(lines)
 
-  const lineGeo = new THREE.BufferGeometry()
-  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePos, 3))
-  const lineMat = new THREE.LineBasicMaterial({ color: 0x667eea, transparent: true, opacity: 0.08 })
-  lineSegments = new THREE.LineSegments(lineGeo, lineMat)
-  scene.add(lineSegments)
-}
+  // 外圈光环
+  const ringGeo = new THREE.RingGeometry(18, 18.2, 128)
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x667eea, transparent: true, opacity: 0.06, side: THREE.DoubleSide })
+  const ring = new THREE.Mesh(ringGeo, ringMat)
+  ring.rotation.x = Math.PI / 2.5
+  scene.add(ring)
 
-function animate() {
-  animId = requestAnimationFrame(animate)
-  if (points) {
-    points.rotation.y += 0.0005
-    points.rotation.x += 0.0002
+  const clock = new THREE.Clock()
+  function animate() {
+    animId = requestAnimationFrame(animate)
+    const t = clock.getElapsedTime()
+    scene!.children.forEach(c => { c.rotation.y = t * 0.03; c.rotation.x = t * 0.01 })
+    ring.rotation.z = t * 0.15
+    renderer!.render(scene!, camera!)
   }
-  if (lineSegments) {
-    lineSegments.rotation.y += 0.0005
-    lineSegments.rotation.x += 0.0002
-  }
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera)
-  }
+  animate()
 }
 
 function resize() {
   if (!renderer || !camera || !bgCanvas.value) return
-  const w = bgCanvas.value.clientWidth
-  const h = bgCanvas.value.clientHeight
+  const w = bgCanvas.value.clientWidth, h = bgCanvas.value.clientHeight
   renderer.setSize(w, h)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
@@ -287,11 +244,7 @@ onUnmounted(() => {
   padding: 24px 0 16px;
 }
 
-.page-title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-}
+.page-title { margin: 0; font-size: 28px; font-weight: 700; }
 
 .glow-text {
   background: linear-gradient(135deg, #667eea, #00d4ff, #764ba2);
@@ -307,30 +260,16 @@ onUnmounted(() => {
   50% { background-position: 100% 50%; }
 }
 
-.page-desc {
-  margin-top: 6px;
-  color: #8c8ca1;
-  font-size: 13px;
-}
+.page-desc { margin-top: 6px; color: #8c8ca1; font-size: 13px; }
 
-/* 空状态 */
 .empty-state {
   text-align: center;
   padding: 80px 0;
   color: #8c8ca1;
-
-  .empty-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-  }
-  .empty-hint {
-    margin-top: 8px;
-    font-size: 12px;
-    color: #606266;
-  }
+  .empty-icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-hint { margin-top: 8px; font-size: 12px; color: #606266; }
 }
 
-/* 卡片网格 */
 .card-grid {
   display: flex;
   flex-direction: column;
@@ -340,29 +279,56 @@ onUnmounted(() => {
   padding-bottom: 40px;
 }
 
-/* 卡片 */
 .todo-card {
+  position: relative;
   display: flex;
   align-items: stretch;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(10, 10, 30, 0.55);
   border: 1px solid rgba(102, 126, 234, 0.15);
   border-radius: 12px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
   transition: all 0.3s ease;
   cursor: grab;
   overflow: hidden;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(102, 126, 234, 0.35);
-    box-shadow: 0 4px 24px rgba(102, 126, 234, 0.15);
+    background: rgba(20, 20, 50, 0.65);
+    border-color: rgba(102, 126, 234, 0.4);
+    box-shadow:
+      0 0 20px rgba(102, 126, 234, 0.12),
+      0 0 60px rgba(0, 212, 255, 0.06),
+      inset 0 0 30px rgba(102, 126, 234, 0.04);
     transform: translateY(-2px);
   }
 
   &.dragging {
-    opacity: 0.5;
+    opacity: 0.45;
     transform: scale(0.97);
   }
+}
+
+.card-glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  background: conic-gradient(from var(--angle, 0deg), transparent 70%, rgba(102, 126, 234, 0.4), rgba(0, 212, 255, 0.3), transparent 90%);
+  animation: rotateGlow 6s linear infinite;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+
+.todo-card:hover .card-glow { opacity: 1; }
+
+@keyframes rotateGlow {
+  to { --angle: 360deg; }
+}
+
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
 }
 
 .card-rank {
@@ -373,28 +339,19 @@ onUnmounted(() => {
   flex-shrink: 0;
   font-size: 20px;
   font-weight: 800;
-  background: linear-gradient(180deg, rgba(102, 126, 234, 0.15), rgba(0, 212, 255, 0.08));
+  background: linear-gradient(180deg, rgba(102, 126, 234, 0.18), rgba(0, 212, 255, 0.06));
   color: #667eea;
   border-right: 1px solid rgba(102, 126, 234, 0.1);
 }
 
-.card-body {
-  flex: 1;
-  padding: 14px 16px;
-  min-width: 0;
-}
+.card-body { flex: 1; padding: 14px 16px; min-width: 0; }
 
 .card-head {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
-
-  .card-id {
-    color: #8c8ca1;
-    font-size: 12px;
-    margin-left: auto;
-  }
+  .card-id { color: #8c8ca1; font-size: 12px; margin-left: auto; }
 }
 
 .card-title {
@@ -415,11 +372,7 @@ onUnmounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #8c8ca1;
-
-  .overdue {
-    color: #f56c6c;
-    font-weight: 600;
-  }
+  .overdue { color: #f56c6c; font-weight: 600; }
 }
 
 .card-config {
@@ -429,7 +382,6 @@ onUnmounted(() => {
   font-size: 11px;
   color: #667eea;
   opacity: 0.8;
-
   .config-item {
     max-width: 200px;
     overflow: hidden;
@@ -446,23 +398,9 @@ onUnmounted(() => {
   padding: 0 12px;
 }
 
-/* TransitionGroup 动画 */
-.card-enter-active {
-  transition: all 0.4s ease;
-}
-.card-leave-active {
-  transition: all 0.3s ease;
-  position: absolute;
-}
-.card-enter-from {
-  opacity: 0;
-  transform: translateY(20px) scale(0.95);
-}
-.card-leave-to {
-  opacity: 0;
-  transform: translateX(-30px);
-}
-.card-move {
-  transition: transform 0.35s ease;
-}
+.card-enter-active { transition: all 0.4s ease; }
+.card-leave-active { transition: all 0.3s ease; position: absolute; }
+.card-enter-from { opacity: 0; transform: translateY(20px) scale(0.95); }
+.card-leave-to { opacity: 0; transform: translateX(-30px); }
+.card-move { transition: transform 0.35s ease; }
 </style>
