@@ -79,6 +79,7 @@ export interface Task {
   requirementDoc: string
   localPath: string
   taskPageUrl: string
+  aiStatus: string
 }
 
 /** 开发记录条目 */
@@ -170,4 +171,5 @@ export interface TaskUpdateParams {
   taskPageUrl?: string
   status?: TaskStatus
   tags?: string[]
+  aiStatus?: string
 }

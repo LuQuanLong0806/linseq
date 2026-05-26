@@ -29,6 +29,10 @@
           <el-icon><MagicStick /></el-icon>
           <template #title>AI 待办</template>
         </el-menu-item>
+        <el-menu-item index="/review">
+          <el-icon><Checked /></el-icon>
+          <template #title>待审核</template>
+        </el-menu-item>
         <el-menu-item index="/sync">
           <el-icon><Refresh /></el-icon>
           <template #title>同步中心</template>
@@ -85,7 +89,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
-import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick } from '@element-plus/icons-vue'
+import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 const route = useRoute()

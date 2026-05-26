@@ -26,6 +26,10 @@ vi.mock('three', () => {
 
 vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn() } }))
 
+vi.mock('@/utils/http', () => ({
+  default: { get: vi.fn().mockResolvedValue({ code: 0, data: { list: [], total: 0 } }), post: vi.fn(), patch: vi.fn().mockResolvedValue({ code: 0, data: {} }) },
+}))
+
 const stubs = {
   'el-tag': { props: ['type', 'size', 'effect'], template: '<span><slot /></span>' },
   'el-button': { props: ['type', 'size', 'link'], template: '<button><slot /></button>' },
@@ -114,7 +118,7 @@ describe('AI待办页面', () => {
     })
     await flushPromises(); await nextTick()
     expect(useTaskStore().isInTodoList('t1')).toBe(true)
-    await w.findAll('.card-actions button')[1].trigger('click')
+    await w.findAll('.card-actions button')[2].trigger('click')
     expect(useTaskStore().isInTodoList('t1')).toBe(false)
   })
 

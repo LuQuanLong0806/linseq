@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 待办', icon: 'MagicStick' },
       },
       {
+        path: 'review',
+        name: 'Review',
+        component: () => import('@/views/review/index.vue'),
+        meta: { title: '待审核', icon: 'Checked' },
+      },
+      {
         path: 'devlog',
         name: 'DevLog',
         component: () => import('@/views/devlog/index.vue'),

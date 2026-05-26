@@ -52,6 +52,7 @@
             </div>
             <div class="card-actions">
               <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
+              <el-button type="success" link size="small" @click="handleComplete(task)">完成</el-button>
               <el-button type="danger" link size="small" @click="handleRemove(task)">移出</el-button>
             </div>
           </div>
@@ -103,6 +104,12 @@ const todoTasks = computed(() =>
 function handleRemove(task: Task) {
   taskStore.toggleTodo(task)
   ElMessage.success('已移出 AI 待办')
+}
+
+async function handleComplete(task: Task) {
+  await taskStore.updateTask(task.id, { aiStatus: 'ai_review' })
+  taskStore.toggleTodo(task)
+  ElMessage.success('已提交审核')
 }
 
 function isOverdue(task: Task) {

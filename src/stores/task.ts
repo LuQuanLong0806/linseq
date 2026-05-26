@@ -120,8 +120,10 @@ export const useTaskStore = defineStore('task', () => {
     const idx = todoList.value.indexOf(task.id)
     if (idx === -1) {
       todoList.value.push(task.id)
+      updateTask(task.id, { aiStatus: 'ai_todo' })
     } else {
       todoList.value.splice(idx, 1)
+      updateTask(task.id, { aiStatus: '' })
     }
     localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
   }

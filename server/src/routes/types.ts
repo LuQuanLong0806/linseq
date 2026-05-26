@@ -57,6 +57,7 @@ export interface Task {
   acceptanceCriteria: string
   requirementDoc: string
   localPath: string
+  aiStatus: string
 }
 
 export interface DevLogEntry {

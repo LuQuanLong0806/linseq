@@ -104,6 +104,7 @@ export function initDatabase(): void {
     ['git_branch', 'TEXT DEFAULT ""'],
     ['custom_description', 'TEXT DEFAULT ""'],
     ['local_path', 'TEXT DEFAULT ""'],
+    ['ai_status', 'TEXT DEFAULT ""'],
   ]
   for (const [col, type] of newColumns) {
     try {
@@ -158,6 +159,7 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_customer ON tasks(customer);
     CREATE INDEX IF NOT EXISTS idx_tasks_is_closed ON tasks(is_closed);
     CREATE INDEX IF NOT EXISTS idx_tasks_project_path ON tasks(project_path);
+    CREATE INDEX IF NOT EXISTS idx_tasks_ai_status ON tasks(ai_status);
     CREATE INDEX IF NOT EXISTS idx_dev_logs_task_id ON dev_logs(task_id);
   `)
 

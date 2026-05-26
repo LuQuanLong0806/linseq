@@ -144,7 +144,7 @@ router.patch('/:id', (req, res) => {
 
     const allowedFields = new Set([
       'project_path', 'git_branch', 'custom_description', 'acceptance_criteria',
-      'requirement_doc', 'local_path', 'status', 'priority', 'tags',
+      'requirement_doc', 'local_path', 'status', 'priority', 'tags', 'ai_status',
     ])
 
     const setParts: string[] = []
@@ -354,6 +354,7 @@ export function mapDbRowToTask(db: ReturnType<typeof getDb>, row: unknown): Task
     acceptanceCriteria: (r.acceptance_criteria as string) || '',
     requirementDoc: (r.requirement_doc as string) || '',
     localPath: (r.local_path as string) || '',
+    aiStatus: (r.ai_status as string) || '',
   }
 }
 
