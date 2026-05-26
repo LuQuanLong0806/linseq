@@ -105,6 +105,13 @@ export function initDatabase(): void {
     ['custom_description', 'TEXT DEFAULT ""'],
     ['local_path', 'TEXT DEFAULT ""'],
     ['ai_status', 'TEXT DEFAULT ""'],
+    ['task_page_url', 'TEXT DEFAULT ""'],
+    ['review_comment', 'TEXT DEFAULT ""'],
+    ['review_time', 'TEXT DEFAULT ""'],
+    ['review_result', 'TEXT DEFAULT ""'],
+    ['complete_time', 'TEXT DEFAULT ""'],
+    ['rework_count', 'INTEGER DEFAULT 0'],
+    ['ai_output', 'TEXT DEFAULT ""'],
   ]
   for (const [col, type] of newColumns) {
     try {

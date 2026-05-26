@@ -87,13 +87,30 @@
           </el-button>
         </el-button-group>
       </div>
-      <div v-if="selectedTasks.length > 0" class="toolbar-right">
-        <span class="selected-count">已选 {{ selectedTasks.length }} 项</span>
-        <el-button type="primary" size="small" @click="handleBatchTodo"
-          >批量移入待办</el-button
+      <div class="toolbar-right">
+        <span v-if="selectedTasks.length > 0" class="selected-count"
+          >已选 {{ selectedTasks.length }} 项</span
+        >
+        <el-button
+          type="primary"
+          size="small"
+          :disabled="selectedTasks.length === 0"
+          @click="handleBatchTodo"
+          >批量入AI待办</el-button
+        >
+        <el-button
+          type="success"
+          size="small"
+          :disabled="selectedTasks.length === 0"
+          @click="handleBatchSettings"
+          >批量设置</el-button
         >
         <el-dropdown trigger="click" @command="handleBatchStatusChange">
-          <el-button type="warning" size="small">
+          <el-button
+            type="warning"
+            size="small"
+            :disabled="selectedTasks.length === 0"
+          >
             批量修改状态<el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
@@ -106,7 +123,11 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button type="danger" size="small" @click="handleBatchRemove"
+        <el-button
+          type="danger"
+          size="small"
+          :disabled="selectedTasks.length === 0"
+          @click="handleBatchRemove"
           >批量移出待办</el-button
         >
       </div>
@@ -124,11 +145,11 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="45" fixed="left" />
-        <el-table-column prop="sourceId" label="单号" width="80" />
+        <el-table-column prop="sourceId" label="单号" width="140" />
         <el-table-column
           prop="project"
           label="项目名称"
-          width="140"
+          min-width="260"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -138,7 +159,7 @@
         <el-table-column
           prop="customDescription"
           label="任务简述"
-          min-width="160"
+          min-width="360"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -147,40 +168,7 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column
-          prop="title"
-          label="任务标题"
-          min-width="200"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <div class="title-cell">
-              <el-tag
-                v-if="taskStore.isInTodoList(row.id)"
-                size="small"
-                class="todo-badge"
-                effect="plain"
-                type="warning"
-                >AI待办</el-tag
-              >
-              <span>{{ row.title }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="module"
-          label="模块"
-          width="100"
-          show-overflow-tooltip
-        />
-        <el-table-column prop="priority" label="优先级" width="70">
-          <template #default="{ row }">
-            <el-tag :type="getPriorityType(row.priority)" size="small">{{
-              getPriorityLabel(row.priority)
-            }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="AI开发状态" width="110">
+        <el-table-column prop="status" label="AI开发状态" width="130">
           <template #default="{ row }">
             <el-tag
               :type="getAiStatusType(row.aiStatus)"
@@ -190,7 +178,26 @@
             >
           </template>
         </el-table-column>
-        <el-table-column prop="staleDays" label="滞留天数" width="90" sortable>
+        <el-table-column
+          prop="module"
+          label="模块"
+          width="200"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="priority" label="优先级" width="120">
+          <template #default="{ row }">
+            <el-tag :type="getPriorityType(row.priority)" size="small">{{
+              getPriorityLabel(row.priority)
+            }}</el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="workHours" label="计划小时" width="120" sortable>
+          <template #default="{ row }">
+            <span>{{ row.workHours || 0 }}h</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="staleDays" label="滞留天数" width="120" sortable>
           <template #default="{ row }">
             <span
               :class="{
@@ -201,12 +208,7 @@
             >
           </template>
         </el-table-column>
-        <el-table-column prop="workHours" label="计划小时" width="90" sortable>
-          <template #default="{ row }">
-            <span>{{ row.workHours || 0 }}h</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="deadline" label="截止时间" width="110" sortable>
+        <el-table-column prop="deadline" label="截止时间" width="140" sortable>
           <template #default="{ row }">
             <span :class="{ 'overdue-text': isOverdue(row) }">{{
               formatDate(row.deadline)
@@ -328,10 +330,15 @@
     <!-- 项目配置对话框 -->
     <el-dialog
       v-model="projectDialogVisible"
-      title="项目配置"
+      :title="isBatchMode ? '批量项目配置' : '项目配置'"
       width="520px"
       @close="resetProjectForm"
     >
+      <div v-if="isBatchMode" class="batch-info">
+        <el-tag type="info" size="small"
+          >已选 {{ selectedTasks.length }} 项 · {{ batchProjectName }}</el-tag
+        >
+      </div>
       <el-form :model="projectForm" label-width="110px" label-position="right">
         <el-form-item label="本地项目路径">
           <el-input
@@ -347,10 +354,10 @@
             clearable
           />
         </el-form-item>
-        <el-form-item label="任务页面地址">
+        <el-form-item v-if="!isBatchMode" label="需求文件路径">
           <el-input
             v-model="projectForm.taskPageUrl"
-            placeholder="内网任务页面 URL"
+            placeholder="需求对应的项目文件路径，如 src/views/login/index.vue"
             clearable
           />
         </el-form-item>
@@ -403,6 +410,8 @@ const filters = reactive({
 const projectDialogVisible = ref(false);
 const saving = ref(false);
 const currentEditTask = ref<Task | null>(null);
+const isBatchMode = ref(false);
+const batchProjectName = ref('');
 const projectForm = reactive({
   projectPath: '',
   gitBranch: '',
@@ -531,8 +540,20 @@ function handleToggleTodo(task: Task) {
     ElMessage.success('已移出 AI 待办');
     return;
   }
+  if (!task.customDescription) {
+    ElMessage.warning('请先补充「自定义描述」后再加入 AI 待办');
+    return;
+  }
+  if (!task.projectPath) {
+    ElMessage.warning('请先设置「本地项目路径」后再加入 AI 待办');
+    return;
+  }
+  if (!task.gitBranch) {
+    ElMessage.warning('请先设置「Git 分支」后再加入 AI 待办');
+    return;
+  }
   ElMessageBox.confirm(
-    '请确认需求信息已完善（项目路径、Git 分支、任务页面地址等），确认后将加入 AI 待办列表。',
+    '请确认需求信息已完善（项目路径、Git 分支、需求文件路径等），确认后将加入 AI 待办列表。',
     '确认加入 AI 待办',
     { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
   )
@@ -545,10 +566,30 @@ function handleToggleTodo(task: Task) {
 
 // Project settings
 function openProjectSettings(task: Task) {
+  isBatchMode.value = false;
+  batchProjectName.value = '';
   currentEditTask.value = task;
   projectForm.projectPath = task.projectPath || '';
   projectForm.gitBranch = task.gitBranch || '';
   projectForm.taskPageUrl = task.taskPageUrl || '';
+  projectDialogVisible.value = true;
+}
+
+function handleBatchSettings() {
+  const selected = selectedTasks.value;
+  const projectName = selected[0]?.project || selected[0]?.customer || '';
+  const sameProject = selected.every(
+    (t) => (t.project || t.customer) === projectName
+  );
+  if (!sameProject) {
+    ElMessage.warning('所选任务必须属于同一项目才能批量设置');
+    return;
+  }
+  isBatchMode.value = true;
+  batchProjectName.value = projectName;
+  projectForm.projectPath = '';
+  projectForm.gitBranch = '';
+  projectForm.taskPageUrl = '';
   projectDialogVisible.value = true;
 }
 
@@ -560,15 +601,23 @@ function resetProjectForm() {
 }
 
 async function saveProjectSettings() {
-  if (!currentEditTask.value) return;
   saving.value = true;
   try {
-    await taskStore.updateTask(currentEditTask.value.id, {
-      projectPath: projectForm.projectPath,
-      gitBranch: projectForm.gitBranch,
-      taskPageUrl: projectForm.taskPageUrl
-    });
-    ElMessage.success('配置已保存');
+    const payload: Record<string, string> = {};
+    if (projectForm.projectPath) payload.projectPath = projectForm.projectPath;
+    if (projectForm.gitBranch) payload.gitBranch = projectForm.gitBranch;
+    if (projectForm.taskPageUrl) payload.taskPageUrl = projectForm.taskPageUrl;
+
+    if (isBatchMode.value) {
+      for (const task of selectedTasks.value) {
+        await taskStore.updateTask(task.id, payload);
+      }
+      ElMessage.success(`已批量配置 ${selectedTasks.value.length} 个任务`);
+    } else {
+      if (!currentEditTask.value) return;
+      await taskStore.updateTask(currentEditTask.value.id, payload);
+      ElMessage.success('配置已保存');
+    }
     projectDialogVisible.value = false;
   } catch {
     ElMessage.error('保存失败');
@@ -641,6 +690,8 @@ function getAiStatusType(
   > = {
     '': 'info',
     ai_todo: 'warning',
+    ai_rework: 'danger',
+    ai_dev: 'primary',
     ai_review: 'primary',
     ai_done: 'success'
   };
@@ -651,6 +702,8 @@ function getAiStatusLabel(aiStatus: string): string {
   const map: Record<string, string> = {
     '': '-',
     ai_todo: 'AI待办',
+    ai_rework: '待返工',
+    ai_dev: '开发中',
     ai_review: '待审核',
     ai_done: 'AI完成'
   };
@@ -851,5 +904,9 @@ onMounted(() => {
     color: #f56c6c;
     font-weight: 600;
   }
+}
+
+.batch-info {
+  margin-bottom: 16px;
 }
 </style>

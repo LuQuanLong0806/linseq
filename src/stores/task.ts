@@ -119,8 +119,13 @@ export const useTaskStore = defineStore('task', () => {
   function toggleTodo(task: Task) {
     const idx = todoList.value.indexOf(task.id)
     if (idx === -1) {
-      todoList.value.push(task.id)
-      updateTask(task.id, { aiStatus: 'ai_todo' })
+      const isRework = task.aiStatus === 'ai_rework'
+      if (isRework) {
+        todoList.value.unshift(task.id)
+      } else {
+        todoList.value.push(task.id)
+      }
+      updateTask(task.id, { aiStatus: isRework ? 'ai_rework' : 'ai_todo' })
     } else {
       todoList.value.splice(idx, 1)
       updateTask(task.id, { aiStatus: '' })

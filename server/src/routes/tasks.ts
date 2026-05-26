@@ -145,6 +145,8 @@ router.patch('/:id', (req, res) => {
     const allowedFields = new Set([
       'project_path', 'git_branch', 'custom_description', 'acceptance_criteria',
       'requirement_doc', 'local_path', 'status', 'priority', 'tags', 'ai_status',
+      'task_page_url', 'review_comment', 'review_time', 'review_result',
+      'complete_time', 'rework_count', 'ai_output',
     ])
 
     const setParts: string[] = []
@@ -354,7 +356,14 @@ export function mapDbRowToTask(db: ReturnType<typeof getDb>, row: unknown): Task
     acceptanceCriteria: (r.acceptance_criteria as string) || '',
     requirementDoc: (r.requirement_doc as string) || '',
     localPath: (r.local_path as string) || '',
+    taskPageUrl: (r.task_page_url as string) || '',
     aiStatus: (r.ai_status as string) || '',
+    reviewComment: (r.review_comment as string) || '',
+    reviewTime: (r.review_time as string) || '',
+    reviewResult: (r.review_result as string) || '',
+    completeTime: (r.complete_time as string) || '',
+    reworkCount: (r.rework_count as number) || 0,
+    aiOutput: (r.ai_output as string) || '',
   }
 }
 

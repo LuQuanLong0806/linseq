@@ -25,6 +25,7 @@
           <div class="card-top">
             <span class="card-id">#{{ task.sourceId }}</span>
             <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+            <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
             <span class="card-project">{{ task.project || task.customer }}</span>
           </div>
 
@@ -42,19 +43,40 @@
             <span v-if="task.gitBranch">{{ task.gitBranch }}</span>
           </div>
 
+          <div v-if="task.aiOutput" class="card-output">
+            <span class="output-label">AI 产出：</span>
+            <span>{{ task.aiOutput }}</span>
+          </div>
+
           <div class="card-actions">
             <el-button type="primary" @click="goDetail(task)">查看详情</el-button>
             <el-button type="success" @click="handleApprove(task)">审核通过</el-button>
-            <el-button type="danger" @click="handleReject(task)">打回修改</el-button>
+            <el-button type="danger" @click="openRejectDialog(task)">打回修改</el-button>
           </div>
         </div>
       </TransitionGroup>
     </div>
+
+    <!-- 打回原因弹窗 -->
+    <el-dialog v-model="rejectDialogVisible" title="打回修改" width="500px" @close="resetRejectForm">
+      <el-form :model="rejectForm" label-width="90px">
+        <el-form-item label="任务">
+          <span>{{ rejectTask?.title }}</span>
+        </el-form-item>
+        <el-form-item label="不通过原因" required>
+          <el-input v-model="rejectForm.comment" type="textarea" :rows="4" placeholder="请填写不通过原因和修改建议..." />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rejectDialogVisible = false">取消</el-button>
+        <el-button type="danger" @click="handleReject" :loading="rejecting" :disabled="!rejectForm.comment.trim()">确认打回</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import type { Task } from '@/types'
@@ -70,6 +92,68 @@ const reviewTasks = computed(() =>
   taskStore.tasks.filter(t => t.aiStatus === 'ai_review')
 )
 
+// Reject dialog
+const rejectDialogVisible = ref(false)
+const rejecting = ref(false)
+const rejectTask = ref<Task | null>(null)
+const rejectForm = reactive({ comment: '' })
+
+function openRejectDialog(task: Task) {
+  rejectTask.value = task
+  rejectForm.comment = ''
+  rejectDialogVisible.value = true
+}
+
+function resetRejectForm() {
+  rejectForm.comment = ''
+  rejectTask.value = null
+}
+
+const PRIORITY_UPGRADE: Record<string, string> = {
+  low: 'medium',
+  medium: 'high',
+  high: 'urgent',
+  urgent: 'urgent',
+}
+
+async function handleReject() {
+  if (!rejectTask.value || !rejectForm.comment.trim()) return
+  rejecting.value = true
+  try {
+    const task = rejectTask.value
+    const newPriority = PRIORITY_UPGRADE[task.priority] || 'urgent'
+    const newReworkCount = (task.reworkCount || 0) + 1
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
+    await taskStore.updateTask(task.id, {
+      aiStatus: 'ai_rework',
+      priority: newPriority,
+      reworkCount: newReworkCount,
+      reviewComment: rejectForm.comment.trim(),
+      reviewTime: now,
+      reviewResult: 'rejected',
+    })
+    taskStore.toggleTodo(task)
+    ElMessage.success(`已打回返工（第${newReworkCount}次），优先级提升为${getPriorityLabel(newPriority)}`)
+    rejectDialogVisible.value = false
+  } catch {
+    ElMessage.error('操作失败')
+  } finally {
+    rejecting.value = false
+  }
+}
+
+async function handleApprove(task: Task) {
+  const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  await taskStore.updateTask(task.id, {
+    aiStatus: 'ai_done',
+    reviewResult: 'approved',
+    reviewTime: now,
+    completeTime: now,
+  })
+  ElMessage.success('审核通过，任务已完成')
+}
+
+// Three.js
 let renderer: THREE.WebGLRenderer | null = null
 let scene: THREE.Scene | null = null
 let camera: THREE.PerspectiveCamera | null = null
@@ -86,7 +170,6 @@ function initThree() {
   camera.position.z = 30
   resize()
 
-  // 粒子 — 青绿+金色
   const count = 400
   const pos = new Float32Array(count * 3)
   const col = new Float32Array(count * 3)
@@ -104,7 +187,6 @@ function initThree() {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
   scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0.6 })))
 
-  // 连线
   const lp: number[] = []
   for (let i = 0; i < count; i++) {
     for (let j = i + 1; j < count; j++) {
@@ -118,7 +200,6 @@ function initThree() {
   lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3))
   scene.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x00e5a0, transparent: true, opacity: 0.06 })))
 
-  // 外圈
   const ringGeo = new THREE.RingGeometry(18, 18.2, 128)
   const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x00e5a0, transparent: true, opacity: 0.06, side: THREE.DoubleSide }))
   ring.rotation.x = Math.PI / 2.5
@@ -158,16 +239,6 @@ onUnmounted(() => {
 
 function goDetail(task: Task) {
   router.push(`/tasks/${task.id}`)
-}
-
-async function handleApprove(task: Task) {
-  await taskStore.updateTask(task.id, { aiStatus: 'ai_done' })
-  ElMessage.success('审核通过，任务已完成')
-}
-
-async function handleReject(task: Task) {
-  await taskStore.updateTask(task.id, { aiStatus: 'ai_todo' })
-  ElMessage.success('已打回，任务重回 AI 待办')
 }
 
 function getPriorityType(p: string) {
@@ -330,6 +401,13 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   font-size: 11px;
   color: #ffd700;
   opacity: 0.8;
+}
+
+.card-output {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #a0a0b8;
+  .output-label { color: #00e5a0; font-weight: 600; }
 }
 
 .card-actions {

@@ -24,10 +24,11 @@
             v-for="(task, index) in todoTasks"
             :key="task.id"
             class="todo-card"
-            :class="{ dragging: dragIndex === index }"
+            :class="{ dragging: dragFrom === index, 'drop-target': dropTarget === index && dragFrom !== index }"
             draggable="true"
             @dragstart="onDragStart(index, $event)"
             @dragover.prevent="onDragOver(index)"
+            @drop="onDrop(index)"
             @dragend="onDragEnd"
           >
             <!-- 流光边框 -->
@@ -37,6 +38,7 @@
               <div class="card-head">
                 <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
                 <el-tag :type="getStatusType(task.status)" size="small" effect="dark">{{ getStatusLabel(task.status) }}</el-tag>
+                <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
                 <span class="card-id">#{{ task.sourceId }}</span>
               </div>
               <h3 class="card-title">{{ task.title }}</h3>
@@ -73,33 +75,42 @@ import * as THREE from 'three'
 const taskStore = useTaskStore()
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 
-const dragIndex = ref(-1)
-
-function onDragStart(index: number, e: DragEvent) {
-  dragIndex.value = index
-  e.dataTransfer!.effectAllowed = 'move'
-}
-
-function onDragOver(index: number) {
-  if (dragIndex.value === index) return
-  const list = taskStore.todoList
-  const item = list.splice(dragIndex.value, 1)[0]
-  list.splice(index, 0, item)
-  dragIndex.value = index
-  saveOrder()
-}
-
-function onDragEnd() { dragIndex.value = -1 }
-
-function saveOrder() {
-  localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
-}
+const dragFrom = ref(-1)
+const dropTarget = ref(-1)
 
 const todoTasks = computed(() =>
   taskStore.todoList
     .map(id => taskStore.tasks.find(t => t.id === id))
     .filter((t): t is Task => !!t)
 )
+
+function onDragStart(index: number, e: DragEvent) {
+  dragFrom.value = index
+  e.dataTransfer!.effectAllowed = 'move'
+}
+
+function onDragOver(index: number) {
+  dropTarget.value = index
+}
+
+function onDrop(index: number) {
+  if (dragFrom.value >= 0 && dragFrom.value !== index) {
+    const item = taskStore.todoList.splice(dragFrom.value, 1)[0]
+    taskStore.todoList.splice(index, 0, item)
+    saveOrder()
+  }
+  dragFrom.value = -1
+  dropTarget.value = -1
+}
+
+function onDragEnd() {
+  dragFrom.value = -1
+  dropTarget.value = -1
+}
+
+function saveOrder() {
+  localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
+}
 
 function handleRemove(task: Task) {
   taskStore.toggleTodo(task)
@@ -311,6 +322,11 @@ onUnmounted(() => {
   &.dragging {
     opacity: 0.45;
     transform: scale(0.97);
+  }
+
+  &.drop-target {
+    border-color: rgba(0, 212, 255, 0.6);
+    box-shadow: 0 0 16px rgba(0, 212, 255, 0.2);
   }
 }
 

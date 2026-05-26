@@ -45,7 +45,9 @@ const mockTask = (o = {}) => ({
   departmentId: '', isClosed: false, intranetNode: '', intranetNodeName: '', nodeIndex: 0,
   staleDays: 0, flowDays: 0, daysSinceCreate: 0, rejectFlag: false, flowId: '', workId: '',
   version: '', projectPath: 'F:/dev', gitBranch: 'main', customDescription: '',
-  acceptanceCriteria: '', requirementDoc: '', localPath: '', taskPageUrl: '', ...o,
+  acceptanceCriteria: '', requirementDoc: '', localPath: '', taskPageUrl: '',
+  aiStatus: '', reviewComment: '', reviewTime: '', reviewResult: '',
+  completeTime: '', reworkCount: 0, aiOutput: '', ...o,
 })
 
 describe('AI待办页面', () => {
@@ -107,7 +109,7 @@ describe('AI待办页面', () => {
 
     await cards[0].trigger('dragstart', { dataTransfer: { effectAllowed: '' } })
     await cards[1].trigger('dragover')
-    await cards[0].trigger('dragend')
+    await cards[1].trigger('drop')
     expect(useTaskStore().todoList).toEqual(['b', 'a'])
   })
 

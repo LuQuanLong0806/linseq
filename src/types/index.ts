@@ -80,6 +80,12 @@ export interface Task {
   localPath: string
   taskPageUrl: string
   aiStatus: string
+  reviewComment: string
+  reviewTime: string
+  reviewResult: string
+  completeTime: string
+  reworkCount: number
+  aiOutput: string
 }
 
 /** 开发记录条目 */
@@ -170,6 +176,13 @@ export interface TaskUpdateParams {
   requirementDoc?: string
   taskPageUrl?: string
   status?: TaskStatus
+  priority?: string
   tags?: string[]
   aiStatus?: string
+  reviewComment?: string
+  reviewTime?: string
+  reviewResult?: string
+  completeTime?: string
+  reworkCount?: number
+  aiOutput?: string
 }

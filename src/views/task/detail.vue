@@ -10,6 +10,8 @@
             <div class="meta-tags">
               <el-tag :type="getStatusType(task.status)" effect="dark" size="default">{{ getStatusLabel(task.status) }}</el-tag>
               <el-tag :type="getPriorityType(task.priority)" size="default">{{ getPriorityLabel(task.priority) }}</el-tag>
+              <el-tag v-if="task.aiStatus" :type="getAiStatusType(task.aiStatus)" size="default" effect="plain">{{ getAiStatusLabel(task.aiStatus) }}</el-tag>
+              <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
               <el-tag v-if="task.project" type="info" size="default">{{ task.project }}</el-tag>
               <el-tag v-if="task.bugOrReq" size="default" effect="plain">{{ getBugOrReqLabel(task.bugOrReq) }}</el-tag>
               <span class="meta-id">#{{ task.sourceId }}</span>
@@ -83,6 +85,32 @@
             <div class="desc-content empty" v-else>点击编辑按钮添加验收标准</div>
           </el-card>
 
+          <!-- AI 产出 -->
+          <el-card v-if="task.aiOutput" shadow="hover" class="content-card" style="margin-top:20px;">
+            <template #header>
+              <span class="card-title">AI 开发产出</span>
+            </template>
+            <div class="desc-content">{{ task.aiOutput }}</div>
+          </el-card>
+
+          <!-- 审核记录 -->
+          <el-card v-if="task.reviewComment || task.reviewResult" shadow="hover" class="content-card" style="margin-top:20px;">
+            <template #header>
+              <span class="card-title">审核记录</span>
+            </template>
+            <el-descriptions :column="1" border size="small">
+              <el-descriptions-item label="审核结果">
+                <el-tag :type="task.reviewResult === 'approved' ? 'success' : 'danger'" size="small">
+                  {{ task.reviewResult === 'approved' ? '通过' : '不通过' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item v-if="task.reviewComment" label="审核意见">{{ task.reviewComment }}</el-descriptions-item>
+              <el-descriptions-item v-if="task.reviewTime" label="审核时间">{{ formatDateTime(task.reviewTime) }}</el-descriptions-item>
+              <el-descriptions-item v-if="task.completeTime" label="完成时间">{{ formatDateTime(task.completeTime) }}</el-descriptions-item>
+              <el-descriptions-item label="返工次数">{{ task.reworkCount || 0 }}次</el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+
           <!-- 开发记录 -->
           <el-card shadow="hover" class="content-card" style="margin-top:20px;">
             <template #header>
@@ -112,7 +140,7 @@
 
         <!-- 右侧：信息面板 -->
         <el-col :span="8">
-          <!-- 自定义字段（可编辑） -->
+          <!-- 开发配置 -->
           <el-card shadow="hover" class="info-card">
             <template #header>
               <div class="card-header-flex">
@@ -127,6 +155,10 @@
               </el-descriptions-item>
               <el-descriptions-item label="Git 分支">
                 <span v-if="task.gitBranch" class="branch-text">{{ task.gitBranch }}</span>
+                <span v-else class="empty-text">未设置</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="需求文件路径">
+                <span v-if="task.taskPageUrl" class="path-text">{{ task.taskPageUrl }}</span>
                 <span v-else class="empty-text">未设置</span>
               </el-descriptions-item>
               <el-descriptions-item label="内网单号">{{ task.sourceId }}</el-descriptions-item>
@@ -178,6 +210,9 @@
         </el-form-item>
         <el-form-item label="Git 分支">
           <el-input v-model="devConfigForm.gitBranch" placeholder="如 feature/login" clearable />
+        </el-form-item>
+        <el-form-item label="需求文件路径">
+          <el-input v-model="devConfigForm.taskPageUrl" placeholder="需求对应的项目文件路径，如 src/views/login/index.vue" clearable />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -246,6 +281,7 @@ const logForm = reactive({ action: '开发', content: '' })
 const devConfigForm = reactive({
   projectPath: '',
   gitBranch: '',
+  taskPageUrl: '',
 })
 
 const editFieldKey = ref('')
@@ -288,6 +324,7 @@ async function handleSaveField() {
 function openDevConfig() {
   devConfigForm.projectPath = task.value.projectPath || ''
   devConfigForm.gitBranch = task.value.gitBranch || ''
+  devConfigForm.taskPageUrl = task.value.taskPageUrl || ''
   showEditDevConfig.value = true
 }
 
@@ -297,6 +334,7 @@ async function handleSaveDevConfig() {
     await taskStore.updateTask(task.value.id, {
       projectPath: devConfigForm.projectPath,
       gitBranch: devConfigForm.gitBranch,
+      taskPageUrl: devConfigForm.taskPageUrl,
     })
     showEditDevConfig.value = false
     ElMessage.success('开发配置已保存')
@@ -321,6 +359,20 @@ function getStatusLabel(status: string): string {
     testing: '测试中', submitted: '已提测', completed: '已完结', rejected: '已驳回',
   }
   return labels[status] || status
+}
+
+function getAiStatusType(aiStatus: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
+  const map: Record<string, 'success' | 'primary' | 'warning' | 'danger' | 'info'> = {
+    '': 'info', ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success',
+  }
+  return map[aiStatus] || 'info'
+}
+
+function getAiStatusLabel(aiStatus: string): string {
+  const map: Record<string, string> = {
+    '': '-', ai_todo: 'AI待办', ai_rework: '待返工', ai_dev: '开发中', ai_review: '待审核', ai_done: 'AI完成',
+  }
+  return map[aiStatus] || aiStatus
 }
 
 function getPriorityType(priority: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
