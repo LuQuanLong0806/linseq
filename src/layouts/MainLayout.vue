@@ -267,36 +267,37 @@ onUnmounted(() => {
   );
   pointer-events: none;
   z-index: 9999;
-  animation: globalScanRotate 10s linear infinite;
+  animation: globalScanRotate 6s linear infinite;
 }
 @keyframes globalScanRotate { to { --global-scan-angle: 360deg; } }
 @property --global-scan-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 
-/* Global linear sweep beam — left to right, delayed 4s to offset from rotate */
+/* Global linear sweep beam — left to right, wider beam + faster cycle */
 .main-content::after {
   content: '';
   position: fixed;
-  top: 0; left: -60%;
-  width: 60%; height: 100%;
+  top: 0; left: -80%;
+  width: 80%; height: 100%;
   background: linear-gradient(
     105deg,
     transparent 0%,
-    rgba(0, 229, 255, 0.06) 25%,
-    rgba(0, 229, 255, 0.12) 42%,
-    rgba(157, 92, 255, 0.08) 55%,
-    transparent 70%
+    rgba(0, 229, 255, 0.06) 20%,
+    rgba(0, 229, 255, 0.14) 40%,
+    rgba(157, 92, 255, 0.10) 55%,
+    rgba(255, 125, 0, 0.06) 65%,
+    transparent 80%
   );
   pointer-events: none;
   z-index: 9998;
-  animation: scanBeam 8s ease-in-out infinite;
-  animation-delay: 4s;
+  animation: scanBeam 5s ease-in-out infinite;
+  animation-delay: 2s;
 }
 
 @keyframes scanBeam {
-  0%   { left: -60%; opacity: 0; }
+  0%   { left: -80%; opacity: 0; }
   5%   { opacity: 1; }
-  50%  { left: 120%; opacity: 1; }
-  55%  { opacity: 0; }
+  60%  { left: 120%; opacity: 1; }
+  65%  { opacity: 0; }
   100% { left: 120%; opacity: 0; }
 }
 

@@ -70,22 +70,33 @@
     <!-- 操作栏：左侧视图切换，右侧批量操作 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button-group>
-          <el-button
-            :type="viewMode === 'table' ? 'primary' : 'default'"
-            size="small"
-            @click="viewMode = 'table'"
+        <div class="view-switch">
+          <button
+            class="view-btn"
+            :class="{ active: taskStore.viewMode === 'table' }"
+            @click="taskStore.setViewMode('table')"
+            title="列表视图"
           >
-            <el-icon><List /></el-icon>
-          </el-button>
-          <el-button
-            :type="viewMode === 'kanban' ? 'primary' : 'default'"
-            size="small"
-            @click="viewMode = 'kanban'"
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="2" y="3" width="16" height="3" rx="1" />
+              <rect x="2" y="8.5" width="16" height="3" rx="1" />
+              <rect x="2" y="14" width="16" height="3" rx="1" />
+            </svg>
+          </button>
+          <button
+            class="view-btn"
+            :class="{ active: taskStore.viewMode === 'card' }"
+            @click="taskStore.setViewMode('card')"
+            title="卡片视图"
           >
-            <el-icon><Grid /></el-icon>
-          </el-button>
-        </el-button-group>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="2" y="2" width="7" height="7" rx="1.5" />
+              <rect x="11" y="2" width="7" height="7" rx="1.5" />
+              <rect x="2" y="11" width="7" height="7" rx="1.5" />
+              <rect x="11" y="11" width="7" height="7" rx="1.5" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="toolbar-right">
         <span v-if="selectedTasks.length > 0" class="selected-count"
@@ -134,7 +145,7 @@
     </div>
 
     <!-- 列表视图 -->
-    <div v-show="viewMode === 'table'" class="cyber-panel table-card">
+    <div v-show="taskStore.viewMode === 'table'" class="cyber-panel table-card">
       <el-table
         ref="tableRef"
         :data="taskStore.tasks"
@@ -267,128 +278,133 @@
       </div>
     </div>
 
-    <!-- 看板视图 -->
-    <div v-show="viewMode === 'kanban'" class="kanban-view">
+    <!-- 卡片视图 -->
+    <div v-show="taskStore.viewMode === 'card'" class="card-view">
       <div
-        v-for="status in kanbanColumns"
-        :key="status.key"
-        class="kanban-column"
+        v-for="(task, idx) in taskStore.tasks"
+        :key="task.id"
+        class="cyber-card"
+        :class="{ 'in-todo': taskStore.isInTodoList(task.id) }"
+        @click="$router.push(`/tasks/${task.id}`)"
       >
-        <div class="kanban-header" :style="{ borderTopColor: status.color }">
-          <span class="kanban-title">{{ status.label }}</span>
-          <el-tag size="small" round>{{
-            getTasksByStatus(status.key).length
-          }}</el-tag>
-        </div>
-        <div class="kanban-body">
-          <div
-            v-for="task in getTasksByStatus(status.key).slice(0, 10)"
-            :key="task.id"
-            class="kanban-card"
-            :class="{ 'in-todo': taskStore.isInTodoList(task.id) }"
-            @click="$router.push(`/tasks/${task.id}`)"
-          >
-            <div class="kanban-card-header">
-              <div class="kanban-left">
-                <el-tag :type="getPriorityType(task.priority)" size="small">{{
-                  getPriorityLabel(task.priority)
-                }}</el-tag>
-                <el-tag
-                  v-if="taskStore.isInTodoList(task.id)"
-                  size="small"
-                  type="warning"
-                  effect="plain"
-                  >AI待办</el-tag
-                >
-              </div>
-              <span class="kanban-id">#{{ task.sourceId }}</span>
-            </div>
-            <div class="kanban-card-title">{{ task.title }}</div>
-            <div class="kanban-card-footer">
-              <span
-                class="kanban-deadline"
-                :class="{ overdue: isOverdue(task) }"
-              >
-                {{ formatDate(task.deadline) }}
-              </span>
-            </div>
+        <div class="card-glow"></div>
+        <div class="card-rank">{{ idx + 1 + (currentPage - 1) * pageSize }}</div>
+        <div class="card-body">
+          <div class="card-head">
+            <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+            <el-tag v-if="task.aiStatus" :type="getAiStatusType(task.aiStatus)" size="small" effect="dark">{{ getAiStatusLabel(task.aiStatus) }}</el-tag>
+            <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
+            <span class="card-id">#{{ task.sourceId }}</span>
           </div>
+          <h3 class="card-title">{{ task.title }}</h3>
+          <div class="card-meta">
+            <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
+            <span v-if="task.module">{{ task.module }}</span>
+            <span>{{ task.workHours || 0 }}h</span>
+            <span :class="{ overdue: isOverdue(task) }">{{ formatDate(task.deadline) }}</span>
+          </div>
+          <div v-if="task.customDescription" class="card-desc-preview">
+            <span class="desc-label">说明</span>
+            <span class="desc-text">{{ task.customDescription }}</span>
+          </div>
+        </div>
+        <div class="card-ops" @click.stop>
+          <span class="op" @click="$router.push(`/tasks/${task.id}`)">
+            <el-icon><View /></el-icon>详情
+          </span>
+          <span class="op" @click="openProjectSettings(task)">
+            <el-icon><Setting /></el-icon>配置
+          </span>
+          <span
+            class="op"
+            :class="taskStore.isInTodoList(task.id) ? 'op-active' : 'op-todo'"
+            @click="handleToggleTodo(task)"
+          >
+            <el-icon><Promotion /></el-icon>{{ taskStore.isInTodoList(task.id) ? 'AI待办' : '入待办' }}
+          </span>
+          <el-dropdown trigger="click" @command="(cmd) => handleStatusChange(task, cmd)">
+            <span class="op" @click.stop><el-icon><Switch /></el-icon>状态</span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="pending">待开发</el-dropdown-item>
+                <el-dropdown-item command="in_progress">开发中</el-dropdown-item>
+                <el-dropdown-item command="self_test">自测完成</el-dropdown-item>
+                <el-dropdown-item command="submitted">已提测</el-dropdown-item>
+                <el-dropdown-item command="completed">已完结</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
     </div>
 
-    <!-- 项目配置对话框 -->
-    <el-dialog
-      v-model="projectDialogVisible"
-      :title="isBatchMode ? '批量项目配置' : '项目配置'"
-      width="560px"
-      @close="resetProjectForm"
-    >
-      <div v-if="isBatchMode" class="batch-info">
-        <el-tag type="info" size="small"
-          >已选 {{ selectedTasks.length }} 项 · {{ batchProjectName }}</el-tag
-        >
-      </div>
-      <el-form :model="projectForm" label-width="110px" label-position="right">
-        <el-form-item label="项目配置">
-          <el-select
-            v-model="selectedProjectName"
-            placeholder="选择已配置的项目（自动填充路径和分支）"
-            clearable
-            filterable
-            style="width:100%"
-            @change="handleProjectSelect"
-          >
-            <el-option
-              v-for="p in projectConfigs"
-              :key="p.id"
-              :label="p.name"
-              :value="p.name"
+    <!-- 右侧抽屉配置面板 -->
+    <Transition name="fade-mask">
+      <div v-if="drawerOpen" class="drawer-mask" @click="drawerOpen = false"></div>
+    </Transition>
+    <Transition name="drawer-slide">
+      <div v-if="drawerOpen" class="task-drawer" @click.stop>
+        <div class="drawer-header">
+          <div class="drawer-title-area">
+            <template v-if="isBatchMode">
+              <el-tag type="info" size="small">已选 {{ selectedTasks.length }} 项</el-tag>
+              <span class="drawer-batch-name">{{ batchProjectName }}</span>
+            </template>
+            <template v-else-if="currentEditTask">
+              <el-tag :type="getPriorityType(currentEditTask.priority)" size="small">{{ getPriorityLabel(currentEditTask.priority) }}</el-tag>
+              <span class="drawer-id">#{{ currentEditTask.sourceId }}</span>
+            </template>
+          </div>
+          <el-button link size="small" @click="drawerOpen = false" class="drawer-close">✕</el-button>
+        </div>
+        <h3 v-if="currentEditTask && !isBatchMode" class="drawer-task-title">{{ currentEditTask.title }}</h3>
+
+        <el-form label-width="80px" label-position="top" class="drawer-form">
+          <el-form-item v-if="currentEditTask && !isBatchMode" label="项目名称">
+            <div class="drawer-field">{{ currentEditTask.project || currentEditTask.customer || '-' }}</div>
+          </el-form-item>
+          <el-form-item label="项目配置">
+            <el-select
+              v-model="selectedProjectName"
+              placeholder="选择项目自动填充路径和分支"
+              clearable
+              filterable
+              style="width:100%"
+              @change="handleProjectSelect"
             >
-              <span>{{ p.name }}</span>
-              <span style="float:right;color:#909399;font-size:12px">{{ p.localPath || '未配置路径' }}</span>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="本地项目路径">
-          <el-input
-            v-model="projectForm.projectPath"
-            placeholder="例: F:/projects/my-project"
-            clearable
-          />
-        </el-form-item>
-        <el-form-item label="Git 分支">
-          <el-select
-            v-model="projectForm.gitBranch"
-            placeholder="选择或输入分支"
-            clearable
-            filterable
-            allow-create
-            style="width:100%"
-          >
-            <el-option
-              v-for="b in selectedProjectBranches"
-              :key="b"
-              :label="b"
-              :value="b"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="!isBatchMode" label="需求文件路径">
-          <el-input
-            v-model="projectForm.taskPageUrl"
-            placeholder="需求对应的项目文件路径，如 src/views/login/index.vue"
-            clearable
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="projectDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveProjectSettings" :loading="saving"
-          >保存</el-button
-        >
-      </template>
-    </el-dialog>
+              <el-option
+                v-for="p in projectConfigs"
+                :key="p.id"
+                :label="p.name"
+                :value="p.name"
+              >
+                <span>{{ p.name }}</span>
+                <span style="float:right;color:#909399;font-size:12px">{{ p.localPath || '未配置路径' }}</span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="本地项目路径">
+            <el-input v-model="projectForm.projectPath" placeholder="例: F:/projects/my-project" clearable />
+          </el-form-item>
+          <el-form-item label="Git 分支">
+            <el-select v-model="projectForm.gitBranch" placeholder="选择或输入分支" clearable filterable allow-create style="width:100%">
+              <el-option v-for="b in selectedProjectBranches" :key="b" :label="b" :value="b" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="!isBatchMode" label="需求文件路径">
+            <el-input v-model="projectForm.taskPageUrl" placeholder="如 src/views/login/index.vue" clearable />
+          </el-form-item>
+          <el-form-item v-if="!isBatchMode" label="补充说明">
+            <el-input v-model="projectForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明..." resize="none" />
+          </el-form-item>
+        </el-form>
+
+        <div class="drawer-footer">
+          <el-button @click="drawerOpen = false">取消</el-button>
+          <el-button type="primary" @click="saveProjectSettings" :loading="saving">保存</el-button>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -401,8 +417,6 @@ import {
   RefreshRight,
   Download,
   ArrowDown,
-  List,
-  Grid,
   Setting,
   View,
   Promotion,
@@ -417,7 +431,6 @@ import type { ElTable } from 'element-plus';
 const router = useRouter();
 const taskStore = useTaskStore();
 
-const viewMode = ref<'table' | 'kanban'>('table');
 const currentPage = ref(1);
 const pageSize = ref(20);
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
@@ -430,8 +443,8 @@ const filters = reactive({
   module: '' as string
 });
 
-// Project settings dialog
-const projectDialogVisible = ref(false);
+// Right drawer
+const drawerOpen = ref(false);
 const saving = ref(false);
 const currentEditTask = ref<Task | null>(null);
 const isBatchMode = ref(false);
@@ -442,19 +455,11 @@ const selectedProjectBranches = ref<string[]>([]);
 const projectForm = reactive({
   projectPath: '',
   gitBranch: '',
-  taskPageUrl: ''
+  taskPageUrl: '',
+  customDescription: ''
 });
 
 const modules = ref<string[]>([]);
-
-const kanbanColumns = [
-  { key: 'pending', label: '待开发', color: '#909399' },
-  { key: 'in_progress', label: '开发中', color: '#e6a23c' },
-  { key: 'self_test', label: '自测完成', color: '#409eff' },
-  { key: 'submitted', label: '已提测', color: '#67c23a' },
-  { key: 'completed', label: '已完结', color: '#5dbf73' },
-  { key: 'rejected', label: '已驳回', color: '#f56c6c' }
-];
 
 async function loadData() {
   await taskStore.fetchTasks({
@@ -467,10 +472,6 @@ async function loadData() {
   });
   const set = new Set<string>(taskStore.tasks.map((t: Task) => t.module).filter(Boolean));
   modules.value = Array.from(set);
-}
-
-function getTasksByStatus(status: string) {
-  return taskStore.tasks.filter((t) => t.status === status);
 }
 
 function handleSelectionChange(rows: Task[]) {
@@ -603,12 +604,12 @@ async function openProjectSettings(task: Task) {
   projectForm.projectPath = task.projectPath || '';
   projectForm.gitBranch = task.gitBranch || '';
   projectForm.taskPageUrl = task.taskPageUrl || '';
+  projectForm.customDescription = task.customDescription || '';
   selectedProjectName.value = '';
   selectedProjectBranches.value = [];
 
   await loadProjectConfigs();
 
-  // Auto-select matching project config
   const projectName = task.project || task.customer || '';
   const match = projectConfigs.value.find(p => p.name === projectName);
   if (match) {
@@ -618,7 +619,7 @@ async function openProjectSettings(task: Task) {
     if (!projectForm.gitBranch && match.defaultBranch) projectForm.gitBranch = match.defaultBranch;
   }
 
-  projectDialogVisible.value = true;
+  drawerOpen.value = true;
 }
 
 async function handleBatchSettings() {
@@ -636,12 +637,12 @@ async function handleBatchSettings() {
   projectForm.projectPath = '';
   projectForm.gitBranch = '';
   projectForm.taskPageUrl = '';
+  projectForm.customDescription = '';
   selectedProjectName.value = '';
   selectedProjectBranches.value = [];
 
   await loadProjectConfigs();
 
-  // Auto-select matching project config
   const match = projectConfigs.value.find(p => p.name === projectName);
   if (match) {
     selectedProjectName.value = match.name;
@@ -650,16 +651,7 @@ async function handleBatchSettings() {
     if (match.defaultBranch) projectForm.gitBranch = match.defaultBranch;
   }
 
-  projectDialogVisible.value = true;
-}
-
-function resetProjectForm() {
-  projectForm.projectPath = '';
-  projectForm.gitBranch = '';
-  projectForm.taskPageUrl = '';
-  currentEditTask.value = null;
-  selectedProjectName.value = '';
-  selectedProjectBranches.value = [];
+  drawerOpen.value = true;
 }
 
 async function saveProjectSettings() {
@@ -669,6 +661,7 @@ async function saveProjectSettings() {
     if (projectForm.projectPath) payload.projectPath = projectForm.projectPath;
     if (projectForm.gitBranch) payload.gitBranch = projectForm.gitBranch;
     if (projectForm.taskPageUrl) payload.taskPageUrl = projectForm.taskPageUrl;
+    if (projectForm.customDescription) payload.customDescription = projectForm.customDescription;
 
     if (isBatchMode.value) {
       for (const task of selectedTasks.value) {
@@ -679,7 +672,7 @@ async function saveProjectSettings() {
       await taskStore.updateTask(currentEditTask.value.id, payload);
       ElMessage.success('配置已保存');
     }
-    projectDialogVisible.value = false;
+    drawerOpen.value = false;
   } catch {
     ElMessage.error('保存失败');
   } finally {
@@ -821,6 +814,25 @@ onMounted(() => {
   justify-content: space-between;
 }
 
+.view-switch {
+  display: flex; gap: 4px;
+  background: rgba(10,16,31,0.4); border: 1px solid rgba(0,229,255,0.12);
+  border-radius: 8px; padding: 3px; backdrop-filter: blur(8px);
+}
+
+.view-btn {
+  width: 32px; height: 28px; border: none; background: transparent;
+  border-radius: 6px; cursor: pointer; color: #8c8ca1; display: flex;
+  align-items: center; justify-content: center; transition: all 0.25s ease;
+  svg { width: 16px; height: 16px; }
+
+  &:hover { color: #00E5FF; background: rgba(0,229,255,0.08); }
+  &.active {
+    color: #00E5FF; background: rgba(0,229,255,0.15);
+    box-shadow: 0 0 8px rgba(0,229,255,0.2);
+  }
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
@@ -898,100 +910,76 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
-/* 看板视图 */
-.kanban-view {
-  display: flex;
-  gap: 16px;
-  overflow-x: auto;
-  padding-bottom: 16px;
+/* ===== Card View ===== */
+.card-view {
+  display: flex; flex-direction: column; gap: 8px;
+  position: relative; z-index: 1;
 }
 
-.kanban-column {
-  min-width: 280px;
-  max-width: 320px;
-  flex-shrink: 0;
-  background: rgba(10, 16, 31, 0.15);
-  border: 1px solid var(--cyber-glass-border);
-  border-radius: 8px;
-  overflow: hidden;
-  backdrop-filter: blur(12px);
+.cyber-card {
+  position: relative; display: flex; align-items: stretch;
+  background: rgba(10,16,31,0.15); border: 1px solid rgba(0,229,255,0.12);
+  border-radius: 10px; transition: all 0.3s ease; cursor: pointer; overflow: hidden;
+  backdrop-filter: blur(2px);
+  &:hover { border-color: rgba(0,229,255,0.35); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
+  &.in-todo { border-left: 3px solid #FF7D00; }
 }
 
-.kanban-header {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 3px solid;
-  background: transparent;
-  color: var(--cyber-text-primary);
-  font-weight: 600;
-  font-size: 14px;
+.card-glow {
+  position: absolute; top: 0; bottom: 0; left: 42px; width: 120px;
+  background: linear-gradient(90deg,
+    rgba(0,229,255,0.18) 0%,
+    rgba(0,229,255,0.06) 30%,
+    transparent 100%
+  );
+  pointer-events: none; z-index: 0;
+  animation: cardBeamSweep 3s ease-in-out infinite;
 }
 
-.kanban-body {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: calc(100vh - 340px);
-  overflow-y: auto;
+@keyframes cardBeamSweep {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.4; }
 }
 
-.kanban-card {
-  background: rgba(10, 16, 31, 0.15);
-  border: 1px solid var(--cyber-glass-border);
-  border-radius: 8px;
-  padding: 14px;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition:
-    box-shadow 0.2s,
-    transform 0.2s;
-  box-shadow: none;
-  border-left: 3px solid transparent;
-
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--cyber-glow-cyan);
-  }
-
-  &.in-todo {
-    border-left-color: #e6a23c;
-  }
+.card-rank {
+  display: flex; align-items: center; justify-content: center; width: 42px; flex-shrink: 0;
+  font-size: 15px; font-weight: 800;
+  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: #00E5FF;
+  border-right: 1px solid rgba(0,229,255,0.08);
 }
 
-.kanban-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+.card-body { flex: 1; padding: 12px 14px; min-width: 0; }
+
+.card-head {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  .card-id { color: #8c8ca1; font-size: 11px; margin-left: auto; }
 }
 
-.kanban-left {
-  display: flex;
-  gap: 4px;
+.card-title {
+  margin: 0; font-size: 14px; font-weight: 600; color: #e0e0ef; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-.kanban-id {
-  color: var(--cyber-text-secondary);
-  font-size: 12px;
+.card-meta {
+  display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: #8c8ca1;
+  .overdue { color: #f56c6c; font-weight: 600; }
 }
 
-.kanban-card-title {
-  font-size: 14px;
-  color: var(--cyber-text-primary);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.card-desc-preview {
+  margin-top: 8px; padding: 5px 10px; border-radius: 6px;
+  background: rgba(0,229,255,0.06); border: 1px solid rgba(0,229,255,0.08);
+  display: flex; align-items: flex-start; gap: 6px;
+}
+.desc-label { font-size: 10px; color: #00E5FF; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+.desc-text {
+  flex: 1; font-size: 11px; color: #cfd3dc; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-.kanban-card-footer {
-  margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
+.card-ops {
+  display: flex; align-items: center; gap: 2px; padding: 0 12px;
+  border-left: 1px solid rgba(0,229,255,0.06);
 }
 
 .ops {
@@ -1040,16 +1028,6 @@ onMounted(() => {
   }
 }
 
-.kanban-deadline {
-  font-size: 12px;
-  color: var(--cyber-text-secondary);
-
-  &.overdue {
-    color: #f56c6c;
-    font-weight: 600;
-  }
-}
-
 .batch-info {
   margin-bottom: 16px;
 }
@@ -1064,4 +1042,34 @@ onMounted(() => {
   border: 1px solid var(--cyber-glass-border);
   border-radius: 6px;
 }
+
+// ===== Right Drawer =====
+.drawer-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; backdrop-filter: blur(2px);
+}
+.task-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 420px; z-index: 100;
+  background: rgba(10,16,31,0.92); border-left: 1px solid rgba(0,229,255,0.2);
+  backdrop-filter: blur(20px); padding: 24px; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.drawer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.drawer-title-area { display: flex; align-items: center; gap: 8px; }
+.drawer-batch-name { color: #e0e0ef; font-size: 13px; font-weight: 600; }
+.drawer-id { color: #8c8ca1; font-size: 12px; }
+.drawer-close { font-size: 18px; color: #8c8ca1; &:hover { color: #00E5FF; } }
+.drawer-task-title { margin: 0 0 20px; font-size: 16px; font-weight: 600; color: #e0e0ef; line-height: 1.4; }
+.drawer-form { flex: 1; }
+.drawer-field { font-size: 13px; color: #cfd3dc; padding: 6px 0; line-height: 1.5; }
+.drawer-footer {
+  padding-top: 16px; border-top: 1px solid rgba(0,229,255,0.1);
+  display: flex; justify-content: flex-end; gap: 10px;
+}
+
+.drawer-slide-enter-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.drawer-slide-leave-active { transition: transform 0.2s ease-in; }
+.drawer-slide-enter-from { transform: translateX(100%); }
+.drawer-slide-leave-to { transform: translateX(100%); }
+.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.25s ease; }
+.fade-mask-enter-from, .fade-mask-leave-to { opacity: 0; }
 </style>

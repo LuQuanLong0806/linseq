@@ -19,6 +19,14 @@ export const useTaskStore = defineStore('task', () => {
     todoList.value = JSON.parse(localStorage.getItem('linesequence-todo-list') || '[]')
   } catch { /* ignore parse error */ }
 
+  // View mode persistence
+  const savedMode = localStorage.getItem('linesequence-view-mode')
+  const viewMode = ref<'table' | 'card'>(savedMode === 'card' ? 'card' : 'table')
+  function setViewMode(mode: 'table' | 'card') {
+    viewMode.value = mode
+    localStorage.setItem('linesequence-view-mode', mode)
+  }
+
   // 任务分组
   const groups = ref<TaskGroup[]>([])
 
@@ -225,5 +233,7 @@ export const useTaskStore = defineStore('task', () => {
     createGroup,
     updateGroup,
     deleteGroup,
+    viewMode,
+    setViewMode,
   }
 })
