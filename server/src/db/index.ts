@@ -127,6 +127,7 @@ export function initDatabase(): void {
     ['summary', "TEXT DEFAULT ''"],
     ['screenshots', "TEXT DEFAULT '[]'"],
     ['report_text', "TEXT DEFAULT ''"],
+    ['report_path', "TEXT DEFAULT ''"],
   ]
   for (const [col, type] of versionColumns) {
     try { db.exec(`ALTER TABLE task_versions ADD COLUMN ${col} ${type}`) } catch { /* 已存在 */ }

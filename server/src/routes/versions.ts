@@ -3,6 +3,8 @@
  */
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import fs from 'fs'
+import path from 'path'
 import { getDb } from '../db/index.js'
 
 const router = Router()
@@ -27,6 +29,7 @@ interface TaskVersion {
   summary: string
   screenshots: string[]
   reportText: string
+  reportPath: string
 }
 
 function mapRow(r: Record<string, unknown>): TaskVersion {
@@ -50,6 +53,7 @@ function mapRow(r: Record<string, unknown>): TaskVersion {
     summary: (r.summary as string) || '',
     screenshots: JSON.parse((r.screenshots as string) || '[]'),
     reportText: (r.report_text as string) || '',
+    reportPath: (r.report_path as string) || '',
   }
 }
 
@@ -151,6 +155,23 @@ router.post('/:id/reject', (req, res) => {
 
     const result = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown>
     res.json({ code: 0, message: 'success', data: mapRow(result) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 下载版本的自测报告（Word 文件）— 必须在 /:id 之前注册
+router.get('/:id/report', (req, res) => {
+  try {
+    const db = getDb()
+    const row = db.prepare('SELECT report_path FROM task_versions WHERE id = ?').get(req.params.id) as { report_path: string } | undefined
+    if (!row || !row.report_path) {
+      return res.status(404).json({ code: 404, message: '报告文件不存在', data: null })
+    }
+    if (!fs.existsSync(row.report_path)) {
+      return res.status(404).json({ code: 404, message: '报告文件已丢失', data: null })
+    }
+    res.download(row.report_path, path.basename(row.report_path))
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }

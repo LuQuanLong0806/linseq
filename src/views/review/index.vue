@@ -45,6 +45,12 @@
 
           <!-- 自测报告区域 -->
           <div v-if="versionMap[task.id]" class="card-report">
+            <!-- Word 报告下载 -->
+            <div v-if="versionMap[task.id].reportPath" class="card-report-download" style="margin-bottom:10px;">
+              <el-button type="primary" link size="small" @click="downloadReport(versionMap[task.id].id)">
+                下载自测报告 (Word)
+              </el-button>
+            </div>
             <!-- 截图画廊 -->
             <div v-if="versionMap[task.id].screenshots.length" class="card-screenshots">
               <span class="report-label">页面截图</span>
@@ -309,6 +315,10 @@ onUnmounted(() => {
 
 function goDetail(task: Task) {
   router.push(`/tasks/${task.id}`)
+}
+
+function downloadReport(versionId: string) {
+  window.open(`/api/versions/${versionId}/report`, '_blank')
 }
 
 function getPriorityType(p: string) {

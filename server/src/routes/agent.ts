@@ -350,6 +350,10 @@ router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, r
       reportText: reportText || summary,
       screenshots: (req.files as Express.Multer.File[] || []),
       filesChanged,
+    }).then(reportPath => {
+      if (reportPath) {
+        db.prepare('UPDATE task_versions SET report_path = ? WHERE id = ?').run(reportPath, versionId)
+      }
     }).catch(err => console.error('[Report] 生成自测报告失败:', err))
 
     res.json({
@@ -525,7 +529,7 @@ interface ReportParams {
   filesChanged: { path: string; action: string }[]
 }
 
-async function generateDocxReport(params: ReportParams): Promise<void> {
+async function generateDocxReport(params: ReportParams): Promise<string | null> {
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, HeadingLevel, AlignmentType } = await import('docx')
   const db = getDb()
 
@@ -636,6 +640,7 @@ async function generateDocxReport(params: ReportParams): Promise<void> {
   const buffer = await Packer.toBuffer(doc)
   fs.writeFileSync(filePath, buffer)
   console.log(`[Report] 自测报告已生成: ${filePath}`)
+  return filePath
 }
 
 export default router

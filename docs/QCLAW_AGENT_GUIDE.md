@@ -65,6 +65,7 @@ BASE_URL = http://localhost:3201/api/agent
 3. **保持一致** — 遵循目标项目已有的代码风格、命名规范、目录结构
 4. **自测通过** — 提交前必须运行目标项目的测试和类型检查，确保不引入编译错误
 5. **日志详实** — 每个关键步骤都通过 `/task/:id/log` 上报，便于人工审核追溯
+6. **逐任务独立完成** — 每个任务必须独立走完 `start → 开发 → complete` 全流程。**严禁**在一次 complete 中合并提交多个任务的产出。即使同组任务有依赖关系，也必须逐个 start、逐个 complete，不得跳过或合并
 
 ### 遇到以下情况应提交疑问并继续下一个任务
 
@@ -173,8 +174,10 @@ BASE_URL = http://localhost:3201/api/agent
 ### 4. POST /api/agent/task/:id/complete
 
 开发完成，提交产出物。支持两种请求格式：
-- **JSON**（无截图时）：`Content-Type: application/json`
-- **Multipart**（有截图时）：`Content-Type: multipart/form-data`
+- **JSON**（无截图时，仅后端纯逻辑任务可用）：`Content-Type: application/json`
+- **Multipart**（有截图时，前端/全栈任务**必须**使用）：`Content-Type: multipart/form-data`
+
+> **截图强制要求**：涉及前端页面、UI 交互、视觉变更的任务，**必须**提供至少 1 张页面截图，否则视为自测未完成。纯后端逻辑任务（无 UI 变更）可免截图。
 
 系统会自动：
 - 创建版本记录（自动递增版本号）
@@ -227,7 +230,7 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
 - `filesChanged`（建议填写）：结构化文件变更列表，`action` 可选值 `created`/`modified`/`deleted`
 - `testResult`（建议填写）：自测结果摘要
 - `reportText`（建议填写）：自测说明文字，将写入 Word 自测报告。内容应去除 AI 痕迹，以人工测试口吻描述
-- `screenshots`（建议提供）：页面截图文件，支持 png/jpg/jpeg/gif/bmp，单张最大 10MB
+- `screenshots`（**前端任务必填，后端任务可选**）：页面截图文件，支持 png/jpg/jpeg/gif/bmp，单张最大 10MB。前端/全栈任务至少提供 1 张功能页面截图
 
 **响应：**
 
@@ -371,7 +374,39 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
    ```
 5. **不做 `git push`**
 
-### 8.4 返工场景
+### 8.4 截图与自测验证（前端/全栈任务强制）
+
+涉及前端页面变更的任务，**必须**在提交前完成以下步骤：
+
+1. **启动开发服务器**
+   ```bash
+   # 在目标项目目录下启动 dev server
+   npm run dev
+   # 或 pnpm dev / yarn dev，根据项目 package.json 的 scripts 确定
+   ```
+   等待编译完成，确认终端无报错，服务正常运行在本地端口（通常为 localhost:5173 / 3000 等）。
+
+2. **访问相关页面截图**
+   - 使用浏览器访问开发服务器地址
+   - 导航到本次任务涉及的路由/页面
+   - 截取功能页面的完整截图（确保页面渲染正常、无白屏/报错）
+   - 如有多个页面/状态（如列表页 + 详情页、空状态 + 有数据状态），每个关键状态各截 1 张
+
+3. **截图要求**
+   - 至少 **1 张** 功能页面截图（纯后端任务除外）
+   - 截图应清晰展示功能实现效果，包含页面主体内容
+   - 截图文件名不限制，格式支持 png/jpg/jpeg/gif/bmp
+   - 截图通过 `screenshots` 字段随 complete 接口上传
+
+4. **reportText 自测说明**
+   - 以人工测试口吻描述功能验证过程，去除 AI 痕迹
+   - **必须包含涉及的页面地址/路由**：新增或修改的页面完整 URL（如 `http://localhost:5173/tasks` 或 `/tasks`）
+   - 包含：页面地址 + 操作步骤 + 预期结果 + 实际结果（应与截图内容对应）
+   - 示例：`"页面地址：http://localhost:5173/tasks\n进入任务列表页面，点击新增按钮弹出表单，填写标题和描述后提交，列表刷新显示新增记录，验证通过"`
+
+5. **完成自测后关闭开发服务器**（释放端口资源）
+
+### 8.5 返工场景
 
 当 `isRework=true` 时：
 1. 阅读 `review.prevComment` 了解审核意见

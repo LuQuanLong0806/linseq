@@ -160,6 +160,9 @@
               <div class="version-detail-header">
                 <span>{{ selectedVersion.versionNumber }}</span>
                 <span v-if="selectedVersion.prevReviewComment" class="version-review-tag">基于上轮审核意见整改</span>
+                <el-button v-if="selectedVersion.reportPath" type="primary" link size="small" @click="downloadReport(selectedVersion)">
+                  下载自测报告
+                </el-button>
               </div>
               <div v-if="selectedVersion.prevReviewComment" class="version-section">
                 <div class="version-section-label">上轮审核意见</div>
@@ -169,6 +172,11 @@
                 <div class="version-section-label">AI 开发产出</div>
                 <pre class="version-code">{{ selectedVersion.aiOutput || '无产出记录' }}</pre>
               </div>
+              <!-- 摘要 -->
+              <div class="version-section">
+                <div class="version-section-label">完成摘要</div>
+                <div class="version-section-content">{{ selectedVersion.summary || '无摘要' }}</div>
+              </div>
               <div v-if="selectedVersion.gitCommitId" class="version-section">
                 <div class="version-section-label">Git 信息</div>
                 <div class="version-git">
@@ -176,35 +184,38 @@
                   <span>Commit: {{ selectedVersion.gitCommitId }}</span>
                 </div>
               </div>
-              <!-- 自测报告 -->
-              <div v-if="selectedVersion.reportText" class="version-section">
+              <!-- 自测说明 -->
+              <div class="version-section">
                 <div class="version-section-label">自测说明</div>
-                <div class="version-section-content">{{ selectedVersion.reportText }}</div>
+                <div v-if="selectedVersion.reportText" class="version-section-content report-text">{{ selectedVersion.reportText }}</div>
+                <div v-else class="version-section-content empty-hint">暂无自测说明</div>
               </div>
               <!-- 变更文件 -->
-              <div v-if="selectedVersion.filesChanged && selectedVersion.filesChanged.length" class="version-section">
-                <div class="version-section-label">变更文件 ({{ selectedVersion.filesChanged.length }})</div>
-                <div class="version-files">
+              <div class="version-section">
+                <div class="version-section-label">变更文件{{ selectedVersion.filesChanged?.length ? ` (${selectedVersion.filesChanged.length})` : '' }}</div>
+                <div v-if="selectedVersion.filesChanged?.length" class="version-files">
                   <div v-for="f in selectedVersion.filesChanged" :key="f.path" class="version-file-item">
                     <el-tag size="small" :type="f.action === 'created' ? 'success' : 'warning'">{{ f.action }}</el-tag>
                     <span>{{ f.path }}</span>
                   </div>
                 </div>
+                <div v-else class="version-section-content empty-hint">暂无变更记录</div>
               </div>
               <!-- 测试结果 -->
-              <div v-if="selectedVersion.testResult && selectedVersion.testResult.passed !== undefined" class="version-section">
+              <div class="version-section">
                 <div class="version-section-label">测试结果</div>
-                <div class="version-test">
+                <div v-if="selectedVersion.testResult && selectedVersion.testResult.passed !== undefined" class="version-test">
                   <el-tag :type="selectedVersion.testResult.passed ? 'success' : 'danger'" size="small">
                     {{ selectedVersion.testResult.passed ? '通过' : '未通过' }}
                   </el-tag>
                   <span v-if="selectedVersion.testResult.details">{{ selectedVersion.testResult.details }}</span>
                 </div>
+                <div v-else class="version-section-content empty-hint">暂无测试结果</div>
               </div>
               <!-- 页面截图 -->
-              <div v-if="selectedVersion.screenshots && selectedVersion.screenshots.length" class="version-section">
+              <div class="version-section">
                 <div class="version-section-label">页面截图</div>
-                <div class="version-screenshots">
+                <div v-if="selectedVersion.screenshots?.length" class="version-screenshots">
                   <el-image
                     v-for="(shot, idx) in selectedVersion.screenshots"
                     :key="shot"
@@ -216,6 +227,7 @@
                     preview-teleported
                   />
                 </div>
+                <div v-else class="version-section-content empty-hint">暂无截图</div>
               </div>
             </div>
           </div>
@@ -495,6 +507,10 @@ const selectedVersion = ref<TaskVersion | null>(null)
 const showDiffDialog = ref(false)
 const diffFromIdx = ref(-1)
 const diffToIdx = ref(-1)
+
+function downloadReport(ver: TaskVersion) {
+  window.open(`/api/versions/${ver.id}/report`, '_blank')
+}
 
 async function loadVersions() {
   if (!task.value) return
@@ -830,6 +846,8 @@ onMounted(() => {
 .version-section { margin-bottom: 12px; }
 .version-section-label { font-size: 12px; color: var(--cyber-text-secondary); margin-bottom: 4px; }
 .version-section-content { font-size: 13px; color: var(--cyber-text-secondary); }
+.empty-hint { color: #606266; font-style: italic; font-size: 12px; }
+.report-text { white-space: pre-wrap; line-height: 1.6; }
 .review-comment { color: #e6a23c; font-style: italic; }
 .version-code {
   background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px;

@@ -338,7 +338,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { agentApi } from '@/api/agent'
 import { projectApi, type ProjectConfig } from '@/api/project'
@@ -567,8 +567,33 @@ function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', 
 
 onMounted(async () => {
   await Promise.all([taskStore.fetchTasks(), taskStore.fetchGroups()])
+  // Sync todoList from backend (Agent may have completed/removed tasks)
+  syncTodoFromBackend()
+  // Auto-refresh every 15s to pick up Agent status changes
+  pollTimer = setInterval(async () => {
+    await taskStore.fetchTasks()
+    syncTodoFromBackend()
+  }, 15000)
   await nextTick()
 })
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+async function syncTodoFromBackend() {
+  try {
+    const res = await agentApi.getTodoOrder()
+    const backendList: string[] = res.data?.todoList || []
+    // If backend list differs from local, sync
+    if (JSON.stringify(backendList) !== JSON.stringify(taskStore.todoList)) {
+      taskStore.todoList.splice(0, taskStore.todoList.length, ...backendList)
+      localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
+    }
+  } catch { /* ignore */ }
+}
 </script>
 
 <style lang="scss" scoped>

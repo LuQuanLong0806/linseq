@@ -225,4 +225,5 @@ export interface TaskVersion {
   summary: string
   screenshots: string[]
   reportText: string
+  reportPath: string
 }
