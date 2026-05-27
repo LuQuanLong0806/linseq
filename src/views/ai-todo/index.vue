@@ -15,10 +15,12 @@
           <span class="stat-label">开发中</span>
         </div>
         <div class="stat-divider"></div>
+        <!-- 分组功能暂时隐藏
         <div class="stat-item">
           <span class="stat-num">{{ taskStore.groups.length }}</span>
           <span class="stat-label">分组</span>
         </div>
+        -->
       </div>
 
       <div class="page-header">
@@ -29,7 +31,8 @@
           <p class="page-desc">QClaw 自动执行引擎 · 双队列调度</p>
           <div class="header-actions">
             <el-button type="success" size="small" @click="openPublishDialog">发布任务</el-button>
-            <el-button v-if="ungroupedTodoTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">+ 新建分组</el-button>
+            <!-- 分组功能暂时隐藏 -->
+            <!-- <el-button v-if="ungroupedTodoTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">+ 新建分组</el-button> -->
           </div>
         </div>
       </div>
@@ -52,7 +55,8 @@
             <p>队列为空</p>
           </div>
 
-          <!-- 分组卡片 -->
+          <!-- 分组功能暂时隐藏 -->
+          <!--
           <div v-for="group in taskStore.groups" :key="group.id" class="group-card">
             <div class="group-header" @click="toggleGroup(group.id)">
               <div class="group-left">
@@ -82,10 +86,11 @@
               </div>
             </Transition>
           </div>
+          -->
 
-          <!-- 未分组待办任务 -->
-          <TransitionGroup v-if="ungroupedTodoTasks.length > 0" name="card" tag="div" class="card-list">
-            <div v-for="(task, index) in ungroupedTodoTasks" :key="task.id"
+          <!-- 待办任务列表 -->
+          <TransitionGroup v-if="todoQueueTasks.length > 0" name="card" tag="div" class="card-list">
+            <div v-for="(task, index) in todoQueueTasks" :key="task.id"
               class="todo-card"
               :class="{ dragging: dragFrom?.type === 'ungrouped' && dragFrom?.index === index }"
               draggable="true"
@@ -169,7 +174,8 @@
         </div>
       </div>
 
-      <!-- 弹窗部分（分组、配置、发布 - 保持原有逻辑） -->
+      <!-- 弹窗部分 -->
+      <!-- 分组弹窗暂时隐藏
       <el-dialog v-model="showGroupDialog" title="新建分组" width="420px" :close-on-click-modal="false">
         <el-form label-width="80px">
           <el-form-item label="分组名称">
@@ -200,6 +206,7 @@
           <el-button type="primary" @click="handleSaveGroupEdit">保存</el-button>
         </template>
       </el-dialog>
+      -->
 
       <el-dialog v-model="showPublishDialog" title="发布任务到 AI 待办" width="620px" :close-on-click-modal="false" destroy-on-close>
         <el-radio-group v-model="publishMode" style="margin-bottom:16px">
@@ -466,7 +473,7 @@ function getPriorityType(p: string) { return ({ urgent: 'danger', high: 'warning
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
 
 onMounted(async () => {
-  await taskStore.fetchGroups()
+  await Promise.all([taskStore.fetchTasks(), taskStore.fetchGroups()])
   await nextTick()
 })
 </script>

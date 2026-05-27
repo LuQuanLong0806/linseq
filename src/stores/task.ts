@@ -83,7 +83,7 @@ export const useTaskStore = defineStore('task', () => {
   async function fetchTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: string; priority?: string; module?: string; projectPath?: string }) {
     loading.value = true
     try {
-      const res = await taskApi.getTasks(params)
+      const res = await taskApi.getTasks({ pageSize: 9999, ...params })
       tasks.value = res.data.list
       totalTasks.value = res.data.total
     } finally {

@@ -461,9 +461,9 @@ router.post('/sync', async (_req, res) => {
     }
 
     // 同步后自动关联项目配置
-    const configs = db.prepare('SELECT name, local_path, default_branch FROM project_configs WHERE local_path != ""').all() as { name: string; local_path: string; default_branch: string }[]
+    const configs = db.prepare("SELECT name, local_path, default_branch FROM project_configs WHERE local_path != ''").all() as { name: string; local_path: string; default_branch: string }[]
     if (configs.length > 0) {
-      const updateStmt = db.prepare('UPDATE tasks SET project_path = ?, git_branch = ? WHERE project = ? AND (project_path = "" OR project_path IS NULL)')
+      const updateStmt = db.prepare("UPDATE tasks SET project_path = ?, git_branch = ? WHERE project = ? AND (project_path = '' OR project_path IS NULL)")
       for (const cfg of configs) {
         updateStmt.run(cfg.local_path, cfg.default_branch, cfg.name)
       }

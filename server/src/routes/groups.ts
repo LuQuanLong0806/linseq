@@ -78,7 +78,7 @@ router.put('/:id', (req, res) => {
 
     if (taskIds !== undefined) {
       // 清除旧任务的 group_id
-      const clearStmt = db.prepare('UPDATE tasks SET group_id = "" WHERE id = ?')
+      const clearStmt = db.prepare("UPDATE tasks SET group_id = '' WHERE id = ?")
       for (const tid of oldIds) {
         clearStmt.run(tid)
       }
@@ -113,7 +113,7 @@ router.delete('/:id', (req, res) => {
     const old = db.prepare('SELECT task_ids FROM task_groups WHERE id = ?').get(req.params.id) as { task_ids: string } | undefined
     if (old) {
       const oldIds: string[] = JSON.parse(old.task_ids || '[]')
-      const clearStmt = db.prepare('UPDATE tasks SET group_id = "" WHERE id = ?')
+      const clearStmt = db.prepare("UPDATE tasks SET group_id = '' WHERE id = ?")
       for (const tid of oldIds) {
         clearStmt.run(tid)
       }

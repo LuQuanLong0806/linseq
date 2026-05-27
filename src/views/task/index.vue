@@ -255,12 +255,14 @@
       <!-- 分页 -->
       <div class="pagination-area">
         <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
+          :current-page="currentPage"
+          :page-size="pageSize"
           :total="taskStore.totalTasks"
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
         />
       </div>
     </div>
@@ -775,7 +777,16 @@ function formatDate(date: string): string {
   return dayjs(date).format('MM-DD HH:mm');
 }
 
-watch([currentPage, pageSize], () => { loadData(); });
+function handleSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadData()
+}
+
+function handlePageChange(page: number) {
+  currentPage.value = page
+  loadData()
+}
 
 onMounted(() => {
   loadData();

@@ -153,6 +153,14 @@ html, body, #app {
   pointer-events: none !important;
 }
 
+// Interactive poppers must remain clickable (select, cascader, date-picker, etc.)
+.el-select-dropdown,
+.el-cascader-dropdown,
+.el-picker-panel,
+.el-autocomplete-suggestion {
+  pointer-events: auto !important;
+}
+
 .el-popper.is-dark,
 .el-tooltip__popper.is-dark {
   background: rgba(10, 16, 31, 0.95) !important;
