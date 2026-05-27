@@ -3,10 +3,10 @@
     <el-row :gutter="20">
       <!-- 同步配置 -->
       <el-col :span="12">
-        <el-card shadow="hover" class="config-card">
-          <template #header>
+        <div class="cyber-panel config-card">
+          <div class="panel-header">
             <span class="card-title">🔗 内网同步配置</span>
-          </template>
+          </div>
           <el-form :model="syncStore.config" label-width="100px" label-position="top">
             <el-form-item label="内网地址">
               <el-input v-model="syncStore.config.intranetUrl" placeholder="https://intranet.company.com" />
@@ -21,13 +21,13 @@
               <el-button type="primary" @click="handleSaveConfig">保存配置</el-button>
             </el-form-item>
           </el-form>
-        </el-card>
+        </div>
 
         <!-- 登录状态 -->
-        <el-card shadow="hover" class="config-card" style="margin-top: 20px;">
-          <template #header>
+        <div class="cyber-panel config-card" style="margin-top: 20px;">
+          <div class="panel-header">
             <span class="card-title">🔐 登录状态</span>
-          </template>
+          </div>
           <div class="login-status">
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item label="登录状态">
@@ -47,15 +47,15 @@
               <el-button @click="checkLogin">检查登录状态</el-button>
             </div>
           </div>
-        </el-card>
+        </div>
       </el-col>
 
       <!-- 同步操作 & 记录 -->
       <el-col :span="12">
-        <el-card shadow="hover" class="sync-action-card">
-          <template #header>
+        <div class="cyber-panel sync-action-card">
+          <div class="panel-header">
             <span class="card-title">🔄 同步操作</span>
-          </template>
+          </div>
           <div class="sync-area">
             <el-button
               type="primary"
@@ -69,12 +69,12 @@
             </el-button>
             <p class="sync-hint">将从内网系统抓取最新任务数据，自动去重更新</p>
           </div>
-        </el-card>
+        </div>
 
-        <el-card shadow="hover" class="config-card" style="margin-top: 20px;">
-          <template #header>
+        <div class="cyber-panel config-card" style="margin-top: 20px;">
+          <div class="panel-header">
             <span class="card-title">📋 同步记录</span>
-          </template>
+          </div>
           <el-timeline v-if="syncStore.syncRecords.length">
             <el-timeline-item
               v-for="record in syncStore.syncRecords"
@@ -97,7 +97,7 @@
             </el-timeline-item>
           </el-timeline>
           <div v-else class="empty-records">暂无同步记录</div>
-        </el-card>
+        </div>
       </el-col>
     </el-row>
 
@@ -195,8 +195,10 @@ onMounted(() => {
 }
 
 .config-card, .sync-action-card {
-  :deep .el-card__header {
+  .panel-header {
     padding: 14px 20px;
+    border-bottom: 1px solid rgba(0,229,255,0.08);
+    margin-bottom: 16px;
   }
 
   .card-title {
@@ -214,11 +216,13 @@ onMounted(() => {
     height: 50px;
     font-size: 16px;
     border-radius: 12px;
+    background: linear-gradient(135deg, #00E5FF, #9D5CFF);
+    border: none;
   }
 
   .sync-hint {
     margin-top: 12px;
-    color: #909399;
+    color: var(--cyber-text-secondary);
     font-size: 13px;
   }
 }
@@ -235,11 +239,11 @@ onMounted(() => {
     display: flex;
     gap: 16px;
     font-size: 13px;
-    color: #606266;
+    color: var(--cyber-text-secondary);
 
-    .new { color: #67c23a; }
-    .updated { color: #e6a23c; }
-    .unchanged { color: #909399; }
+    .new { color: #00E5FF; }
+    .updated { color: #FF7D00; }
+    .unchanged { color: var(--cyber-text-secondary); }
   }
 
   .record-errors {

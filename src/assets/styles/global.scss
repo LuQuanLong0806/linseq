@@ -1,4 +1,55 @@
-/* LineSequence 全局样式 */
+/* ============================================
+   LineSequence — Cyberpunk Dark Theme
+   ============================================ */
+
+// --- CSS Variables ---
+:root {
+  // Cyberpunk palette
+  --cyber-bg: #0A101F;
+  --cyber-bg-secondary: #0d1528;
+  --cyber-cyan: #00E5FF;
+  --cyber-purple: #9D5CFF;
+  --cyber-orange: #FF7D00;
+  --cyber-silver: #E8F0FF;
+
+  // Glass material — ultra-transparent for cosmic background
+  --cyber-glass-bg: rgba(10, 16, 31, 0.15);
+  --cyber-glass-bg-strong: rgba(10, 16, 31, 0.75);
+  --cyber-glass-border: rgba(0, 229, 255, 0.12);
+  --cyber-glass-border-hover: rgba(0, 229, 255, 0.35);
+
+  // Text
+  --cyber-text-primary: #E8F0FF;
+  --cyber-text-secondary: #8c8ca1;
+  --cyber-text-muted: #5a5a72;
+
+  // Glow effects
+  --cyber-glow-cyan: 0 0 20px rgba(0, 229, 255, 0.15);
+  --cyber-glow-purple: 0 0 20px rgba(157, 92, 255, 0.15);
+  --cyber-glow-orange: 0 0 20px rgba(255, 125, 0, 0.15);
+
+  // Override Element Plus
+  --el-color-primary: #00E5FF;
+  --el-color-primary-light-3: rgba(0, 229, 255, 0.6);
+  --el-color-primary-light-5: rgba(0, 229, 255, 0.4);
+  --el-color-primary-light-7: rgba(0, 229, 255, 0.2);
+  --el-color-primary-light-9: rgba(0, 229, 255, 0.08);
+  --el-color-primary-dark-2: #00b8cc;
+  --el-bg-color: #0A101F;
+  --el-bg-color-page: #0A101F;
+  --el-bg-color-overlay: rgba(10, 16, 31, 0.85);
+  --el-border-color: rgba(0, 229, 255, 0.1);
+  --el-border-color-light: rgba(0, 229, 255, 0.06);
+  --el-border-color-lighter: rgba(0, 229, 255, 0.04);
+  --el-text-color-primary: #E8F0FF;
+  --el-text-color-regular: #cfd3dc;
+  --el-text-color-secondary: #8c8ca1;
+  --el-text-color-placeholder: #5a5a72;
+  --el-fill-color-blank: rgba(10, 16, 31, 0.15);
+  --el-mask-color: rgba(0, 0, 0, 0.7);
+}
+
+// --- Global Reset ---
 * {
   margin: 0;
   padding: 0;
@@ -8,51 +59,270 @@
 html, body, #app {
   width: 100%;
   height: 100%;
+  background: var(--cyber-bg);
+  color: var(--cyber-text-primary);
   font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 滚动条美化 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+// --- Scrollbar ---
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
+  background: rgba(0, 229, 255, 0.2);
   border-radius: 3px;
+  &:hover { background: rgba(0, 229, 255, 0.35); }
+}
+
+// --- Element Plus Dark Overrides ---
+
+.el-card {
+  background: var(--cyber-glass-bg) !important;
+  border: 1px solid var(--cyber-glass-border) !important;
+  backdrop-filter: blur(2px);
+  color: var(--cyber-text-primary);
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
   &:hover {
-    background: #909399;
+    border-color: var(--cyber-glass-border-hover) !important;
+    box-shadow: var(--cyber-glow-cyan) !important;
+  }
+  .el-card__header { border-bottom: 1px solid var(--cyber-glass-border); }
+}
+
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(0, 229, 255, 0.04);
+  --el-table-row-hover-bg-color: rgba(0, 229, 255, 0.06);
+  --el-table-border-color: rgba(0, 229, 255, 0.06);
+  --el-table-text-color: var(--cyber-text-primary);
+  --el-table-header-text-color: var(--cyber-text-secondary);
+  color: var(--cyber-text-primary);
+
+  // Force all internal layers transparent
+  &,
+  .el-table__inner-wrapper,
+  .el-table__body-wrapper,
+  .el-table__header-wrapper,
+  .el-table__footer-wrapper,
+  .el-table__body tr,
+  .el-table__header tr {
+    background-color: transparent !important;
+  }
+  // Empty state
+  .el-table__empty-block {
+    background-color: transparent !important;
+  }
+
+  // Table action buttons — bright cyan by default
+  .el-button--primary.is-link, .el-button--primary.is-text {
+    color: #00E5FF;
+    &:hover { color: #00E5FF; text-shadow: 0 0 6px rgba(0,229,255,0.4); }
+  }
+  .el-button--success.is-link, .el-button--success.is-text {
+    color: #00E5FF;
+    &:hover { color: #00E5FF; }
+  }
+  .el-button--danger.is-link, .el-button--danger.is-text {
+    color: #FF7D00;
+    &:hover { color: #FF7D00; }
+  }
+  .el-button--warning.is-link, .el-button--warning.is-text {
+    color: #9D5CFF;
+    &:hover { color: #9D5CFF; }
+  }
+
+  // Fixed columns (操作列) — must be opaque to prevent content bleed-through
+  .el-table-fixed-column--left,
+  .el-table-fixed-column--right {
+    background: rgba(10, 16, 31, 0.85) !important;
+    backdrop-filter: blur(8px);
   }
 }
 
-/* Element Plus 全局覆盖 */
-.el-card {
-  border-radius: 12px !important;
-  border: none !important;
+// Tooltip / Popover / Dropdown — global dark overrides (these teleport to body)
+.el-popper.is-dark,
+.el-tooltip__popper.is-dark {
+  background: rgba(10, 16, 31, 0.92) !important;
+  border: 1px solid rgba(0, 229, 255, 0.15) !important;
+  color: var(--cyber-text-primary) !important;
+  .el-popper__arrow::before {
+    background: rgba(10, 16, 31, 0.92) !important;
+    border: 1px solid rgba(0, 229, 255, 0.15) !important;
+  }
+}
+.el-popper.is-light,
+.el-tooltip__popper.is-light {
+  background: rgba(10, 16, 31, 0.92) !important;
+  border: 1px solid rgba(0, 229, 255, 0.15) !important;
+  color: var(--cyber-text-primary) !important;
+  .el-popper__arrow::before {
+    background: rgba(10, 16, 31, 0.92) !important;
+    border-color: rgba(0, 229, 255, 0.15) !important;
+  }
+}
+.el-dropdown__popper {
+  background: rgba(10, 16, 31, 0.92) !important;
+  border: 1px solid rgba(0, 229, 255, 0.15) !important;
+}
+.el-dropdown-menu {
+  background: transparent !important;
+  .el-dropdown-menu__item {
+    color: var(--cyber-text-primary);
+    &:hover { background: rgba(0, 229, 255, 0.08); color: var(--cyber-cyan); }
+  }
 }
 
-.el-table th.el-table__cell {
-  background-color: #f5f7fa !important;
-  color: #606266;
-  font-weight: 600;
+.el-dialog {
+  background: var(--cyber-glass-bg-strong) !important;
+  border: 1px solid var(--cyber-glass-border);
+  backdrop-filter: blur(20px);
+  border-radius: 16px !important;
+  .el-dialog__title { color: var(--cyber-text-primary); }
+  .el-dialog__body { color: var(--cyber-text-primary); }
+  .el-dialog__header { border-bottom: 1px solid var(--cyber-glass-border); }
+}
+
+.el-drawer {
+  background: var(--cyber-glass-bg-strong) !important;
+  border-left: 1px solid var(--cyber-glass-border);
+}
+
+.el-input__wrapper {
+  background: rgba(10, 16, 31, 0.3) !important;
+  border-color: var(--cyber-glass-border) !important;
+  box-shadow: none !important;
+  &:hover { border-color: var(--cyber-glass-border-hover) !important; }
+  &.is-focus { border-color: var(--cyber-cyan) !important; box-shadow: var(--cyber-glow-cyan) !important; }
+}
+
+.el-textarea__inner {
+  background: rgba(10, 16, 31, 0.3) !important;
+  border-color: var(--cyber-glass-border) !important;
+  color: var(--cyber-text-primary);
+  &:focus { border-color: var(--cyber-cyan) !important; box-shadow: var(--cyber-glow-cyan) !important; }
+}
+
+.el-select__wrapper {
+  background: rgba(10, 16, 31, 0.3) !important;
+  border-color: var(--cyber-glass-border) !important;
+  box-shadow: none !important;
+  &:hover { border-color: var(--cyber-glass-border-hover) !important; }
+  &.is-focused { border-color: var(--cyber-cyan) !important; }
+}
+
+.el-select-dropdown {
+  background: var(--cyber-glass-bg-strong) !important;
+  border: 1px solid var(--cyber-glass-border) !important;
+  backdrop-filter: blur(20px);
 }
 
 .el-tag {
   border-radius: 6px;
+  backdrop-filter: blur(4px);
 }
 
-/* 动画 */
+.el-breadcrumb__inner, .el-breadcrumb__text { color: var(--cyber-text-secondary) !important; }
+.el-breadcrumb__item:last-child .el-breadcrumb__inner { color: var(--cyber-text-primary) !important; }
+
+.el-descriptions {
+  --el-descriptions-table-border: rgba(0, 229, 255, 0.08);
+  .el-descriptions__label { color: var(--cyber-text-secondary); }
+  .el-descriptions__content { color: var(--cyber-text-primary); }
+}
+
+.el-timeline-item__tail { border-left-color: rgba(0, 229, 255, 0.15); }
+.el-timeline-item__node { background: var(--cyber-cyan); }
+
+.el-pagination {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: transparent;
+  .el-pager li { background: transparent !important; color: var(--cyber-text-secondary); &.is-active { color: var(--cyber-cyan); } }
+}
+
+.el-badge__content { border: none; }
+
+.el-checkbox { --el-checkbox-text-color: var(--cyber-text-primary); }
+.el-radio { --el-radio-text-color: var(--cyber-text-primary); }
+
+.el-message-box {
+  background: var(--cyber-glass-bg-strong) !important;
+  border: 1px solid var(--cyber-glass-border);
+  backdrop-filter: blur(20px);
+}
+
+.el-form-item__label { color: var(--cyber-text-secondary) !important; }
+
+.el-switch { --el-switch-off-color: var(--cyber-text-muted); }
+
+.el-tabs__item { color: var(--cyber-text-secondary); &.is-active { color: var(--cyber-cyan); } }
+.el-tabs__active-bar { background: var(--cyber-cyan); }
+
+// --- Utility Classes ---
+
+// Reusable ultra-transparent panel
+.cyber-panel {
+  background: rgba(10, 16, 31, 0.15);
+  border: 1px solid rgba(0, 229, 255, 0.12);
+  backdrop-filter: blur(2px);
+  border-radius: 14px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  &:hover {
+    border-color: rgba(0, 229, 255, 0.25);
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.08);
+  }
+}
+
+.cyber-glass {
+  background: var(--cyber-glass-bg);
+  border: 1px solid var(--cyber-glass-border);
+  backdrop-filter: blur(2px);
+  border-radius: 14px;
+  transition: all 0.3s ease;
+  &:hover {
+    border-color: var(--cyber-glass-border-hover);
+    box-shadow: var(--cyber-glow-cyan);
+  }
+}
+
+.cyber-glow-text {
+  background: linear-gradient(135deg, var(--cyber-cyan), var(--cyber-purple), var(--cyber-orange));
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: cyberGradient 6s ease infinite;
+}
+
+@keyframes cyberGradient {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.cyber-grid-bg {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+// --- Animation Keyframes ---
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.fade-in {
-  animation: fadeIn 0.3s ease-out;
+@keyframes cyberPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 229, 255, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(0, 229, 255, 0.5); }
 }
+
+.fade-in { animation: fadeIn 0.3s ease-out; }

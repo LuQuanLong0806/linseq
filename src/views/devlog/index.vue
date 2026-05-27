@@ -1,12 +1,12 @@
 ﻿<template>
   <div class="devlog-page">
-    <el-card shadow="hover">
-      <template #header>
+    <div class="cyber-panel">
+      <div class="panel-header">
         <div class="card-header">
           <span class="card-title">📝 开发记录</span>
           <el-input v-model="keyword" placeholder="搜索记录..." style="width: 250px;" :prefix-icon="Search" clearable />
         </div>
-      </template>
+      </div>
 
       <el-timeline v-if="filteredLogs.length">
         <el-timeline-item
@@ -16,7 +16,7 @@
           placement="top"
           :type="getLogType(log.action)"
         >
-          <el-card shadow="never" class="log-card">
+          <div class="cyber-panel log-card">
             <div class="log-header">
               <el-tag size="small" :type="getActionType(log.action)">{{ log.action }}</el-tag>
               <span class="log-author">{{ log.author === 'agent' ? '🤖 Agent' : '👤 手动' }}</span>
@@ -24,12 +24,12 @@
               <span class="log-task">任务: {{ log.taskId }}</span>
             </div>
             <div class="log-content">{{ log.content }}</div>
-          </el-card>
+          </div>
         </el-timeline-item>
       </el-timeline>
 
       <el-empty v-else description="暂无开发记录" />
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -97,10 +97,14 @@ onMounted(() => {
   .card-title { font-weight: 600; }
 }
 
+.panel-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(0,229,255,0.08);
+  margin-bottom: 16px;
+}
+
 .log-card {
-  :deep .el-card__body {
-    padding: 14px 18px;
-  }
+  padding: 14px 18px;
 }
 
 .log-header {
@@ -109,13 +113,13 @@ onMounted(() => {
   gap: 10px;
   margin-bottom: 8px;
 
-  .log-author { font-size: 13px; color: #606266; }
-  .log-task { font-size: 12px; color: #909399; margin-left: auto; }
+  .log-author { font-size: 13px; color: var(--cyber-text-secondary); }
+  .log-task { font-size: 12px; color: var(--cyber-text-secondary); margin-left: auto; }
 }
 
 .log-content {
   font-size: 14px;
-  color: #303133;
+  color: var(--cyber-text-primary);
   line-height: 1.6;
 }
 </style>

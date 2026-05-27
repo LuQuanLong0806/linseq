@@ -7,6 +7,23 @@ import ElementPlus from 'element-plus'
 import TaskList from './index.vue'
 import { useTaskStore } from '@/stores/task'
 
+vi.mock('three', () => {
+  function MockScene() { this.add = vi.fn(); this.children = [] }
+  function MockCamera() { this.position = { z: 0 }; this.aspect = 1; this.updateProjectionMatrix = vi.fn() }
+  function MockRenderer() { this.setPixelRatio = vi.fn(); this.setClearColor = vi.fn(); this.setSize = vi.fn(); this.render = vi.fn(); this.dispose = vi.fn() }
+  function MockBufferGeometry() { this.setAttribute = vi.fn(); this.getAttribute = vi.fn(() => ({ array: new Float32Array(300*3), needsUpdate: false })) }
+  return {
+    Scene: MockScene, PerspectiveCamera: MockCamera, WebGLRenderer: MockRenderer,
+    BufferGeometry: MockBufferGeometry, BufferAttribute: vi.fn(), Float32BufferAttribute: vi.fn(),
+    PointsMaterial: vi.fn(), Points: vi.fn(), LineBasicMaterial: vi.fn(), LineSegments: vi.fn(),
+    TorusGeometry: vi.fn(), MeshBasicMaterial: vi.fn(), Mesh: vi.fn(), Color: vi.fn(), Clock: vi.fn(),
+  }
+})
+
+vi.mock('@/composables/useCyberBackground', () => ({
+  useCyberBackground: vi.fn(),
+}))
+
 vi.mock('@/utils/http', () => ({
   default: { get: vi.fn().mockResolvedValue({ code: 0, data: { list: [], total: 0 } }), post: vi.fn(), patch: vi.fn() },
 }))

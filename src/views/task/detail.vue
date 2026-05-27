@@ -42,10 +42,8 @@
         <!-- 左侧：需求 + 验收标准 -->
         <el-col :span="16">
           <!-- 需求描述（内网原始 + 自定义补充） -->
-          <el-card shadow="hover" class="content-card">
-            <template #header>
-              <span class="card-title">任务描述</span>
-            </template>
+          <div class="content-card cyber-panel">
+            <div class="panel-header"><span class="card-title">任务描述</span></div>
             <div class="desc-section">
               <div class="desc-label">原始描述</div>
               <div class="desc-content">{{ task.description || task.title }}</div>
@@ -59,11 +57,11 @@
               <div class="desc-content" v-if="task.customDescription" v-html="task.customDescription"></div>
               <div class="desc-content empty" v-else>点击编辑按钮补充需求描述</div>
             </div>
-          </el-card>
+          </div>
 
           <!-- 需求文档 -->
-          <el-card shadow="hover" class="content-card" style="margin-top:20px;">
-            <template #header>
+          <div class="content-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header">
               <div class="card-header-flex">
                 <span class="card-title">需求文档</span>
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -73,7 +71,7 @@
                   </el-button>
                 </div>
               </div>
-            </template>
+            </div>
             <!-- PDF 解析文字 -->
             <template v-if="task.reqDocText">
               <el-input
@@ -96,27 +94,27 @@
               <div class="desc-content" v-if="task.requirementDoc" v-html="task.requirementDoc"></div>
               <div class="desc-content empty" v-else>暂无需求文档内容</div>
             </template>
-          </el-card>
+          </div>
 
           <!-- 验收标准 -->
-          <el-card shadow="hover" class="content-card" style="margin-top:20px;">
-            <template #header>
+          <div class="content-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header">
               <div class="card-header-flex">
                 <span class="card-title">验收标准</span>
                 <el-button type="primary" link size="small" @click="startEdit('acceptanceCriteria')">编辑</el-button>
               </div>
-            </template>
+            </div>
             <div class="desc-content" v-if="task.acceptanceCriteria" v-html="task.acceptanceCriteria"></div>
             <div class="desc-content empty" v-else>点击编辑按钮添加验收标准</div>
-          </el-card>
+          </div>
 
           <!-- AI 疑问卡片 -->
-          <el-card v-if="task.aiStatus === 'ai_question' && task.aiQuestion" shadow="hover" class="content-card question-card" style="margin-top:20px;">
-            <template #header>
+          <div v-if="task.aiStatus === 'ai_question' && task.aiQuestion" class="content-card question-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header">
               <div class="card-header-flex">
                 <span class="card-title" style="color:#e6a23c;">AI 有疑问，等待回复</span>
               </div>
-            </template>
+            </div>
             <div class="question-content">
               <div class="question-label">AI 提出的问题：</div>
               <div class="question-text">{{ task.aiQuestion }}</div>
@@ -125,16 +123,16 @@
               <el-input v-model="questionReply" type="textarea" :rows="3" placeholder="请输入补充说明，回复后 AI 将继续开发..." />
               <el-button type="warning" style="margin-top:8px;" @click="handleReplyQuestion" :loading="replying">回复并继续开发</el-button>
             </div>
-          </el-card>
+          </div>
 
           <!-- 版本历史 -->
-          <el-card v-if="versions.length > 0" shadow="hover" class="content-card" style="margin-top:20px;">
-            <template #header>
+          <div v-if="versions.length > 0" class="content-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header">
               <div class="card-header-flex">
                 <span class="card-title">版本历史 ({{ versions.length }})</span>
                 <el-button v-if="versions.length >= 2" type="primary" link size="small" @click="showDiffDialog = true">差异对比</el-button>
               </div>
-            </template>
+            </div>
             <div class="version-list">
               <div
                 v-for="ver in [...versions].reverse()"
@@ -220,21 +218,17 @@
                 </div>
               </div>
             </div>
-          </el-card>
+          </div>
 
           <!-- AI 产出（无版本时兼容显示） -->
-          <el-card v-if="task.aiOutput && versions.length === 0" shadow="hover" class="content-card" style="margin-top:20px;">
-            <template #header>
-              <span class="card-title">AI 开发产出</span>
-            </template>
+          <div v-if="task.aiOutput && versions.length === 0" class="content-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header"><span class="card-title">AI 开发产出</span></div>
             <div class="desc-content">{{ task.aiOutput }}</div>
-          </el-card>
+          </div>
 
           <!-- 审核记录 -->
-          <el-card v-if="task.reviewComment || task.reviewResult" shadow="hover" class="content-card" style="margin-top:20px;">
-            <template #header>
-              <span class="card-title">审核记录</span>
-            </template>
+          <div v-if="task.reviewComment || task.reviewResult" class="content-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header"><span class="card-title">审核记录</span></div>
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item label="审核结果">
                 <el-tag :type="task.reviewResult === 'approved' ? 'success' : 'danger'" size="small">
@@ -246,16 +240,16 @@
               <el-descriptions-item v-if="task.completeTime" label="完成时间">{{ formatDateTime(task.completeTime) }}</el-descriptions-item>
               <el-descriptions-item label="返工次数">{{ task.reworkCount || 0 }}次</el-descriptions-item>
             </el-descriptions>
-          </el-card>
+          </div>
 
           <!-- 开发记录 -->
-          <el-card shadow="hover" class="content-card" style="margin-top:20px;">
-            <template #header>
+          <div class="content-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header">
               <div class="card-header-flex">
                 <span class="card-title">开发记录</span>
                 <el-button type="primary" link size="small" @click="showAddLog = true">+ 添加</el-button>
               </div>
-            </template>
+            </div>
             <el-timeline v-if="task.devLog?.length">
               <el-timeline-item
                 v-for="log in task.devLog"
@@ -272,19 +266,19 @@
               </el-timeline-item>
             </el-timeline>
             <div v-else class="empty-log">暂无开发记录</div>
-          </el-card>
+          </div>
         </el-col>
 
         <!-- 右侧：信息面板 -->
         <el-col :span="8">
           <!-- 开发配置 -->
-          <el-card shadow="hover" class="info-card">
-            <template #header>
+          <div class="info-card cyber-panel">
+            <div class="panel-header">
               <div class="card-header-flex">
                 <span class="card-title">开发配置</span>
                 <el-button type="primary" link size="small" @click="openDevConfig()">编辑</el-button>
               </div>
-            </template>
+            </div>
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item label="项目路径">
                 <span v-if="task.projectPath" class="path-text">{{ task.projectPath }}</span>
@@ -301,13 +295,11 @@
               <el-descriptions-item label="内网单号">{{ task.sourceId }}</el-descriptions-item>
               <el-descriptions-item label="流程状态">{{ task.intranetNodeName || '-' }}</el-descriptions-item>
             </el-descriptions>
-          </el-card>
+          </div>
 
           <!-- 需求文档（右侧摘要） -->
-          <el-card v-if="task.reqDocName" shadow="hover" class="info-card" style="margin-top:20px;">
-            <template #header>
-              <span class="card-title">需求文档</span>
-            </template>
+          <div v-if="task.reqDocName" class="info-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header"><span class="card-title">需求文档</span></div>
             <div style="font-size:13px;color:#606266;margin-bottom:8px;">{{ task.reqDocName }}</div>
             <div style="display:flex;gap:8px;">
               <a v-if="proxyDocUrl" :href="proxyDocUrl" target="_blank" class="doc-link">
@@ -318,13 +310,11 @@
             <div v-if="task.reqDocText" style="color:#67c23a;font-size:12px;margin-top:6px;">
               已提取 {{ task.reqDocText.length }} 字
             </div>
-          </el-card>
+          </div>
 
           <!-- 内网任务信息（只读） -->
-          <el-card shadow="hover" class="info-card" style="margin-top:20px;">
-            <template #header>
-              <span class="card-title">任务信息</span>
-            </template>
+          <div class="info-card cyber-panel" style="margin-top:20px;">
+            <div class="panel-header"><span class="card-title">任务信息</span></div>
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item label="项目">{{ task.project || '-' }}</el-descriptions-item>
               <el-descriptions-item label="客户">{{ task.customer || '-' }}</el-descriptions-item>
@@ -351,7 +341,7 @@
                 <span v-if="!task.tags?.length">无</span>
               </el-descriptions-item>
             </el-descriptions>
-          </el-card>
+          </div>
         </el-col>
       </el-row>
     </div>
@@ -750,37 +740,37 @@ onMounted(() => {
 
 .detail-header {
   display: flex; justify-content: space-between; align-items: flex-start;
-  margin-bottom: 24px; background: #fff; padding: 20px 24px;
+  margin-bottom: 24px; background: transparent; padding: 20px 24px;
   border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .header-left {
   display: flex; gap: 16px; align-items: flex-start;
-  .title-area h2 { margin: 0 0 8px 0; font-size: 22px; color: #303133; }
+  .title-area h2 { margin: 0 0 8px 0; font-size: 22px; color: var(--cyber-text-primary); }
   .meta-tags { display: flex; gap: 8px; align-items: center; }
-  .meta-id { color: #909399; font-size: 13px; }
+  .meta-id { color: var(--cyber-text-secondary); font-size: 13px; }
   .meta-hours { color: #e6a23c; font-size: 13px; font-weight: 600; }
 }
 .header-right { display: flex; gap: 10px; flex-shrink: 0; }
 
 .content-card, .info-card {
-  :deep .el-card__header { padding: 12px 20px; }
+  .panel-header { padding: 12px 20px; }
   .card-title { font-weight: 600; font-size: 15px; }
 }
 .card-header-flex { display: flex; justify-content: space-between; align-items: center; }
 
 .desc-section { margin-bottom: 8px; }
-.desc-label { font-size: 13px; color: #909399; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.desc-label { font-size: 13px; color: var(--cyber-text-secondary); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .desc-content {
-  line-height: 1.8; color: #303133; font-size: 14px;
+  line-height: 1.8; color: var(--cyber-text-primary); font-size: 14px;
   &.empty { color: #c0c4cc; font-style: italic; }
 }
 
-.question-card { border-color: #e6a23c !important; }
-.question-label { font-size: 13px; color: #909399; margin-bottom: 6px; }
-.question-text { line-height: 1.8; color: #303133; font-size: 14px; padding: 10px 14px; background: #fdf6ec; border-radius: 6px; border-left: 3px solid #e6a23c; }
+.question-card { border-color: #FF7D00 !important; }
+.question-label { font-size: 13px; color: var(--cyber-text-secondary); margin-bottom: 6px; }
+.question-text { line-height: 1.8; color: var(--cyber-text-primary); font-size: 14px; padding: 10px 14px; background: rgba(255,125,0,0.08); border-radius: 6px; border-left: 3px solid #FF7D00; }
 
-.path-text { font-family: Consolas, monospace; font-size: 13px; color: #409eff; word-break: break-all; }
-.branch-text { font-family: Consolas, monospace; font-size: 13px; color: #67c23a; }
+.path-text { font-family: Consolas, monospace; font-size: 13px; color: var(--cyber-cyan); word-break: break-all; }
+.branch-text { font-family: Consolas, monospace; font-size: 13px; color: var(--cyber-purple); }
 .empty-text { color: #c0c4cc; font-style: italic; }
 
 .overdue-text { color: #f56c6c; font-weight: 600; }
@@ -789,7 +779,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #409eff;
+  color: var(--cyber-cyan);
   font-size: 13px;
   text-decoration: none;
   word-break: break-all;
@@ -799,17 +789,17 @@ onMounted(() => {
   max-height: 400px;
   overflow-y: auto;
   padding: 12px;
-  background: #fafbfc;
-  border: 1px solid #ebeef5;
+  background: rgba(10,16,31,0.3);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.8;
-  color: #303133;
+  color: var(--cyber-text-primary);
   white-space: pre-wrap;
   word-break: break-all;
 }
 .doc-text-line { margin-bottom: 2px; }
-.doc-text-empty { color: #909399; font-size: 13px; }
+.doc-text-empty { color: var(--cyber-text-secondary); font-size: 13px; }
 
 // 版本历史
 .version-list { display: flex; flex-direction: column; gap: 4px; }
@@ -817,36 +807,36 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 12px; border-radius: 6px; cursor: pointer;
   border: 1px solid transparent; transition: all 0.2s;
-  &:hover { background: #f5f7fa; }
-  &.active { border-color: #409eff; background: #ecf5ff; }
+  &:hover { background: rgba(10,16,31,0.3); }
+  &.active { border-color: #00E5FF; background: rgba(0,229,255,0.08); }
 }
 .version-left { display: flex; align-items: center; gap: 8px; }
 .version-right { display: flex; align-items: center; gap: 8px; }
-.version-num { font-weight: 700; font-size: 14px; color: #303133; min-width: 36px; }
-.version-time { font-size: 12px; color: #909399; }
+.version-num { font-weight: 700; font-size: 14px; color: var(--cyber-text-primary); min-width: 36px; }
+.version-time { font-size: 12px; color: var(--cyber-text-secondary); }
 .version-duration { font-size: 11px; color: #67c23a; }
 .version-detail {
-  margin-top: 16px; padding: 16px; background: #fafbfc;
-  border: 1px solid #ebeef5; border-radius: 8px;
+  margin-top: 16px; padding: 16px; background: rgba(10,16,31,0.3);
+  border: 1px solid var(--cyber-glass-border); border-radius: 8px;
 }
 .version-detail-header {
   display: flex; align-items: center; gap: 8px;
-  font-weight: 700; font-size: 16px; margin-bottom: 12px;
+  font-weight: 700; font-size: 16px; margin-bottom: 12px; color: var(--cyber-text-primary);
 }
 .version-review-tag {
   font-size: 11px; font-weight: 400; color: #e6a23c;
-  background: #fdf6ec; padding: 2px 8px; border-radius: 4px;
+  background: rgba(255,125,0,0.08); padding: 2px 8px; border-radius: 4px;
 }
 .version-section { margin-bottom: 12px; }
-.version-section-label { font-size: 12px; color: #909399; margin-bottom: 4px; }
-.version-section-content { font-size: 13px; color: #606266; }
+.version-section-label { font-size: 12px; color: var(--cyber-text-secondary); margin-bottom: 4px; }
+.version-section-content { font-size: 13px; color: var(--cyber-text-secondary); }
 .review-comment { color: #e6a23c; font-style: italic; }
 .version-code {
   background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px;
   font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap;
   max-height: 400px; overflow-y: auto;
 }
-.version-git { display: flex; gap: 16px; font-size: 12px; color: #67c23a; }
+.version-git { display: flex; gap: 16px; font-size: 12px; color: var(--cyber-purple); }
 
 .version-files { display: flex; flex-direction: column; gap: 4px; }
 .version-file-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
@@ -859,11 +849,11 @@ onMounted(() => {
 .diff-body { font-family: monospace; font-size: 12px; line-height: 1.6; max-height: 500px; overflow-y: auto; }
 .diff-line { padding: 1px 8px; }
 .diff-prefix { display: inline-block; width: 16px; font-weight: 700; }
-.diff-line.same { color: #606266; }
-.diff-line.add { background: #f0f9eb; color: #67c23a; }
+.diff-line.same { color: var(--cyber-text-secondary); }
+.diff-line.add { background: rgba(0,229,255,0.06); color: #00E5FF; }
 .diff-line.del { background: #fef0f0; color: #f56c6c; }
 .log-entry { display: flex; align-items: center; gap: 8px;
-  .log-content { font-size: 13px; color: #606266; }
+  .log-content { font-size: 13px; color: var(--cyber-text-secondary); }
 }
 .empty-log { text-align: center; color: #c0c4cc; padding: 20px; }
 </style>

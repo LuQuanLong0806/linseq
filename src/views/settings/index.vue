@@ -2,10 +2,10 @@
   <div class="settings-page">
     <el-row :gutter="20">
       <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
+        <div class="cyber-panel">
+          <div class="panel-header">
             <span class="card-title">⚙️ 系统设置</span>
-          </template>
+          </div>
           <el-form label-position="top">
             <el-form-item label="应用名称">
               <el-input v-model="settings.appName" />
@@ -35,14 +35,14 @@
               <el-button @click="handleReset">重置默认</el-button>
             </el-form-item>
           </el-form>
-        </el-card>
+        </div>
       </el-col>
 
       <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
+        <div class="cyber-panel">
+          <div class="panel-header">
             <span class="card-title">🗄️ 数据管理</span>
-          </template>
+          </div>
           <div class="data-actions">
             <div class="action-item">
               <span>导出任务数据</span>
@@ -61,12 +61,12 @@
               <el-button type="danger" size="small" @click="handleResetDB">重置</el-button>
             </div>
           </div>
-        </el-card>
+        </div>
 
-        <el-card shadow="hover" style="margin-top: 20px;">
-          <template #header>
+        <div class="cyber-panel" style="margin-top: 20px;">
+          <div class="panel-header">
             <span class="card-title">ℹ️ 关于</span>
-          </template>
+          </div>
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="应用名称">灵序 LINSEQ</el-descriptions-item>
             <el-descriptions-item label="版本">v1.0.0</el-descriptions-item>
@@ -74,7 +74,7 @@
             <el-descriptions-item label="运行环境">本地 Node.js</el-descriptions-item>
             <el-descriptions-item label="数据安全">所有数据本地存储，不上传第三方</el-descriptions-item>
           </el-descriptions>
-        </el-card>
+        </div>
       </el-col>
     </el-row>
   </div>
@@ -160,6 +160,12 @@ async function handleResetDB() {
   font-size: 15px;
 }
 
+.panel-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(0,229,255,0.08);
+  margin-bottom: 16px;
+}
+
 .data-actions {
   display: flex;
   flex-direction: column;
@@ -171,7 +177,7 @@ async function handleResetDB() {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--cyber-glass-border);
 
   &:last-child { border-bottom: none; }
 }
@@ -179,6 +185,6 @@ async function handleResetDB() {
 .form-tip {
   margin-top: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--cyber-text-secondary);
 }
 </style>

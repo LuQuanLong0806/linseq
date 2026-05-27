@@ -99,33 +99,33 @@
     <!-- 图表区 -->
     <el-row :gutter="20" class="chart-row">
       <el-col :span="12">
-        <el-card shadow="hover" class="chart-card">
-          <template #header>
+        <div class="cyber-panel chart-card">
+          <div class="panel-header">
             <span class="card-title">任务状态分布</span>
-          </template>
+          </div>
           <div ref="pieChartRef" class="chart-container"></div>
-        </el-card>
+        </div>
       </el-col>
       <el-col :span="12">
-        <el-card shadow="hover" class="chart-card">
-          <template #header>
+        <div class="cyber-panel chart-card">
+          <div class="panel-header">
             <span class="card-title">本周开发进度</span>
-          </template>
+          </div>
           <div ref="barChartRef" class="chart-container"></div>
-        </el-card>
+        </div>
       </el-col>
     </el-row>
 
     <!-- 最近任务列表 -->
     <el-row :gutter="20" class="table-row">
       <el-col :span="24">
-        <el-card shadow="hover" class="task-card">
-          <template #header>
+        <div class="cyber-panel task-card">
+          <div class="panel-header">
             <div class="card-header">
               <span class="card-title">最近更新任务</span>
               <el-button type="primary" link @click="$router.push('/tasks')">查看全部 →</el-button>
             </div>
-          </template>
+          </div>
           <el-table :data="recentTasks" stripe style="width: 100%">
             <el-table-column prop="sourceId" label="ID" width="80" />
             <el-table-column prop="title" label="任务标题" min-width="250" show-overflow-tooltip />
@@ -150,7 +150,7 @@
               </template>
             </el-table-column>
           </el-table>
-        </el-card>
+        </div>
       </el-col>
     </el-row>
   </div>
@@ -227,23 +227,32 @@ function initPieChart() {
   if (!pieChartRef.value) return
   const chart = echarts.init(pieChartRef.value)
   const option: EChartsOption = {
-    tooltip: { trigger: 'item' },
-    legend: { orient: 'vertical', left: 'left' },
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(10,16,31,0.85)',
+      borderColor: 'rgba(0,229,255,0.12)',
+      textStyle: { color: '#E8F0FF' },
+    },
+    legend: {
+      orient: 'vertical',
+      left: 'left',
+      textStyle: { color: '#8c8ca1' },
+    },
     series: [{
       name: '任务状态',
       type: 'pie',
       radius: ['40%', '70%'],
       avoidLabelOverlap: false,
-      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { borderRadius: 8, borderColor: 'rgba(0,229,255,0.15)', borderWidth: 2 },
       label: { show: false },
-      emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
+      emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold', color: '#E8F0FF' } },
       data: [
-        { value: taskStore.stats.pending, name: '待开发', itemStyle: { color: '#909399' } },
-        { value: taskStore.stats.inProgress, name: '开发中', itemStyle: { color: '#e6a23c' } },
-        { value: taskStore.stats.selfTest, name: '自测完成', itemStyle: { color: '#409eff' } },
-        { value: taskStore.stats.submitted, name: '已提测', itemStyle: { color: '#67c23a' } },
-        { value: taskStore.stats.completed, name: '已完结', itemStyle: { color: '#5dbf73' } },
-        { value: taskStore.stats.rejected, name: '已驳回', itemStyle: { color: '#f56c6c' } },
+        { value: taskStore.stats.pending, name: '待开发', itemStyle: { color: '#8c8ca1' } },
+        { value: taskStore.stats.inProgress, name: '开发中', itemStyle: { color: '#FF7D00' } },
+        { value: taskStore.stats.selfTest, name: '自测完成', itemStyle: { color: '#00E5FF' } },
+        { value: taskStore.stats.submitted, name: '已提测', itemStyle: { color: '#9D5CFF' } },
+        { value: taskStore.stats.completed, name: '已完结', itemStyle: { color: '#00E5FF' } },
+        { value: taskStore.stats.rejected, name: '已驳回', itemStyle: { color: '#FF7D00' } },
       ],
     }],
   }
@@ -259,13 +268,31 @@ function initBarChart() {
   const rejected = [0, 1, 0, 0, 1, 0, 0]
   
   const option: EChartsOption = {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['已完成', '驳回'] },
-    xAxis: { type: 'category', data: days },
-    yAxis: { type: 'value' },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(10,16,31,0.85)',
+      borderColor: 'rgba(0,229,255,0.12)',
+      textStyle: { color: '#E8F0FF' },
+    },
+    legend: {
+      data: ['已完成', '驳回'],
+      textStyle: { color: '#8c8ca1' },
+    },
+    xAxis: {
+      type: 'category',
+      data: days,
+      axisLabel: { color: '#8c8ca1' },
+      axisLine: { lineStyle: { color: 'rgba(0,229,255,0.15)' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#8c8ca1' },
+      axisLine: { lineStyle: { color: 'rgba(0,229,255,0.15)' } },
+      splitLine: { lineStyle: { color: 'rgba(0,229,255,0.06)' } },
+    },
     series: [
-      { name: '已完成', type: 'bar', data: completed, itemStyle: { color: '#67c23a' }, barWidth: '30%' },
-      { name: '驳回', type: 'bar', data: rejected, itemStyle: { color: '#f56c6c' }, barWidth: '30%' },
+      { name: '已完成', type: 'bar', data: completed, itemStyle: { color: '#00E5FF' }, barWidth: '30%' },
+      { name: '驳回', type: 'bar', data: rejected, itemStyle: { color: '#FF7D00' }, barWidth: '30%' },
     ],
   }
   chart.setOption(option)
@@ -293,14 +320,15 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 20px 24px;
-  background: #fff;
+  background: transparent;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  border: 1px solid var(--cyber-glass-border);
+  box-shadow: var(--cyber-glow-cyan);
   transition: transform 0.2s, box-shadow 0.2s;
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    box-shadow: var(--cyber-glow-purple);
   }
 }
 
@@ -311,28 +339,28 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--cyber-text-primary);
   margin-right: 16px;
 }
 
-.bg-gradient-blue { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-.bg-gradient-orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-.bg-gradient-purple { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-.bg-gradient-green { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
-.bg-gradient-red { background: linear-gradient(135deg, #ff0844 0%, #ffb199 100%); }
-.bg-gradient-yellow { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-.bg-gradient-dark { background: linear-gradient(135deg, #434343 0%, #000000 100%); }
-.bg-gradient-gray { background: linear-gradient(135deg, #868f96 0%, #596164 100%); }
+.bg-gradient-blue { background: linear-gradient(135deg, #00E5FF 0%, #9D5CFF 100%); }
+.bg-gradient-orange { background: linear-gradient(135deg, #9D5CFF 0%, #FF7D00 100%); }
+.bg-gradient-purple { background: linear-gradient(135deg, #00E5FF 0%, #00E5FF 100%); }
+.bg-gradient-green { background: linear-gradient(135deg, #9D5CFF 0%, #00E5FF 100%); }
+.bg-gradient-red { background: linear-gradient(135deg, #FF7D00 0%, #9D5CFF 100%); }
+.bg-gradient-yellow { background: linear-gradient(135deg, #9D5CFF 0%, #00E5FF 100%); }
+.bg-gradient-dark { background: linear-gradient(135deg, #9D5CFF 0%, #FF7D00 100%); }
+.bg-gradient-gray { background: linear-gradient(135deg, #FF7D00 0%, #9D5CFF 100%); }
 
 .stat-value {
   font-size: 32px;
   font-weight: 700;
-  color: #303133;
+  color: var(--cyber-text-primary);
 }
 
 .stat-label {
   font-size: 14px;
-  color: #909399;
+  color: var(--cyber-text-secondary);
   margin-top: 4px;
 }
 
@@ -341,15 +369,15 @@ onMounted(() => {
 }
 
 .chart-card {
-  :deep .el-card__header {
+  .panel-header {
     padding: 14px 20px;
-    border-bottom: 1px solid #ebeef5;
+    border-bottom: 1px solid var(--cyber-glass-border);
   }
-  
+
   .card-title {
     font-size: 16px;
     font-weight: 600;
-    color: #303133;
+    color: var(--cyber-text-primary);
   }
 }
 
@@ -359,7 +387,7 @@ onMounted(() => {
 
 .table-row {
   .task-card {
-    :deep .el-card__header {
+    .panel-header {
       padding: 14px 20px;
     }
   }

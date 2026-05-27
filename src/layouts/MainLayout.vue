@@ -1,5 +1,6 @@
 <template>
   <el-container class="main-layout">
+    <canvas ref="bgCanvas" class="global-bg-canvas"></canvas>
     <!-- 侧边栏 -->
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="aside">
       <div class="logo-area">
@@ -13,9 +14,9 @@
         :collapse="isCollapsed"
         router
         class="side-menu"
-        background-color="#1a1a2e"
-        text-color="#a0aec0"
-        active-text-color="#667eea"
+        background-color="transparent"
+        text-color="#E8F0FF"
+        active-text-color="#00E5FF"
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataBoard /></el-icon>
@@ -95,9 +96,15 @@ import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
+import { useCyberAnimations } from '@/composables/useCyberAnimations'
+import { useCyberBackground } from '@/composables/useCyberBackground'
+
+useCyberAnimations('.cyber-glass')
 
 const route = useRoute()
 const taskStore = useTaskStore()
+const bgCanvas = ref<HTMLCanvasElement | null>(null)
+const { start: startBg, stop: stopBg } = useCyberBackground(bgCanvas)
 
 const isCollapsed = ref(false)
 const currentTime = ref(dayjs().format('HH:mm'))
@@ -111,15 +118,17 @@ function handleSync() {
   taskStore.syncTasks()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await taskStore.fetchTasks()
+  startBg()
   timer = setInterval(() => {
     currentTime.value = dayjs().format('HH:mm')
   }, 30000)
-  taskStore.fetchTasks()
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  stopBg()
 })
 </script>
 
@@ -127,10 +136,24 @@ onUnmounted(() => {
 .main-layout {
   height: 100vh;
   overflow: hidden;
+  position: relative;
+}
+
+.global-bg-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .aside {
-  background: #1a1a2e;
+  position: relative;
+  z-index: 1;
+  background: rgba(10, 16, 31, 0.15);
+  border-right: 1px solid rgba(0, 229, 255, 0.08);
+  backdrop-filter: blur(2px);
   transition: width 0.3s ease;
   overflow: hidden;
 }
@@ -142,17 +165,18 @@ onUnmounted(() => {
   height: 60px;
   padding: 0 16px;
   gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(0, 229, 255, 0.08);
 
   .logo-icon {
     font-size: 24px;
     flex-shrink: 0;
+    text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
   }
 
   .logo-text {
     font-size: 16px;
     font-weight: 700;
-    color: #667eea;
+    color: var(--cyber-cyan);
     white-space: nowrap;
     letter-spacing: 2px;
   }
@@ -163,25 +187,31 @@ onUnmounted(() => {
 
   :deep(.el-menu-item) {
     &:hover {
-      background-color: rgba(102, 126, 234, 0.1) !important;
+      background-color: rgba(0, 229, 255, 0.08) !important;
     }
     &.is-active {
-      background-color: rgba(102, 126, 234, 0.15) !important;
-      border-right: 3px solid #667eea;
+      background-color: rgba(0, 229, 255, 0.12) !important;
+      border-right: 3px solid var(--cyber-cyan);
+      color: var(--cyber-cyan);
     }
   }
 }
 
 .main-container {
-  background: #f0f2f5;
+  position: relative;
+  z-index: 1;
+  background: transparent;
 }
 
 .header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  background: rgba(10, 16, 31, 0.15);
+  border-bottom: 1px solid rgba(0, 229, 255, 0.08);
+  backdrop-filter: blur(2px);
+  box-shadow: none;
   padding: 0 24px;
   height: 56px;
 }
@@ -194,9 +224,9 @@ onUnmounted(() => {
   .collapse-btn {
     font-size: 20px;
     cursor: pointer;
-    color: #606266;
+    color: var(--cyber-text-secondary);
     transition: color 0.2s;
-    &:hover { color: #667eea; }
+    &:hover { color: var(--cyber-cyan); }
   }
 }
 
@@ -213,17 +243,18 @@ onUnmounted(() => {
 .main-content {
   padding: 20px;
   overflow-y: auto;
+  background: transparent;
 }
 
 /* 过渡动画 */
 .slide-fade-enter-active {
-  transition: all 0.25s ease-out;
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .slide-fade-leave-active {
   transition: all 0.2s ease-in;
 }
 .slide-fade-enter-from {
-  transform: translateX(20px);
+  transform: translateX(20px) scale(0.98);
   opacity: 0;
 }
 .slide-fade-leave-to {

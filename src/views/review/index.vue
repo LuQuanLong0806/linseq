@@ -12,7 +12,7 @@
 
       <div v-if="reviewTasks.length === 0" class="empty-state">
         <div class="empty-ring">
-          <svg viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="36" stroke="rgba(102,126,234,0.2)" stroke-width="2"/><path d="M28 42l8 8 16-16" stroke="#667eea" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="36" stroke="rgba(102,126,234,0.2)" stroke-width="2"/><path d="M28 42l8 8 16-16" stroke="#00E5FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <p class="empty-text">暂无待审核任务</p>
         <p class="empty-hint">AI 完成开发后将自动进入此队列</p>
@@ -242,8 +242,8 @@ function initThree() {
   const count = 400
   const pos = new Float32Array(count * 3)
   const col = new Float32Array(count * 3)
-  const c1 = new THREE.Color('#00e5a0')
-  const c2 = new THREE.Color('#ffd700')
+  const c1 = new THREE.Color('#00E5FF')
+  const c2 = new THREE.Color('#FF7D00')
   for (let i = 0; i < count; i++) {
     pos[i * 3] = (Math.random() - 0.5) * 60
     pos[i * 3 + 1] = (Math.random() - 0.5) * 40
@@ -267,10 +267,10 @@ function initThree() {
   }
   const lg = new THREE.BufferGeometry()
   lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3))
-  scene.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x00e5a0, transparent: true, opacity: 0.06 })))
+  scene.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x00E5FF, transparent: true, opacity: 0.06 })))
 
   const ringGeo = new THREE.RingGeometry(18, 18.2, 128)
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x00e5a0, transparent: true, opacity: 0.06, side: THREE.DoubleSide }))
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x00E5FF, transparent: true, opacity: 0.06, side: THREE.DoubleSide }))
   ring.rotation.x = Math.PI / 2.5
   scene.add(ring)
 
@@ -352,7 +352,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 .page-title { margin: 0; font-size: 28px; font-weight: 700; }
 
 .glow-text {
-  background: linear-gradient(135deg, #00e5a0, #ffd700, #00e5a0);
+  background: linear-gradient(135deg, #00E5FF, #FF7D00, #00E5FF);
   background-size: 200% 200%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -439,7 +439,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 }
 
 .card-id { color: #8c8ca1; font-size: 12px; font-weight: 600; }
-.card-project { color: #00e5a0; font-size: 12px; margin-left: auto; }
+.card-project { color: #00E5FF; font-size: 12px; margin-left: auto; }
 
 .card-title {
   margin: 0;
@@ -469,7 +469,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   gap: 12px;
   margin-top: 6px;
   font-size: 11px;
-  color: #ffd700;
+  color: #FF7D00;
   opacity: 0.8;
 }
 
@@ -477,7 +477,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   margin-top: 8px;
   font-size: 12px;
   color: #a0a0b8;
-  .output-label { color: #00e5a0; font-weight: 600; }
+  .output-label { color: #00E5FF; font-weight: 600; }
 }
 
 /* 自测报告区域 */
@@ -488,7 +488,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 }
 
 .report-label {
-  color: #00e5a0;
+  color: #00E5FF;
   font-size: 12px;
   font-weight: 600;
   display: block;
@@ -563,7 +563,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 .card-duration {
   margin-bottom: 8px;
   span:last-child {
-    color: #ffd700;
+    color: #FF7D00;
     font-size: 12px;
     font-weight: 600;
   }

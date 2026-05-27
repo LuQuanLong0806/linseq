@@ -1,7 +1,7 @@
 <template>
   <div class="task-list-page">
     <!-- 筛选栏 -->
-    <el-card shadow="hover" class="filter-card">
+    <div class="cyber-panel filter-card">
       <el-row :gutter="16" align="middle">
         <el-col :span="6">
           <el-input
@@ -65,7 +65,7 @@
           >
         </el-col>
       </el-row>
-    </el-card>
+    </div>
 
     <!-- 操作栏：左侧视图切换，右侧批量操作 -->
     <div class="toolbar">
@@ -134,7 +134,7 @@
     </div>
 
     <!-- 列表视图 -->
-    <el-card v-show="viewMode === 'table'" shadow="hover" class="table-card">
+    <div v-show="viewMode === 'table'" class="cyber-panel table-card">
       <el-table
         ref="tableRef"
         :data="taskStore.tasks"
@@ -262,7 +262,7 @@
           background
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 看板视图 -->
     <div v-show="viewMode === 'kanban'" class="kanban-view">
@@ -390,7 +390,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, watch } from 'vue';
+import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTaskStore } from '@/stores/task';
 import {
@@ -783,16 +783,23 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .task-list-page {
-  // max-width: 1600px;
   margin: 0 auto;
+  position: relative;
+  min-height: 100%;
+}
+
+.filter-card,
+.table-card,
+.kanban-view,
+.pagination-area,
+.toolbar {
+  position: relative;
+  z-index: 1;
 }
 
 .filter-card {
   margin-bottom: 16px;
-
-  :deep .el-card__body {
-    padding: 16px 20px;
-  }
+  padding: 16px 20px;
 }
 
 .toolbar {
@@ -809,7 +816,7 @@ onMounted(() => {
 }
 
 .selected-count {
-  color: #409eff;
+  color: var(--cyber-cyan, #00E5FF);
   font-size: 13px;
   font-weight: 600;
   margin-right: 4px;
@@ -822,7 +829,7 @@ onMounted(() => {
       text-align: center;
     }
     &:hover {
-      background-color: #f5f7fa;
+      background-color: rgba(0, 229, 255, 0.06);
     }
   }
   :deep .el-table__cell {
@@ -853,12 +860,12 @@ onMounted(() => {
 }
 
 .desc-text {
-  color: #606266;
+  color: var(--cyber-text-secondary);
   font-size: 13px;
 }
 
 .status-idle {
-  color: #c0c4cc;
+  color: var(--cyber-text-secondary);
   font-size: 12px;
 }
 
@@ -890,9 +897,11 @@ onMounted(() => {
   min-width: 280px;
   max-width: 320px;
   flex-shrink: 0;
-  background: #f5f7fa;
+  background: rgba(10, 16, 31, 0.15);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 8px;
   overflow: hidden;
+  backdrop-filter: blur(12px);
 }
 
 .kanban-header {
@@ -901,7 +910,8 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   border-top: 3px solid;
-  background: #fff;
+  background: transparent;
+  color: var(--cyber-text-primary);
   font-weight: 600;
   font-size: 14px;
 }
@@ -916,19 +926,21 @@ onMounted(() => {
 }
 
 .kanban-card {
-  background: #fff;
+  background: rgba(10, 16, 31, 0.15);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 8px;
   padding: 14px;
   cursor: pointer;
+  backdrop-filter: blur(8px);
   transition:
     box-shadow 0.2s,
     transform 0.2s;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
   border-left: 3px solid transparent;
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--cyber-glow-cyan);
   }
 
   &.in-todo {
@@ -949,13 +961,13 @@ onMounted(() => {
 }
 
 .kanban-id {
-  color: #909399;
+  color: var(--cyber-text-secondary);
   font-size: 12px;
 }
 
 .kanban-card-title {
   font-size: 14px;
-  color: #303133;
+  color: var(--cyber-text-primary);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -982,40 +994,42 @@ onMounted(() => {
   gap: 3px;
   padding: 4px 8px;
   font-size: 12px;
-  color: #64748b;
+  color: #00E5FF;
   cursor: pointer;
   border-radius: 6px;
   transition:
     color 0.15s,
-    background 0.15s;
+    background 0.15s,
+    text-shadow 0.15s;
   user-select: none;
 
   .el-icon { font-size: 13px; }
   &:hover {
-    color: #334155;
-    background: #f1f5f9;
+    color: #00E5FF;
+    background: rgba(0, 229, 255, 0.12);
+    text-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
   }
 }
 
 .op-todo {
-  color: #667eea;
+  color: #00E5FF;
   font-weight: 500;
   &:hover {
-    background: rgba(102, 126, 234, 0.1);
+    background: rgba(0, 229, 255, 0.08);
   }
 }
 
 .op-active {
-  color: #10b981;
+  color: #9D5CFF;
   font-weight: 500;
   &:hover {
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(157, 92, 255, 0.08);
   }
 }
 
 .kanban-deadline {
   font-size: 12px;
-  color: #909399;
+  color: var(--cyber-text-secondary);
 
   &.overdue {
     color: #f56c6c;
@@ -1033,7 +1047,8 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 16px;
   padding: 8px 12px;
-  background: rgba(103, 194, 58, 0.06);
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 6px;
 }
 </style>

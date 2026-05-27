@@ -14,13 +14,18 @@ vi.mock('three', () => {
   function MockClock() { this.getElapsedTime = () => 0 }
   function MockPoints() { this.rotation = { x: 0, y: 0, z: 0 } }
   function MockLineSegments() { this.rotation = { x: 0, y: 0, z: 0 } }
-  function MockMesh() { this.rotation = { x: 0, y: 0, z: 0 } }
+  function MockMesh() { this.rotation = { x: 0, y: 0, z: 0 }; this.position = { add: vi.fn(), set: vi.fn() }; this.visible = false; this.scale = { set: vi.fn() }; this.material = { opacity: 0 } }
+  function MockCylinderGeometry() { this.rotateZ = vi.fn() }
+  function MockVector3() { this.set = vi.fn(); this.add = vi.fn() }
+  function MockMeshBasicMaterial() { this.opacity = 0; this.clone = () => new MockMeshBasicMaterial() }
   return {
     Scene: MockScene, PerspectiveCamera: MockCamera, WebGLRenderer: MockRenderer,
     BufferGeometry: MockBufferGeometry, BufferAttribute: vi.fn(), Float32BufferAttribute: vi.fn(),
     PointsMaterial: vi.fn(), Points: MockPoints, LineBasicMaterial: vi.fn(),
     LineSegments: MockLineSegments, RingGeometry: vi.fn(), TorusGeometry: vi.fn(),
-    MeshBasicMaterial: vi.fn(), Mesh: MockMesh, DoubleSide: {}, Color: MockColor, Clock: MockClock,
+    CylinderGeometry: MockCylinderGeometry, Vector3: MockVector3,
+    MeshBasicMaterial: MockMeshBasicMaterial, Mesh: MockMesh, DoubleSide: {}, Color: MockColor, Clock: MockClock,
+    CanvasTexture: vi.fn(), AdditiveBlending: 2,
   }
 })
 
@@ -132,10 +137,10 @@ describe('AI待办页面', () => {
     expect(useTaskStore().isInTodoList('t1')).toBe(false)
   })
 
-  it('Three.js canvas 存在', async () => {
+  it('背景 canvas 已移至 MainLayout', async () => {
     const w = mountWith()
     await flushPromises()
-    expect(w.find('canvas.bg-canvas').exists()).toBe(true)
+    expect(w.find('canvas').exists()).toBe(false)
   })
 
   it('标题渐变文字', async () => {

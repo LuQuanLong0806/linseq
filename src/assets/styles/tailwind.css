@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@theme {
+  --color-cyber-bg: #0A101F;
+  --color-cyber-bg-secondary: #0d1528;
+  --color-cyber-cyan: #00E5FF;
+  --color-cyber-purple: #9D5CFF;
+  --color-cyber-orange: #FF7D00;
+  --color-cyber-silver: #E8F0FF;
+}

@@ -1,7 +1,5 @@
 <template>
   <div class="ai-todo-page">
-    <canvas ref="bgCanvas" class="bg-canvas"></canvas>
-
     <div class="content-layer">
       <!-- 顶部统计条 -->
       <div class="stats-bar">
@@ -268,7 +266,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { agentApi } from '@/api/agent'
 import { projectApi, type ProjectConfig } from '@/api/project'
@@ -276,10 +274,8 @@ import { taskApi } from '@/api/task'
 import type { Task, TaskGroup } from '@/types'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import * as THREE from 'three'
 
 const taskStore = useTaskStore()
-const bgCanvas = ref<HTMLCanvasElement | null>(null)
 
 // Drag state
 const dragFrom = ref<{ type: 'ungrouped' | 'group'; index: number; groupId?: string } | null>(null)
@@ -469,121 +465,14 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 function getPriorityType(p: string) { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, string>)[p] || 'info' }
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
 
-// --- Three.js Enhanced Engine ---
-let renderer: THREE.WebGLRenderer | null = null
-let scene: THREE.Scene | null = null
-let camera: THREE.PerspectiveCamera | null = null
-let animId = 0
-
-function initThree() {
-  if (!bgCanvas.value) return
-  const canvas = bgCanvas.value
-  renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.setClearColor(0x000000, 0)
-  scene = new THREE.Scene()
-  camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 1000)
-  camera.position.z = 40
-  resize()
-
-  // Particle field
-  const count = 600
-  const pos = new Float32Array(count * 3)
-  const col = new Float32Array(count * 3)
-  const vel = new Float32Array(count * 3)
-  const c1 = new THREE.Color('#667eea')
-  const c2 = new THREE.Color('#00d4ff')
-  const c3 = new THREE.Color('#ff6b6b')
-  for (let i = 0; i < count; i++) {
-    pos[i*3] = (Math.random()-0.5)*80
-    pos[i*3+1] = (Math.random()-0.5)*50
-    pos[i*3+2] = (Math.random()-0.5)*40
-    vel[i*3] = (Math.random()-0.5)*0.02
-    vel[i*3+1] = (Math.random()-0.5)*0.02
-    vel[i*3+2] = (Math.random()-0.5)*0.01
-    const t = Math.random()
-    const c = t < 0.5 ? c1.clone().lerp(c2, t*2) : c2.clone().lerp(c3, (t-0.5)*2)
-    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b
-  }
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.12, vertexColors: true, transparent: true, opacity: 0.6 })))
-
-  // Connection lines
-  const lp: number[] = []
-  for (let i = 0; i < count; i++) {
-    for (let j = i+1; j < count; j++) {
-      const dx=pos[i*3]-pos[j*3], dy=pos[i*3+1]-pos[j*3+1], dz=pos[i*3+2]-pos[j*3+2]
-      if (dx*dx+dy*dy+dz*dz < 25) { lp.push(pos[i*3],pos[i*3+1],pos[i*3+2],pos[j*3],pos[j*3+1],pos[j*3+2]) }
-    }
-  }
-  const lg = new THREE.BufferGeometry()
-  lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3))
-  scene.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x667eea, transparent: true, opacity: 0.04 })))
-
-  // Double helix rings
-  for (let r = 0; r < 3; r++) {
-    const ringGeo = new THREE.TorusGeometry(12 + r*8, 0.06, 8, 128)
-    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: r===0?0x667eea:r===1?0x00d4ff:0xff6b6b, transparent: true, opacity: 0.05 }))
-    ring.rotation.x = Math.PI/2 + r*0.3
-    ring.rotation.y = r*0.5
-    scene.add(ring)
-  }
-
-  // Animate with particle movement
-  const clock = new THREE.Clock()
-  function animate() {
-    animId = requestAnimationFrame(animate)
-    const t = clock.getElapsedTime()
-    // Move particles
-    const pAttr = geo.getAttribute('position') as THREE.BufferAttribute
-    for (let i = 0; i < count; i++) {
-      pAttr.array[i*3] += vel[i*3] + Math.sin(t+i)*0.002
-      pAttr.array[i*3+1] += vel[i*3+1] + Math.cos(t+i*0.7)*0.002
-      pAttr.array[i*3+2] += vel[i*3+2]
-      // Bounce
-      for (let a = 0; a < 3; a++) {
-        const bound = a===0?40:a===1?25:20
-        if (Math.abs(pAttr.array[i*3+a]) > bound) vel[i*3+a] *= -1
-      }
-    }
-    pAttr.needsUpdate = true
-
-    scene!.children.forEach((c, idx) => {
-      c.rotation.y = t * 0.02 * (idx%2===0?1:-1)
-      c.rotation.x = t * 0.01
-    })
-    renderer!.render(scene!, camera!)
-  }
-  animate()
-}
-
-function resize() {
-  if (!renderer || !camera || !bgCanvas.value) return
-  const w = bgCanvas.value.clientWidth, h = bgCanvas.value.clientHeight
-  renderer.setSize(w, h)
-  camera.aspect = w / h
-  camera.updateProjectionMatrix()
-}
-
 onMounted(async () => {
   await taskStore.fetchGroups()
   await nextTick()
-  initThree()
-  window.addEventListener('resize', resize)
-})
-
-onUnmounted(() => {
-  cancelAnimationFrame(animId)
-  window.removeEventListener('resize', resize)
-  renderer?.dispose()
 })
 </script>
 
 <style lang="scss" scoped>
 .ai-todo-page { position: relative; min-height: calc(100vh - 96px); overflow: hidden; }
-.bg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
 .content-layer { position: relative; z-index: 1; padding: 0 12px; }
 
 // Stats bar
@@ -596,9 +485,9 @@ onUnmounted(() => {
   position: relative;
 }
 .stat-pulse {
-  width: 8px; height: 8px; border-radius: 50%; background: #667eea;
-  box-shadow: 0 0 8px #667eea; animation: pulse 2s ease-in-out infinite;
-  &.dev-pulse { background: #ff6b6b; box-shadow: 0 0 8px #ff6b6b; animation: pulse-red 1.5s ease-in-out infinite; }
+  width: 8px; height: 8px; border-radius: 50%; background: #00E5FF;
+  box-shadow: 0 0 8px #00E5FF; animation: pulse 2s ease-in-out infinite;
+  &.dev-pulse { background: #FF7D00; box-shadow: 0 0 8px #FF7D00; animation: pulse-red 1.5s ease-in-out infinite; }
 }
 .stat-num { font-size: 24px; font-weight: 800; color: #e0e0ef; font-variant-numeric: tabular-nums; }
 .stat-label { font-size: 12px; color: #8c8ca1; text-transform: uppercase; letter-spacing: 1px; }
@@ -612,7 +501,7 @@ onUnmounted(() => {
 .page-header-bar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 8px; }
 .page-title { margin: 0; font-size: 28px; font-weight: 700; }
 .glow-text {
-  background: linear-gradient(135deg, #667eea, #00d4ff, #ff6b6b, #667eea);
+  background: linear-gradient(135deg, #00E5FF, #00E5FF, #FF7D00, #00E5FF);
   background-size: 300% 300%;
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   animation: gradientShift 6s ease infinite;
@@ -631,26 +520,26 @@ onUnmounted(() => {
 }
 
 .panel {
-  background: rgba(10,10,30,0.4);
-  border: 1px solid rgba(102,126,234,0.12);
-  border-radius: 16px;
-  backdrop-filter: blur(16px);
+  background: rgba(10,16,31,0.15);
+  border: 1px solid rgba(0,229,255,0.12);
+  border-radius: 14px;
+  backdrop-filter: blur(2px);
   padding: 20px;
   position: relative;
   overflow: hidden;
 }
 
-.todo-panel { border-color: rgba(102,126,234,0.15); }
-.dev-panel { border-color: rgba(255,107,107,0.2); }
+.todo-panel { border-color: rgba(0,229,255,0.15); }
+.dev-panel { border-color: rgba(255,125,0,0.2); }
 
 .todo-panel::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, #667eea, #00d4ff, transparent);
+  background: linear-gradient(90deg, transparent, #00E5FF, #00E5FF, transparent);
   animation: scanLine 3s linear infinite;
 }
 .dev-panel::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, #ff6b6b, #ffd700, transparent);
+  background: linear-gradient(90deg, transparent, #FF7D00, #ffd700, transparent);
   animation: scanLine 2s linear infinite;
 }
 @keyframes scanLine { 0%{opacity:0.3} 50%{opacity:1} 100%{opacity:0.3} }
@@ -663,26 +552,26 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center;
 }
 .icon-ring {
-  position: absolute; inset: 0; border: 2px solid #667eea; border-radius: 50%;
+  position: absolute; inset: 0; border: 2px solid #00E5FF; border-radius: 50%;
   animation: ringPulse 2s ease-in-out infinite;
-  &.dev-ring { border-color: #ff6b6b; animation-duration: 1.2s; }
+  &.dev-ring { border-color: #FF7D00; animation-duration: 1.2s; }
 }
 .icon-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #667eea;
-  &.dev-dot { background: #ff6b6b; box-shadow: 0 0 10px #ff6b6b; }
+  width: 8px; height: 8px; border-radius: 50%; background: #00E5FF;
+  &.dev-dot { background: #FF7D00; box-shadow: 0 0 10px #FF7D00; }
 }
 @keyframes ringPulse { 0%,100%{transform:scale(1);opacity:0.6} 50%{transform:scale(1.2);opacity:0.2} }
 
 .panel-title { margin: 0; font-size: 16px; font-weight: 600; color: #e0e0ef; flex: 1; }
-.dev-title { color: #ff6b6b; }
+.dev-title { color: #FF7D00; }
 
 .engine-indicator {
   display: flex; align-items: center; gap: 6px;
   padding: 2px 10px; border-radius: 10px;
   background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.2);
 }
-.engine-pulse { width: 6px; height: 6px; border-radius: 50%; background: #ff6b6b; animation: pulse-red 1s ease-in-out infinite; }
-.engine-text { font-size: 10px; font-weight: 700; color: #ff6b6b; letter-spacing: 2px; }
+.engine-pulse { width: 6px; height: 6px; border-radius: 50%; background: #FF7D00; animation: pulse-red 1s ease-in-out infinite; }
+.engine-text { font-size: 10px; font-weight: 700; color: #FF7D00; letter-spacing: 2px; }
 
 .panel-empty {
   text-align: center; padding: 40px 0; color: #8c8ca1;
@@ -700,8 +589,8 @@ onUnmounted(() => {
 
 // Group cards (inside todo panel)
 .group-card {
-  background: rgba(102,126,234,0.06);
-  border: 1px solid rgba(102,126,234,0.12);
+  background: rgba(10,16,31,0.15);
+  border: 1px solid rgba(0,229,255,0.08);
   border-radius: 10px;
   margin-bottom: 10px;
   overflow: hidden;
@@ -710,10 +599,10 @@ onUnmounted(() => {
   &:hover { background: rgba(102,126,234,0.08); }
 }
 .group-left { display: flex; align-items: center; gap: 8px; }
-.group-arrow { color: #667eea; font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
+.group-arrow { color: #00E5FF; font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
 .group-name { font-size: 14px; font-weight: 600; color: #e0e0ef; }
 .group-right { display: flex; align-items: center; gap: 8px; }
-.group-config { font-size: 11px; color: #667eea; opacity: 0.8; }
+.group-config { font-size: 11px; color: #00E5FF; opacity: 0.8; }
 .group-tasks { border-top: 1px solid rgba(102,126,234,0.08); }
 .group-empty { padding: 12px; text-align: center; color: #8c8ca1; font-size: 12px; }
 .sub-task {
@@ -722,7 +611,7 @@ onUnmounted(() => {
   &:last-child { border-bottom: none; }
   &:hover { background: rgba(102,126,234,0.06); }
 }
-.sub-rank { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(102,126,234,0.15); border-radius: 5px; font-size: 10px; font-weight: 700; color: #667eea; flex-shrink: 0; }
+.sub-rank { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(102,126,234,0.15); border-radius: 5px; font-size: 10px; font-weight: 700; color: #00E5FF; flex-shrink: 0; }
 .sub-title { flex: 1; font-size: 12px; color: #e0e0ef; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
@@ -736,14 +625,15 @@ onUnmounted(() => {
 // Todo card
 .todo-card {
   position: relative; display: flex; align-items: stretch;
-  background: rgba(20,20,50,0.5); border: 1px solid rgba(102,126,234,0.12);
+  background: rgba(10,16,31,0.15); border: 1px solid rgba(0,229,255,0.12);
   border-radius: 10px; transition: all 0.3s ease; cursor: grab; overflow: hidden;
-  &:hover { border-color: rgba(102,126,234,0.35); box-shadow: 0 0 20px rgba(102,126,234,0.1); transform: translateY(-1px); }
+  backdrop-filter: blur(2px);
+  &:hover { border-color: rgba(0,229,255,0.35); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
   &.dragging { opacity: 0.4; transform: scale(0.97); }
 }
 .card-glow {
   position: absolute; inset: -1px; border-radius: 10px;
-  background: conic-gradient(from var(--angle,0deg), transparent 70%, rgba(102,126,234,0.35), rgba(0,212,255,0.25), transparent 90%);
+  background: conic-gradient(from var(--angle,0deg), transparent 70%, rgba(0,229,255,0.35), rgba(157,92,255,0.25), transparent 90%);
   animation: rotateGlow 6s linear infinite; z-index: -1; opacity: 0; transition: opacity 0.4s; pointer-events: none;
 }
 .todo-card:hover .card-glow { opacity: 1; }
@@ -753,14 +643,14 @@ onUnmounted(() => {
 .card-rank {
   display: flex; align-items: center; justify-content: center; width: 40px; flex-shrink: 0;
   font-size: 16px; font-weight: 800;
-  background: linear-gradient(180deg, rgba(102,126,234,0.15), rgba(0,212,255,0.05)); color: #667eea;
-  border-right: 1px solid rgba(102,126,234,0.08);
+  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: #00E5FF;
+  border-right: 1px solid rgba(0,229,255,0.08);
 }
 .card-body { flex: 1; padding: 12px 14px; min-width: 0; }
 .card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; .card-id { color: #8c8ca1; font-size: 11px; margin-left: auto; } }
 .card-title { margin: 0; font-size: 14px; font-weight: 600; color: #e0e0ef; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: #8c8ca1; .overdue { color: #f56c6c; font-weight: 600; } }
-.card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: #667eea; opacity: 0.8;
+.card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: #00E5FF; opacity: 0.8;
   .config-item { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .card-actions { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 10px; }
@@ -768,9 +658,10 @@ onUnmounted(() => {
 // Dev card
 .dev-card {
   position: relative; display: flex; align-items: stretch;
-  background: rgba(40,15,20,0.5); border: 1px solid rgba(255,107,107,0.15);
+  background: rgba(10,16,31,0.15); border: 1px solid rgba(255,125,0,0.15);
   border-radius: 10px; overflow: hidden; transition: all 0.3s ease;
-  &:hover { border-color: rgba(255,107,107,0.35); box-shadow: 0 0 24px rgba(255,107,107,0.1); transform: translateY(-1px); }
+  backdrop-filter: blur(2px);
+  &:hover { border-color: rgba(255,125,0,0.35); box-shadow: 0 0 24px rgba(255,125,0,0.1); transform: translateY(-1px); }
 }
 .dev-card-glow {
   position: absolute; inset: -1px; border-radius: 10px;
@@ -785,7 +676,7 @@ onUnmounted(() => {
 }
 .dev-progress {
   position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
-  background: linear-gradient(180deg, #ff6b6b, #ffd700);
+  background: linear-gradient(180deg, #FF7D00, #ffd700);
   animation: progressGrow 3s ease-in-out infinite alternate;
 }
 @keyframes progressGrow { 0%{height:20%;opacity:0.6} 100%{height:80%;opacity:1} }
