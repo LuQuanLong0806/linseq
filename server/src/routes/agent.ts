@@ -108,13 +108,37 @@ router.get('/next-task', (_req, res) => {
     // 如果是返工，取上一轮审核意见
     let prevReviewComment = ''
     let prevVersion = ''
+    let prevOutput = ''
     if (row.ai_status === 'ai_rework') {
       const lastVer = db.prepare(
-        "SELECT version_number, prev_review_comment FROM task_versions WHERE task_id = ? AND status = 'rejected' ORDER BY iteration DESC LIMIT 1"
-      ).get(taskId) as { version_number: string; prev_review_comment: string } | undefined
+        "SELECT version_number, prev_review_comment, ai_output FROM task_versions WHERE task_id = ? AND status = 'rejected' ORDER BY iteration DESC LIMIT 1"
+      ).get(taskId) as { version_number: string; prev_review_comment: string; ai_output: string } | undefined
       if (lastVer) {
         prevVersion = lastVer.version_number
         prevReviewComment = (row.review_comment as string) || lastVer.prev_review_comment || ''
+        prevOutput = lastVer.ai_output || ''
+      }
+    }
+
+    // 分组上下文
+    let groupData: { id: string; name: string; taskCount: number; completedInGroup: number; siblingTasks: { taskId: string; title: string; aiStatus: string }[] } | null = null
+    const groupId = (row.group_id as string) || ''
+    if (groupId) {
+      const groupRow = db.prepare('SELECT id, name, task_ids FROM task_groups WHERE id = ?').get(groupId) as { id: string; name: string; task_ids: string } | undefined
+      if (groupRow) {
+        const groupTaskIds: string[] = JSON.parse(groupRow.task_ids || '[]')
+        const siblings = groupTaskIds
+          .filter(tid => tid !== taskId)
+          .map(tid => {
+            const t = db.prepare('SELECT id, title, ai_status FROM tasks WHERE id = ?').get(tid) as { id: string; title: string; ai_status: string } | undefined
+            return t ? { taskId: t.id, title: t.title, aiStatus: t.ai_status || '' } : null
+          })
+          .filter((s): s is { taskId: string; title: string; aiStatus: string } => !!s)
+        const completedCount = groupTaskIds.filter(tid => {
+          const t = db.prepare("SELECT ai_status FROM tasks WHERE id = ? AND ai_status = 'ai_review'").get(tid)
+          return !!t
+        }).length
+        groupData = { id: groupRow.id, name: groupRow.name, taskCount: groupTaskIds.length, completedInGroup: completedCount, siblingTasks: siblings }
       }
     }
 
@@ -143,7 +167,10 @@ router.get('/next-task', (_req, res) => {
         review: {
           prevComment: prevReviewComment,
           prevVersion,
+          prevOutput,
         },
+
+        group: groupData,
 
         nextVersion,
       },
@@ -207,8 +234,9 @@ router.post('/task/:id/complete', (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const { aiOutput = '', summary = '', durationMs = 0 } = req.body as {
+    const { aiOutput = '', summary = '', durationMs = 0, filesChanged, testResult } = req.body as {
       aiOutput?: string; summary?: string; durationMs?: number
+      filesChanged?: { path: string; action: string }[]; testResult?: { passed: boolean; typeCheck: boolean; details: string }
     }
 
     const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
@@ -241,9 +269,10 @@ router.post('/task/:id/complete', (req, res) => {
     // 创建版本记录
     const versionId = uuidv4()
     db.prepare(`
-      INSERT INTO task_versions (id, task_id, version_number, iteration, ai_output, dev_logs, ai_duration_ms, prev_review_comment, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')
-    `).run(versionId, id, versionNumber, iteration, aiOutput, JSON.stringify(devLogs), durationMs, prevComment)
+      INSERT INTO task_versions (id, task_id, version_number, iteration, ai_output, dev_logs, ai_duration_ms, prev_review_comment, status, files_changed, test_result, summary)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?)
+    `).run(versionId, id, versionNumber, iteration, aiOutput, JSON.stringify(devLogs), durationMs, prevComment,
+      JSON.stringify(filesChanged || []), JSON.stringify(testResult || {}), summary)
 
     // 更新任务状态
     db.prepare(`

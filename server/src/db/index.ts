@@ -117,6 +117,16 @@ export function initDatabase(): void {
     ['req_doc_text', 'TEXT DEFAULT ""'],
     ['group_id', 'TEXT DEFAULT ""'],
   ]
+
+  // task_versions 新增列
+  const versionColumns: [string, string][] = [
+    ['files_changed', "TEXT DEFAULT '[]'"],
+    ['test_result', "TEXT DEFAULT ''"],
+    ['summary', "TEXT DEFAULT ''"],
+  ]
+  for (const [col, type] of versionColumns) {
+    try { db.exec(`ALTER TABLE task_versions ADD COLUMN ${col} ${type}`) } catch { /* 已存在 */ }
+  }
   for (const [col, type] of newColumns) {
     try {
       db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${type}`)

@@ -1,14 +1,19 @@
 # QClaw Agent 开发指南 — 灵序 LineSequence
 
 > 本文档供 AI Agent（QClaw）存储到记忆中，用于自动化任务开发调度。
+> 最后更新：2026-05-27
 
-## 服务地址
+---
+
+## 一、服务地址
 
 ```
 BASE_URL = http://localhost:3201/api/agent
 ```
 
-## 核心开发循环
+---
+
+## 二、核心开发循环
 
 ```
 1. GET  /next-task          → 获取下一个待开发任务（含完整上下文）
@@ -20,7 +25,36 @@ BASE_URL = http://localhost:3201/api/agent
 
 ---
 
-## 接口详细说明
+## 三、行为约束规则（强制）
+
+### 开发红线（违反即判定为失败版本）
+
+1. **禁止 git push** — 只允许 `git add` + `git commit`，推送由人工手动完成
+2. **禁止修改不相关功能** — 只修改与当前任务直接相关的代码，不得"顺手"重构、优化、清理无关模块
+3. **禁止新增 npm 依赖** — 使用项目现有依赖，如需新增必须先在日志中说明原因等待人工确认
+4. **禁止修改构建配置** — 不允许修改 webpack/vite/tsconfig/package.json 等配置文件
+5. **禁止删除已有代码** — 除非需求明确要求删除某个功能，否则只能新增或修改
+6. **禁止修改数据库迁移/Schema** — 后端数据库结构变更需人工审核后执行
+
+### 开发原则
+
+1. **最小变更** — 只写完成任务所需的最少代码，不做过度设计
+2. **先读后写** — 修改任何文件前，先完整阅读该文件理解现有逻辑
+3. **保持一致** — 遵循目标项目已有的代码风格、命名规范、目录结构
+4. **自测通过** — 提交前必须运行目标项目的测试和类型检查，确保不引入编译错误
+5. **日志详实** — 每个关键步骤都通过 `/task/:id/log` 上报，便于人工审核追溯
+
+### 遇到以下情况应暂停并上报日志
+
+- 需求描述模糊，无法确定具体实现方案
+- 发现需求与现有功能冲突
+- 需要修改数据库结构
+- 发现目标项目有编译错误（非本次引入）
+- 任务的项目路径不存在或无代码
+
+---
+
+## 四、接口详细说明
 
 ### 1. GET /api/agent/next-task
 
@@ -51,9 +85,21 @@ BASE_URL = http://localhost:3201/api/agent
       "gitBranch": "feature/xxx"
     },
 
+    "group": {
+      "id": "group-uuid 或空字符串",
+      "name": "分组名称",
+      "taskCount": 3,
+      "completedInGroup": 1,
+      "siblingTasks": [
+        { "taskId": "xxx", "title": "同组任务A", "aiStatus": "ai_review" },
+        { "taskId": "yyy", "title": "同组任务B", "aiStatus": "ai_todo" }
+      ]
+    },
+
     "review": {
       "prevComment": "上轮审核意见（仅返工时有值）",
-      "prevVersion": "V1.0（仅返工时有值）"
+      "prevVersion": "V1.0（仅返工时有值）",
+      "prevOutput": "上轮开发产出描述（仅返工时有值）"
     },
 
     "nextVersion": "V1.0"
@@ -64,7 +110,9 @@ BASE_URL = http://localhost:3201/api/agent
 **特殊说明：**
 - 返工任务（`isRework=true`）优先返回
 - 如果队列为空，`data` 为 `null`
-- `requirement.docText` 是从需求文档 PDF 提取的文本，可能需要结合 `customDescription` 理解需求
+- `requirement.docText` 可能不完整或为空，需结合 `customDescription` 综合判断
+- `group` 为分组信息：如果任务属于分组，应参考同组其他任务避免重复开发
+- `review.prevOutput` 仅在返工时返回上轮开发产出的代码描述
 
 ### 2. POST /api/agent/task/:id/start
 
@@ -93,8 +141,9 @@ BASE_URL = http://localhost:3201/api/agent
 }
 ```
 
-- `action` 可选值：`开发`、`调试`、`重构`、`自测` 等，默认 `"开发"`
+- `action` 可选值：`开发`、`调试`、`重构`、`自测`、`暂停`、`异常` 等，默认 `"开发"`
 - `content` 必填，日志内容
+- **建议**：关键决策、遇到的问题、方案选择都应记录
 
 ### 4. POST /api/agent/task/:id/complete
 
@@ -109,13 +158,26 @@ BASE_URL = http://localhost:3201/api/agent
 {
   "aiOutput": "开发产出的代码/文件描述",
   "summary": "完成了XXX功能的开发",
-  "durationMs": 120000
+  "durationMs": 120000,
+  "filesChanged": [
+    { "path": "src/views/login.vue", "action": "created" },
+    { "path": "src/api/auth.ts", "action": "modified" },
+    { "path": "src/router/index.ts", "action": "modified" }
+  ],
+  "testResult": {
+    "passed": true,
+    "typeCheck": true,
+    "details": "8 tests passed, 0 failed. tsc --noEmit clean."
+  }
 }
 ```
 
-- `aiOutput`：开发产出描述（代码变更、生成文件等）
-- `summary`：完成摘要
-- `durationMs`：开发耗时（毫秒）
+**字段说明：**
+- `aiOutput`（必填）：开发产出描述，包含主要变更内容
+- `summary`（必填）：一句话完成摘要
+- `durationMs`（可选）：开发耗时毫秒
+- `filesChanged`（建议填写）：结构化文件变更列表，`action` 可选值 `created`/`modified`/`deleted`
+- `testResult`（建议填写）：自测结果摘要
 
 **响应：**
 
@@ -134,26 +196,14 @@ BASE_URL = http://localhost:3201/api/agent
 
 ---
 
-## 辅助接口
+## 五、辅助接口
 
 ### GET /api/agent/stats
 
 获取队列统计信息。
 
-**响应：**
-
 ```json
-{
-  "code": 0,
-  "data": {
-    "todoCount": 5,
-    "inDev": 1,
-    "inReview": 2,
-    "rework": 1,
-    "totalTasks": 30,
-    "currentTask": { "id": "xxx", "title": "xxx", "ai_status": "ai_dev" }
-  }
-}
+{ "code": 0, "data": { "todoCount": 5, "inDev": 1, "inReview": 2, "rework": 1, "totalTasks": 30, "currentTask": null } }
 ```
 
 ### GET /api/agent/todo-order
@@ -164,19 +214,13 @@ BASE_URL = http://localhost:3201/api/agent
 
 保存待办队列排序（前端调用，Agent 一般不需要）。
 
-**请求体：**
-
-```json
-{ "todoList": ["taskId1", "taskId2", "taskId3"] }
-```
-
 ### POST /api/agent/sync
 
 触发从内网同步任务数据。
 
 ---
 
-## 任务状态流转
+## 六、任务状态流转
 
 ```
 (空) ──入待办──→ ai_todo ──start──→ ai_dev ──complete──→ ai_review
@@ -189,38 +233,88 @@ BASE_URL = http://localhost:3201/api/agent
                                                       (结束)
 ```
 
-**状态值：**
-- `ai_todo` — 待开发
-- `ai_dev` — 开发中
-- `ai_review` — 待审核
-- `ai_rework` — 返工（审核不通过，需重新开发）
+| 状态值 | 含义 |
+|---|---|
+| `ai_todo` | 待开发 |
+| `ai_dev` | 开发中 |
+| `ai_review` | 待审核 |
+| `ai_rework` | 返工（审核不通过，需重新开发） |
 
-## 版本号规则
+---
 
-版本号格式为 `V{major}.{minor}`：
-- `iteration` 从 0 开始递增
-- `major = Math.floor(iteration / 10) + 1`
+## 七、版本号规则
+
+版本号格式 `V{major}.{minor}`：
+- `iteration` 从 0 递增
+- `major = floor(iteration / 10) + 1`
 - `minor = iteration % 10`
 - 示例：V1.0 → V1.1 → ... → V1.9 → V2.0
 
-## 开发上下文使用指南
+---
 
-### 需求理解
-1. 优先阅读 `requirement.docText`（需求文档原文提取）
-2. 结合 `requirement.customDescription`（人工补充说明）
-3. 对照 `requirement.acceptanceCriteria`（验收标准）确认交付范围
+## 八、开发流程规范
 
-### 项目配置
-- `project.path` — 本地项目路径，代码在此目录操作
-- `project.gitBranch` — 指定开发分支
+### 8.1 开始前（start 之后）
 
-### 返工场景
+1. 进入 `project.path` 目录，确认目录存在
+2. 读取项目 `package.json` 了解技术栈
+3. 浏览项目目录结构，理解分层（src/views, src/api, src/stores 等）
+4. 检查 `project.gitBranch`，如需新建分支则创建并切换
+5. 上报日志：`"已进入项目，技术栈为 Vue3 + TypeScript + Pinia"`
+
+### 8.2 开发中
+
+1. **先读后写** — 修改前完整阅读目标文件
+2. **最小改动** — 只改任务相关的代码
+3. **每完成一个关键步骤上报日志**
+4. **不相关代码不碰** — 即使看到 bug、性能问题、代码异味也不管
+5. **遇到模糊需求** — 通过日志上报 `"需求不明确：XXX，请补充"` 并暂停等待
+
+### 8.3 完成前（complete 之前）
+
+1. 运行目标项目的类型检查：`npx tsc --noEmit`
+2. 运行目标项目的测试：`npx vitest run`
+3. 如有编译错误或测试失败，先修复再提交
+4. 将变更提交到本地 Git：
+   ```
+   git add <相关文件>
+   git commit -m "feat: <简要描述>"
+   ```
+5. **不做 `git push`**
+
+### 8.4 返工场景
+
 当 `isRework=true` 时：
-1. 查看 `review.prevComment` 了解审核意见
-2. 查看 `review.prevVersion` 了解上一轮版本号
-3. 针对审核意见修改代码，完成后提交新版本
+1. 阅读 `review.prevComment` 了解审核意见
+2. 阅读 `review.prevOutput` 了解上轮做了什么
+3. **只针对审核意见修改**，不要推翻重来
+4. 提交时 commit message 标注 fix：`git commit -m "fix: <针对审核意见的修改>"`
 
-## 完整调用示例
+---
+
+## 九、分组任务处理
+
+当 `group` 字段非空时，说明当前任务属于一个分组：
+
+- **同组任务共享同一份需求文档**，避免重复实现相同功能
+- **同组任务共享项目配置**（project_path / git_branch）
+- **查看 siblingTasks**：了解同组其他任务的进度，如果已完成类似功能可参考
+- **同组任务应保持代码风格一致**
+
+---
+
+## 十、版本审核接口（人工/Agent 均可调用）
+
+```
+GET  /api/versions/task/:taskId       — 获取任务所有版本
+POST /api/versions/:id/approve        — 审核通过
+POST /api/versions/:id/reject         — 审核打回 { comment: "修改意见" }
+GET  /api/versions/:id                — 获取版本详情
+```
+
+---
+
+## 十一、完整调用示例
 
 ```bash
 # 1. 取任务
@@ -229,25 +323,56 @@ curl http://localhost:3201/api/agent/next-task
 # 2. 开始开发
 curl -X POST http://localhost:3201/api/agent/task/{taskId}/start
 
-# 3. 开发日志
+# 3. 上报日志
 curl -X POST http://localhost:3201/api/agent/task/{taskId}/log \
   -H "Content-Type: application/json" \
   -d '{"action":"开发","content":"开始实现核心逻辑"}'
 
-# 4. 完成
+# 4. 完成开发
 curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
   -H "Content-Type: application/json" \
-  -d '{"aiOutput":"新增 login.vue 组件...","summary":"完成登录页开发","durationMs":180000}'
+  -d '{
+    "aiOutput": "新增 login.vue 组件，实现表单验证和登录接口调用",
+    "summary": "完成登录页开发",
+    "durationMs": 180000,
+    "filesChanged": [
+      {"path": "src/views/login.vue", "action": "created"},
+      {"path": "src/api/auth.ts", "action": "modified"}
+    ],
+    "testResult": {"passed": true, "typeCheck": true, "details": "all clean"}
+  }'
 
 # 5. 继续下一个
 curl http://localhost:3201/api/agent/next-task
 ```
 
-## 版本审核接口（人工/Agent 均可调用）
+---
 
-```
-GET  /api/versions/task/:taskId       — 获取任务所有版本
-POST /api/versions/:id/approve        — 审核通过
-POST /api/versions/:id/reject         — 审核打回 { comment: "修改意见" }
-GET  /api/versions/:id                — 获取版本详情
-```
+## 十二、Git 操作规范
+
+| 操作 | 允许 | 说明 |
+|---|---|---|
+| `git status` | 是 | 查看变更状态 |
+| `git diff` | 是 | 查看具体改动 |
+| `git add` | 是 | 暂存变更文件 |
+| `git commit` | 是 | 提交到本地 |
+| `git checkout -b` | 是 | 创建新分支 |
+| `git branch` | 是 | 查看/切换分支 |
+| `git stash` | 是 | 暂存未完成改动 |
+| `git log` | 是 | 查看提交历史 |
+| **`git push`** | **禁止** | 由人工手动推送 |
+| **`git push --force`** | **禁止** | 绝对禁止 |
+| **`git reset --hard`** | **禁止** | 不可逆操作 |
+| **`git clean`** | **禁止** | 会删除未追踪文件 |
+
+---
+
+## 十三、错误处理
+
+| 场景 | 处理方式 |
+|---|---|
+| 项目路径不存在 | 上报日志 `"项目路径不存在: xxx"`，不上报 complete |
+| 需求文档为空且无 customDescription | 上报日志 `"缺少需求描述，无法开始开发"`，暂停等待 |
+| 编译错误无法修复 | 上报日志 `"遇到编译错误: xxx"`，说明已尝试的修复方式 |
+| 测试失败且非本次引入 | 上报日志 `"已有测试失败: xxx"`，列出失败用例 |
+| 发现需要修改数据库 | 上报日志 `"需要修改数据库: xxx"`，等待人工确认 |
