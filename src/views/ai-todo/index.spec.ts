@@ -34,6 +34,10 @@ vi.mock('@/api/group', () => ({
   groupApi: { list: vi.fn().mockResolvedValue({ code: 0, data: [] }), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
 }))
 
+vi.mock('@/api/agent', () => ({
+  agentApi: { saveTodoOrder: vi.fn().mockResolvedValue({ code: 0 }), getTodoOrder: vi.fn().mockResolvedValue({ code: 0, data: { todoList: [] } }) },
+}))
+
 const stubs = {
   'el-tag': { props: ['type', 'size', 'effect'], template: '<span><slot /></span>' },
   'el-button': { props: ['type', 'size', 'link'], template: '<button><slot /></button>' },

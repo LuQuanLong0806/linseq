@@ -155,6 +155,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useTaskStore } from '@/stores/task'
+import { agentApi } from '@/api/agent'
 import type { Task, TaskGroup } from '@/types'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -287,6 +288,7 @@ function onDragEnd() { dragFrom.value = null; dropTarget.value = -1 }
 
 function saveOrder() {
   localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
+  agentApi.saveTodoOrder(taskStore.todoList).catch(() => {})
 }
 
 function handleRemove(task: Task) {

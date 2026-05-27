@@ -1,0 +1,161 @@
+/**
+ * 任务版本 API（AI 迭代版本管理）
+ */
+import { Router } from 'express'
+import { v4 as uuidv4 } from 'uuid'
+import { getDb } from '../db/index.js'
+
+const router = Router()
+
+interface TaskVersion {
+  id: string
+  taskId: string
+  versionNumber: string
+  iteration: number
+  aiOutput: string
+  devLogs: string[]
+  aiDurationMs: number
+  prevReviewComment: string
+  status: 'pending_review' | 'approved' | 'rejected' | 'archived'
+  isFinal: boolean
+  gitCommitId: string
+  gitCommitTime: string
+  gitBranch: string
+  createdAt: string
+}
+
+function mapRow(r: Record<string, unknown>): TaskVersion {
+  return {
+    id: r.id as string,
+    taskId: r.task_id as string,
+    versionNumber: r.version_number as string,
+    iteration: r.iteration as number,
+    aiOutput: (r.ai_output as string) || '',
+    devLogs: JSON.parse((r.dev_logs as string) || '[]'),
+    aiDurationMs: (r.ai_duration_ms as number) || 0,
+    prevReviewComment: (r.prev_review_comment as string) || '',
+    status: (r.status as TaskVersion['status']) || 'pending_review',
+    isFinal: r.is_final === 1,
+    gitCommitId: (r.git_commit_id as string) || '',
+    gitCommitTime: (r.git_commit_time as string) || '',
+    gitBranch: (r.git_branch as string) || '',
+    createdAt: (r.created_at as string) || '',
+  }
+}
+
+// 获取任务的所有版本
+router.get('/task/:taskId', (req, res) => {
+  try {
+    const db = getDb()
+    const rows = db.prepare(
+      'SELECT * FROM task_versions WHERE task_id = ? ORDER BY iteration ASC'
+    ).all(req.params.taskId) as Record<string, unknown>[]
+    res.json({ code: 0, message: 'success', data: rows.map(mapRow) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 创建新版本（AI 开发完成时调用）
+router.post('/task/:taskId', (req, res) => {
+  try {
+    const db = getDb()
+    const { taskId } = req.params
+    const { aiOutput, devLogs, aiDurationMs, prevReviewComment } = req.body
+
+    // 查当前最大 iteration
+    const row = db.prepare(
+      'SELECT MAX(iteration) as max_iter FROM task_versions WHERE task_id = ?'
+    ).get(taskId) as { max_iter: number | null }
+    const iteration = (row.max_iter ?? -1) + 1
+    const major = Math.floor(iteration / 10) + 1
+    const minor = iteration % 10
+    const versionNumber = `V${major}.${minor}`
+
+    // 之前的版本全部标为 archived
+    db.prepare(
+      "UPDATE task_versions SET status = 'archived' WHERE task_id = ? AND status = 'pending_review'"
+    ).run(taskId)
+
+    const id = uuidv4()
+    db.prepare(`
+      INSERT INTO task_versions (id, task_id, version_number, iteration, ai_output, dev_logs, ai_duration_ms, prev_review_comment, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')
+    `).run(
+      id, taskId, versionNumber, iteration,
+      aiOutput || '', JSON.stringify(devLogs || []),
+      aiDurationMs || 0, prevReviewComment || ''
+    )
+
+    // 更新任务的 current version 字段
+    db.prepare('UPDATE tasks SET ai_output = ?, ai_status = ? WHERE id = ?')
+      .run(aiOutput || '', 'ai_review', taskId)
+
+    const result = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(id) as Record<string, unknown>
+    res.json({ code: 0, message: 'success', data: mapRow(result) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 审核通过：标记为最终版本
+router.post('/:id/approve', (req, res) => {
+  try {
+    const db = getDb()
+    const version = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
+    if (!version) { res.status(404).json({ code: 404, message: '版本不存在', data: null }); return }
+
+    db.prepare(
+      "UPDATE task_versions SET status = 'approved', is_final = 1 WHERE id = ?"
+    ).run(req.params.id)
+
+    // 其他版本取消 is_final
+    db.prepare(
+      'UPDATE task_versions SET is_final = 0 WHERE task_id = ? AND id != ?'
+    ).run(version.task_id as string, req.params.id)
+
+    const result = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown>
+    res.json({ code: 0, message: 'success', data: mapRow(result) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 审核打回：标记为 rejected
+router.post('/:id/reject', (req, res) => {
+  try {
+    const db = getDb()
+    const { comment } = req.body
+    const version = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
+    if (!version) { res.status(404).json({ code: 404, message: '版本不存在', data: null }); return }
+
+    db.prepare(
+      "UPDATE task_versions SET status = 'rejected' WHERE id = ?"
+    ).run(req.params.id)
+
+    // 更新任务的 review 信息
+    db.prepare(`
+      UPDATE tasks SET ai_status = 'ai_rework', review_comment = ?, review_time = datetime('now', 'localtime'), review_result = 'rejected', rework_count = rework_count + 1
+      WHERE id = ?
+    `).run(comment || '', version.task_id as string)
+
+    const result = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown>
+    res.json({ code: 0, message: 'success', data: mapRow(result) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 获取单个版本详情
+router.get('/:id', (req, res) => {
+  try {
+    const db = getDb()
+    const row = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
+    if (!row) { res.status(404).json({ code: 404, message: '版本不存在', data: null }); return }
+    res.json({ code: 0, message: 'success', data: mapRow(row) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+export default router

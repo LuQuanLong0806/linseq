@@ -137,6 +137,27 @@ export function initDatabase(): void {
     )
   `)
 
+  // ========== 任务版本表（AI 迭代版本管理） ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_versions (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      version_number TEXT NOT NULL,
+      iteration INTEGER DEFAULT 0,
+      ai_output TEXT DEFAULT '',
+      dev_logs TEXT DEFAULT '[]',
+      ai_duration_ms INTEGER DEFAULT 0,
+      prev_review_comment TEXT DEFAULT '',
+      status TEXT DEFAULT 'pending_review',
+      is_final INTEGER DEFAULT 0,
+      git_commit_id TEXT DEFAULT '',
+      git_commit_time TEXT DEFAULT '',
+      git_branch TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `)
+
   // ========== 开发记录表 ==========
   db.exec(`
     CREATE TABLE IF NOT EXISTS dev_logs (

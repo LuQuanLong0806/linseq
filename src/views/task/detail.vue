@@ -110,8 +110,62 @@
             <div class="desc-content empty" v-else>点击编辑按钮添加验收标准</div>
           </el-card>
 
-          <!-- AI 产出 -->
-          <el-card v-if="task.aiOutput" shadow="hover" class="content-card" style="margin-top:20px;">
+          <!-- 版本历史 -->
+          <el-card v-if="versions.length > 0" shadow="hover" class="content-card" style="margin-top:20px;">
+            <template #header>
+              <div class="card-header-flex">
+                <span class="card-title">版本历史 ({{ versions.length }})</span>
+                <el-button v-if="versions.length >= 2" type="primary" link size="small" @click="showDiffDialog = true">差异对比</el-button>
+              </div>
+            </template>
+            <div class="version-list">
+              <div
+                v-for="ver in [...versions].reverse()"
+                :key="ver.id"
+                class="version-item"
+                :class="{ active: selectedVersion?.id === ver.id }"
+                @click="selectedVersion = ver"
+              >
+                <div class="version-left">
+                  <span class="version-num">{{ ver.versionNumber }}</span>
+                  <el-tag
+                    :type="ver.status === 'approved' ? 'success' : ver.status === 'rejected' ? 'danger' : ver.status === 'archived' ? 'info' : 'warning'"
+                    size="small"
+                  >{{ versionStatusLabel(ver.status) }}</el-tag>
+                  <el-tag v-if="ver.isFinal" type="success" size="small" effect="dark">最终版本</el-tag>
+                </div>
+                <div class="version-right">
+                  <span class="version-time">{{ formatDateTime(ver.createdAt) }}</span>
+                  <span v-if="ver.aiDurationMs" class="version-duration">耗时 {{ (ver.aiDurationMs / 1000).toFixed(0) }}s</span>
+                </div>
+              </div>
+            </div>
+            <!-- 选中版本详情 -->
+            <div v-if="selectedVersion" class="version-detail">
+              <div class="version-detail-header">
+                <span>{{ selectedVersion.versionNumber }}</span>
+                <span v-if="selectedVersion.prevReviewComment" class="version-review-tag">基于上轮审核意见整改</span>
+              </div>
+              <div v-if="selectedVersion.prevReviewComment" class="version-section">
+                <div class="version-section-label">上轮审核意见</div>
+                <div class="version-section-content review-comment">{{ selectedVersion.prevReviewComment }}</div>
+              </div>
+              <div class="version-section">
+                <div class="version-section-label">AI 开发产出</div>
+                <pre class="version-code">{{ selectedVersion.aiOutput || '无产出记录' }}</pre>
+              </div>
+              <div v-if="selectedVersion.gitCommitId" class="version-section">
+                <div class="version-section-label">Git 信息</div>
+                <div class="version-git">
+                  <span>分支: {{ selectedVersion.gitBranch }}</span>
+                  <span>Commit: {{ selectedVersion.gitCommitId }}</span>
+                </div>
+              </div>
+            </div>
+          </el-card>
+
+          <!-- AI 产出（无版本时兼容显示） -->
+          <el-card v-if="task.aiOutput && versions.length === 0" shadow="hover" class="content-card" style="margin-top:20px;">
             <template #header>
               <span class="card-title">AI 开发产出</span>
             </template>
@@ -298,6 +352,32 @@
         <el-button type="primary" @click="handleAddLog">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- 版本差异对比弹窗 -->
+    <el-dialog v-model="showDiffDialog" title="版本差异对比" width="700px" :close-on-click-modal="false">
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        <el-select v-model="diffFromIdx" placeholder="旧版本" style="flex:1">
+          <el-option v-for="(v, i) in versions" :key="v.id" :label="v.versionNumber" :value="i" />
+        </el-select>
+        <span style="line-height:32px;color:#909399;">→</span>
+        <el-select v-model="diffToIdx" placeholder="新版本" style="flex:1">
+          <el-option v-for="(v, i) in versions" :key="v.id" :label="v.versionNumber" :value="i" />
+        </el-select>
+      </div>
+      <div v-if="diffFromIdx >= 0 && diffToIdx >= 0 && diffFromIdx !== diffToIdx" class="diff-result">
+        <div class="diff-header">
+          <span>{{ versions[diffFromIdx]?.versionNumber }}</span>
+          <span>{{ versions[diffToIdx]?.versionNumber }}</span>
+        </div>
+        <div class="diff-body">
+          <div v-for="(line, i) in diffLines" :key="i" class="diff-line" :class="line.type">
+            <span class="diff-prefix">{{ line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' ' }}</span>
+            <span>{{ line.text }}</span>
+          </div>
+        </div>
+      </div>
+      <div v-else style="color:#909399;text-align:center;padding:20px;">请选择两个不同版本进行对比</div>
+    </el-dialog>
   </div>
 </template>
 
@@ -306,6 +386,8 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { taskApi } from '@/api/task'
+import { versionApi } from '@/api/version'
+import type { TaskVersion } from '@/types'
 import { ArrowLeft, ArrowDown, VideoPlay, CircleCheck, Upload } from '@element-plus/icons-vue'
 import type { TaskStatus } from '@/types'
 import dayjs from 'dayjs'
@@ -356,6 +438,52 @@ const docTextLines = computed(() => {
   const text = task.value?.reqDocText || ''
   return text.split(/\s{2,}/).filter(Boolean)
 })
+
+// 版本管理
+const versions = ref<TaskVersion[]>([])
+const selectedVersion = ref<TaskVersion | null>(null)
+const showDiffDialog = ref(false)
+const diffFromIdx = ref(-1)
+const diffToIdx = ref(-1)
+
+async function loadVersions() {
+  if (!task.value) return
+  try {
+    const res = await versionApi.list(task.value.id)
+    versions.value = res.data || []
+    if (versions.value.length > 0 && !selectedVersion.value) {
+      selectedVersion.value = versions.value[versions.value.length - 1]
+    }
+  } catch { /* ignore */ }
+}
+
+function versionStatusLabel(s: string) {
+  return ({ pending_review: '待审核', approved: '已通过', rejected: '已打回', archived: '已归档' } as Record<string, string>)[s] || s
+}
+
+const diffLines = computed(() => {
+  if (diffFromIdx.value < 0 || diffToIdx.value < 0) return []
+  const from = versions.value[diffFromIdx.value]?.aiOutput || ''
+  const to = versions.value[diffToIdx.value]?.aiOutput || ''
+  return simpleDiff(from.split('\n'), to.split('\n'))
+})
+
+function simpleDiff(oldLines: string[], newLines: string[]): { type: 'same' | 'add' | 'del'; text: string }[] {
+  const result: { type: 'same' | 'add' | 'del'; text: string }[] = []
+  const oldSet = new Set(oldLines)
+  const newSet = new Set(newLines)
+  const maxLen = Math.max(oldLines.length, newLines.length)
+  for (let i = 0; i < maxLen; i++) {
+    const o = oldLines[i], n = newLines[i]
+    if (o === n) {
+      result.push({ type: 'same', text: o || '' })
+    } else {
+      if (o !== undefined && !newSet.has(o)) result.push({ type: 'del', text: o })
+      if (n !== undefined && !oldSet.has(n)) result.push({ type: 'add', text: n })
+    }
+  }
+  return result
+}
 
 async function handleExtractPdf() {
   if (!task.value) return
@@ -531,7 +659,9 @@ async function handleAddLog() {
 
 onMounted(() => {
   const id = route.params.id as string
-  if (id) taskStore.fetchTaskById(id)
+  if (id) {
+    taskStore.fetchTaskById(id).then(() => loadVersions())
+  }
 })
 </script>
 
@@ -596,6 +726,52 @@ onMounted(() => {
 }
 .doc-text-line { margin-bottom: 2px; }
 .doc-text-empty { color: #909399; font-size: 13px; }
+
+// 版本历史
+.version-list { display: flex; flex-direction: column; gap: 4px; }
+.version-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; transition: all 0.2s;
+  &:hover { background: #f5f7fa; }
+  &.active { border-color: #409eff; background: #ecf5ff; }
+}
+.version-left { display: flex; align-items: center; gap: 8px; }
+.version-right { display: flex; align-items: center; gap: 8px; }
+.version-num { font-weight: 700; font-size: 14px; color: #303133; min-width: 36px; }
+.version-time { font-size: 12px; color: #909399; }
+.version-duration { font-size: 11px; color: #67c23a; }
+.version-detail {
+  margin-top: 16px; padding: 16px; background: #fafbfc;
+  border: 1px solid #ebeef5; border-radius: 8px;
+}
+.version-detail-header {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 16px; margin-bottom: 12px;
+}
+.version-review-tag {
+  font-size: 11px; font-weight: 400; color: #e6a23c;
+  background: #fdf6ec; padding: 2px 8px; border-radius: 4px;
+}
+.version-section { margin-bottom: 12px; }
+.version-section-label { font-size: 12px; color: #909399; margin-bottom: 4px; }
+.version-section-content { font-size: 13px; color: #606266; }
+.review-comment { color: #e6a23c; font-style: italic; }
+.version-code {
+  background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px;
+  font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap;
+  max-height: 400px; overflow-y: auto;
+}
+.version-git { display: flex; gap: 16px; font-size: 12px; color: #67c23a; }
+
+// 差异对比
+.diff-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px; }
+.diff-body { font-family: monospace; font-size: 12px; line-height: 1.6; max-height: 500px; overflow-y: auto; }
+.diff-line { padding: 1px 8px; }
+.diff-prefix { display: inline-block; width: 16px; font-weight: 700; }
+.diff-line.same { color: #606266; }
+.diff-line.add { background: #f0f9eb; color: #67c23a; }
+.diff-line.del { background: #fef0f0; color: #f56c6c; }
 .log-entry { display: flex; align-items: center; gap: 8px;
   .log-content { font-size: 13px; color: #606266; }
 }

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { Task, TaskGroup, DashboardStats, TaskStatus, TaskUpdateParams } from '@/types'
 import { taskApi } from '@/api/task'
 import { groupApi } from '@/api/group'
+import { agentApi } from '@/api/agent'
 
 export const useTaskStore = defineStore('task', () => {
   // State
@@ -167,6 +168,7 @@ export const useTaskStore = defineStore('task', () => {
       updateTask(task.id, { aiStatus: '' })
     }
     localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
+    agentApi.saveTodoOrder(todoList.value).catch(() => {})
   }
 
   return {

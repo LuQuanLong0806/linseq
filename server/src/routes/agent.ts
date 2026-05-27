@@ -1,13 +1,15 @@
 /**
- * Agent 自动化路由 — 供 AI agent 自主拉取任务、开发、回写状态
+ * Agent 自动化路由（v2 — QClaw 集成）
  *
  * 核心端点：
- *   GET  /api/agent/next-task      — 获取下一个最紧急的待办任务
- *   GET  /api/agent/task/:id/detail — 获取任务完整详情（含需求文档、验收标准）
- *   POST /api/agent/sync           — 从内网同步全量任务
- *   POST /api/agent/task/:id/start — 开始开发（状态→in_progress）
- *   POST /api/agent/task/:id/complete — 标记完成（状态→self_test）
- *   POST /api/agent/task/:id/submit — 提交测试（状态→submitted）
+ *   GET  /api/agent/next-task           — 从待办队列取下一个任务（含完整开发上下文）
+ *   POST /api/agent/task/:id/start      — 标记开始开发
+ *   POST /api/agent/task/:id/log        — 上报开发日志（可多次）
+ *   POST /api/agent/task/:id/complete   — 提交产出 + 自动建版本 + 移入审核
+ *   GET  /api/agent/stats               — 队列统计
+ *   POST /api/agent/sync                — 触发内网同步
+ *   POST /api/agent/todo-order          — 保存待办队列排序
+ *   GET  /api/agent/todo-order          — 获取待办队列排序
  */
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
@@ -16,134 +18,136 @@ import { mapDbRowToTask, addDevLog } from './tasks.js'
 
 const router = Router()
 
-/** Task 类型（从 tasks.ts 复用，避免循环依赖） */
-interface AgentTask {
-  id: string
-  sourceId: string
-  intranetId: string
-  title: string
-  description: string
-  project: string
-  customer: string
-  priority: string
-  status: string
-  deadline: string
-  projectPath: string
-  gitBranch: string
-  customDescription: string
-  acceptanceCriteria: string
-  requirementDoc: string
-  intranetNodeName: string
-  isClosed: boolean
-  staleDays: number
-  workHours: number
-  handler: string
-  developer: string
-  devLeader: string
-  bugOrReq: string
-  workId: string
-  flowId: string
-  [key: string]: unknown
+// ========== 待办队列持久化 ==========
+
+/** 读取 todoList */
+function getTodoList(): string[] {
+  const db = getDb()
+  const row = db.prepare("SELECT value FROM sync_config WHERE key = 'todoList'").get() as { value: string } | undefined
+  if (!row) return []
+  try { return JSON.parse(row.value) } catch { return [] }
 }
+
+/** 保存 todoList */
+function saveTodoList(list: string[]): void {
+  const db = getDb()
+  db.prepare(`
+    INSERT INTO sync_config (key, value) VALUES ('todoList', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(list))
+}
+
+/** 从 todoList 移除指定任务 */
+function removeFromTodoList(taskId: string): void {
+  const list = getTodoList().filter(id => id !== taskId)
+  saveTodoList(list)
+}
+
+// ========== 待办队列排序接口 ==========
+
+router.get('/todo-order', (_req, res) => {
+  try {
+    res.json({ code: 0, message: 'success', data: { todoList: getTodoList() } })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+router.post('/todo-order', (req, res) => {
+  try {
+    const { todoList } = req.body as { todoList: string[] }
+    if (!Array.isArray(todoList)) {
+      return res.status(400).json({ code: 400, message: 'todoList 必须是数组', data: null })
+    }
+    saveTodoList(todoList)
+    res.json({ code: 0, message: 'success', data: null })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// ========== 核心接口 ==========
 
 /**
  * GET /api/agent/next-task
- * 获取下一个最紧急的待办任务
- *
- * 排序策略：
- *   1. 紧急优先（A > B > C）
- *   2. 截止日期最近的优先
- *   3. 滞留天数最少的优先（新任务优先）
- *
- * 过滤条件：
- *   - 未关闭 (is_closed = 0)
- *   - 状态为 pending 或 in_progress
- *   - 待办人员为自己（可选，通过 ?handler=xxx 过滤）
+ * 从待办队列取下一个任务，返回完整开发上下文
  */
-router.get('/next-task', (req, res) => {
+router.get('/next-task', (_req, res) => {
   try {
     const db = getDb()
-    const handler = req.query.handler as string | undefined
+    const todoList = getTodoList()
 
-    let sql = `
-      SELECT * FROM tasks
-      WHERE is_closed = 0
-        AND status IN ('pending', 'in_progress')
-    `
-    const params: string[] = []
-
-    if (handler) {
-      sql += ` AND handler LIKE ?`
-      params.push(`%${handler}%`)
+    if (todoList.length === 0) {
+      return res.json({ code: 0, message: '待办队列为空', data: null })
     }
 
-    // 排序：紧急 → 截止日 → 滞留天数
-    sql += `
-      ORDER BY
-        CASE priority
-          WHEN 'urgent' THEN 0
-          WHEN 'high' THEN 1
-          WHEN 'medium' THEN 2
-          ELSE 3
-        END ASC,
-        deadline ASC,
-        stale_days ASC
-      LIMIT 1
-    `
+    // 优先取 ai_rework 状态的
+    let taskId: string | undefined
+    for (const id of todoList) {
+      const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ?").get(id) as { ai_status: string } | undefined
+      if (r?.ai_status === 'ai_rework') { taskId = id; break }
+    }
+    // 没有返工任务，取第一个
+    if (!taskId) taskId = todoList[0]
 
-    const row = db.prepare(sql).get(...params) as AgentTask | undefined
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
     if (!row) {
-      return res.json({ code: 0, message: '暂无待办任务', data: null })
+      removeFromTodoList(taskId)
+      return res.json({ code: 0, message: '任务不存在，已从队列移除', data: null })
     }
 
-    const task = mapDbRowToTask(db, row)
-    res.json({ code: 0, message: 'success', data: task })
-  } catch (err) {
-    res.status(500).json({ code: 500, message: String(err), data: null })
-  }
-})
+    // 查版本信息
+    const maxVer = db.prepare(
+      'SELECT MAX(iteration) as max_iter FROM task_versions WHERE task_id = ?'
+    ).get(taskId) as { max_iter: number | null }
+    const nextIteration = (maxVer.max_iter ?? -1) + 1
+    const major = Math.floor(nextIteration / 10) + 1
+    const minor = nextIteration % 10
+    const nextVersion = `V${major}.${minor}`
 
-/**
- * GET /api/agent/task/:id/detail
- * 获取任务完整详情（含 devLogs、自定义描述等）
- */
-router.get('/task/:id/detail', (req, res) => {
-  try {
-    const db = getDb()
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id)
-    if (!row) {
-      return res.status(404).json({ code: 404, message: '任务不存在', data: null })
+    // 如果是返工，取上一轮审核意见
+    let prevReviewComment = ''
+    let prevVersion = ''
+    if (row.ai_status === 'ai_rework') {
+      const lastVer = db.prepare(
+        "SELECT version_number, prev_review_comment FROM task_versions WHERE task_id = ? AND status = 'rejected' ORDER BY iteration DESC LIMIT 1"
+      ).get(taskId) as { version_number: string; prev_review_comment: string } | undefined
+      if (lastVer) {
+        prevVersion = lastVer.version_number
+        prevReviewComment = (row.review_comment as string) || lastVer.prev_review_comment || ''
+      }
     }
-    const task = mapDbRowToTask(db, row)
-    res.json({ code: 0, message: 'success', data: task })
-  } catch (err) {
-    res.status(500).json({ code: 500, message: String(err), data: null })
-  }
-})
 
-/**
- * GET /api/agent/tasks
- * 获取任务列表（支持过滤）
- * query: status, priority, project, limit
- */
-router.get('/tasks', (req, res) => {
-  try {
-    const db = getDb()
-    const { status, priority, project, limit = '20' } = req.query
+    res.json({
+      code: 0,
+      message: 'success',
+      data: {
+        taskId: row.id,
+        sourceId: row.source_id,
+        title: row.title,
+        priority: row.priority,
+        isRework: row.ai_status === 'ai_rework',
+        reworkCount: row.rework_count || 0,
 
-    let sql = 'SELECT * FROM tasks WHERE 1=1'
-    const params: string[] = []
+        requirement: {
+          docText: row.req_doc_text || '',
+          customDescription: row.custom_description || '',
+          acceptanceCriteria: row.acceptance_criteria || '',
+        },
 
-    if (status) { sql += ' AND status = ?'; params.push(status as string) }
-    if (priority) { sql += ' AND priority = ?'; params.push(priority as string) }
-    if (project) { sql += ' AND project LIKE ?'; params.push(`%${project}%`) }
+        project: {
+          path: row.project_path || '',
+          gitBranch: row.git_branch || '',
+        },
 
-    sql += ' ORDER BY CASE priority WHEN \'urgent\' THEN 0 WHEN \'high\' THEN 1 WHEN \'medium\' THEN 2 ELSE 3 END ASC, deadline ASC'
-    sql += ` LIMIT ${parseInt(limit as string, 10) || 20}`
+        review: {
+          prevComment: prevReviewComment,
+          prevVersion,
+        },
 
-    const rows = db.prepare(sql).all(...params)
-    const tasks = rows.map((row) => mapDbRowToTask(db, row))
-    res.json({ code: 0, message: 'success', data: tasks })
+        nextVersion,
+      },
+    })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -151,93 +155,21 @@ router.get('/tasks', (req, res) => {
 
 /**
  * POST /api/agent/task/:id/start
- * 开始开发 — 状态 → in_progress，记录日志
+ * 标记开始开发
  */
 router.post('/task/:id/start', (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
 
-    const r = row as Record<string, unknown>
-    if (r.status === 'completed' || r.status === 'submitted') {
-      return res.status(400).json({ code: 400, message: `任务已${r.status === 'completed' ? '完结' : '提交'}，无法再次开始`, data: null })
-    }
+    db.prepare("UPDATE tasks SET ai_status = 'ai_dev', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
+    addDevLog(db, id, '开始开发', `QClaw 开始开发任务: ${(row.title as string).substring(0, 50)}`, 'agent', false)
 
-    db.prepare("UPDATE tasks SET status = 'in_progress', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
-    addDevLog(db, id, '开始开发', `Agent 开始开发任务: ${(r.title as string).substring(0, 50)}`, 'agent', false)
-
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
-    res.json({ code: 0, message: '已开始开发', data: mapDbRowToTask(db, updated) })
-  } catch (err) {
-    res.status(500).json({ code: 500, message: String(err), data: null })
-  }
-})
-
-/**
- * POST /api/agent/task/:id/complete
- * 开发完成 — 状态 → self_test，记录日志
- * body: { summary: string } 开发总结
- */
-router.post('/task/:id/complete', (req, res) => {
-  try {
-    const db = getDb()
-    const id = req.params.id
-    const { summary = '' } = req.body as { summary?: string }
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
-    if (!row) {
-      return res.status(404).json({ code: 404, message: '任务不存在', data: null })
-    }
-
-    const r = row as Record<string, unknown>
-    if (r.status !== 'in_progress') {
-      return res.status(400).json({ code: 400, message: `任务状态为 ${r.status}，不在开发中`, data: null })
-    }
-
-    db.prepare("UPDATE tasks SET status = 'self_test', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
-    const logContent = summary
-      ? `开发完成: ${summary}`
-      : `Agent 标记开发完成，等待自测`
-    addDevLog(db, id, '开发完成', logContent, 'agent', false)
-
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
-    res.json({ code: 0, message: '已标记开发完成', data: mapDbRowToTask(db, updated) })
-  } catch (err) {
-    res.status(500).json({ code: 500, message: String(err), data: null })
-  }
-})
-
-/**
- * POST /api/agent/task/:id/submit
- * 提交测试 — 状态 → submitted，记录日志
- * body: { notes: string } 提交说明
- */
-router.post('/task/:id/submit', (req, res) => {
-  try {
-    const db = getDb()
-    const id = req.params.id
-    const { notes = '' } = req.body as { notes?: string }
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
-    if (!row) {
-      return res.status(404).json({ code: 404, message: '任务不存在', data: null })
-    }
-
-    const r = row as Record<string, unknown>
-    if (r.status !== 'self_test') {
-      return res.status(400).json({ code: 400, message: `任务状态为 ${r.status}，需先自测完成`, data: null })
-    }
-
-    db.prepare("UPDATE tasks SET status = 'submitted', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
-    const logContent = notes
-      ? `提交测试: ${notes}`
-      : `Agent 提交测试`
-    addDevLog(db, id, '提交测试', logContent, 'agent', false)
-
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
-    res.json({ code: 0, message: '已提交测试', data: mapDbRowToTask(db, updated) })
+    res.json({ code: 0, message: '已开始开发', data: { taskId: id, aiStatus: 'ai_dev' } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -245,8 +177,7 @@ router.post('/task/:id/submit', (req, res) => {
 
 /**
  * POST /api/agent/task/:id/log
- * 添加开发日志
- * body: { action: string, content: string }
+ * 上报开发日志
  */
 router.post('/task/:id/log', (req, res) => {
   try {
@@ -256,15 +187,85 @@ router.post('/task/:id/log', (req, res) => {
     if (!content) {
       return res.status(400).json({ code: 400, message: '请输入记录内容', data: null })
     }
-
     const row = db.prepare('SELECT id FROM tasks WHERE id = ?').get(id)
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
 
-    addDevLog(db, id, action, content, 'agent', false)
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
-    res.json({ code: 0, message: '日志已添加', data: mapDbRowToTask(db, updated) })
+    const logId = addDevLog(db, id, action, content, 'agent', false)
+    res.json({ code: 0, message: 'success', data: { logId } })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+/**
+ * POST /api/agent/task/:id/complete
+ * QClaw 开发完成：提交产出 + 自动建版本 + 移入审核
+ */
+router.post('/task/:id/complete', (req, res) => {
+  try {
+    const db = getDb()
+    const id = req.params.id
+    const { aiOutput = '', summary = '', durationMs = 0 } = req.body as {
+      aiOutput?: string; summary?: string; durationMs?: number
+    }
+
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    if (!row) {
+      return res.status(404).json({ code: 404, message: '任务不存在', data: null })
+    }
+
+    // 查版本递增
+    const maxVer = db.prepare(
+      'SELECT MAX(iteration) as max_iter FROM task_versions WHERE task_id = ?'
+    ).get(id) as { max_iter: number | null }
+    const iteration = (maxVer.max_iter ?? -1) + 1
+    const major = Math.floor(iteration / 10) + 1
+    const minor = iteration % 10
+    const versionNumber = `V${major}.${minor}`
+
+    // 之前版本标为 archived
+    db.prepare(
+      "UPDATE task_versions SET status = 'archived' WHERE task_id = ? AND status = 'pending_review'"
+    ).run(id)
+
+    // 取上轮审核意见（返工场景）
+    const prevComment = (row.review_comment as string) || ''
+
+    // 获取本轮开发日志
+    const devLogs = db.prepare(
+      "SELECT * FROM dev_logs WHERE task_id = ? ORDER BY time ASC"
+    ).all(id) as Record<string, unknown>[]
+
+    // 创建版本记录
+    const versionId = uuidv4()
+    db.prepare(`
+      INSERT INTO task_versions (id, task_id, version_number, iteration, ai_output, dev_logs, ai_duration_ms, prev_review_comment, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')
+    `).run(versionId, id, versionNumber, iteration, aiOutput, JSON.stringify(devLogs), durationMs, prevComment)
+
+    // 更新任务状态
+    db.prepare(`
+      UPDATE tasks SET ai_status = 'ai_review', ai_output = ?, update_time = datetime('now', 'localtime')
+      WHERE id = ?
+    `).run(aiOutput, id)
+
+    // 从 todoList 移除
+    removeFromTodoList(id)
+
+    addDevLog(db, id, '开发完成', summary || `完成开发，生成版本 ${versionNumber}`, 'agent', false)
+
+    res.json({
+      code: 0,
+      message: 'success',
+      data: {
+        versionId,
+        versionNumber,
+        taskId: id,
+        aiStatus: 'ai_review',
+      },
+    })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -272,7 +273,7 @@ router.post('/task/:id/log', (req, res) => {
 
 /**
  * POST /api/agent/sync
- * 触发内网同步（包装 tasks 路由的 sync 逻辑）
+ * 触发内网同步
  */
 router.post('/sync', async (_req, res) => {
   try {
@@ -280,9 +281,7 @@ router.post('/sync', async (_req, res) => {
     const tasks = await scrapTasksFromIntranet()
     const db = getDb()
 
-    let newTasks = 0
-    let updatedTasks = 0
-    let unchangedTasks = 0
+    let newTasks = 0, updatedTasks = 0, unchangedTasks = 0
 
     const upsertStmt = db.prepare(`
       INSERT INTO tasks (
@@ -301,46 +300,27 @@ router.post('/sync', async (_req, res) => {
         ?, ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(source_id) DO UPDATE SET
-        intranet_id = excluded.intranet_id,
-        title = excluded.title,
-        description = excluded.description,
-        module = excluded.module,
-        module_short = excluded.module_short,
-        product = excluded.product,
-        priority = excluded.priority,
-        deadline = excluded.deadline,
-        update_time = datetime('now', 'localtime'),
-        sync_time = datetime('now', 'localtime'),
-        tags = excluded.tags,
-        is_synced = 1,
-        project = excluded.project,
-        customer = excluded.customer,
-        customer_manager = excluded.customer_manager,
-        task_type = excluded.task_type,
-        bug_or_req = excluded.bug_or_req,
-        work_hours = excluded.work_hours,
-        submit_time = excluded.submit_time,
-        developer = excluded.developer,
-        supervisor = excluded.supervisor,
-        product_manager = excluded.product_manager,
-        dev_leader = excluded.dev_leader,
-        handler = excluded.handler,
-        is_closed = excluded.is_closed,
-        intranet_node = excluded.intranet_node,
-        intranet_node_name = excluded.intranet_node_name,
-        stale_days = excluded.stale_days,
-        flow_days = excluded.flow_days,
-        days_since_create = excluded.days_since_create,
-        reject_flag = excluded.reject_flag,
-        version = excluded.version
+        intranet_id = excluded.intranet_id, title = excluded.title, description = excluded.description,
+        module = excluded.module, module_short = excluded.module_short, product = excluded.product,
+        priority = excluded.priority, deadline = excluded.deadline,
+        update_time = datetime('now', 'localtime'), sync_time = datetime('now', 'localtime'),
+        tags = excluded.tags, is_synced = 1, project = excluded.project, customer = excluded.customer,
+        customer_manager = excluded.customer_manager, task_type = excluded.task_type,
+        bug_or_req = excluded.bug_or_req, work_hours = excluded.work_hours, submit_time = excluded.submit_time,
+        developer = excluded.developer, supervisor = excluded.supervisor, supervisor_id = excluded.supervisor_id,
+        product_manager = excluded.product_manager, dev_leader = excluded.dev_leader, handler = excluded.handler,
+        is_closed = excluded.is_closed, intranet_node = excluded.intranet_node,
+        intranet_node_name = excluded.intranet_node_name, stale_days = excluded.stale_days,
+        flow_days = excluded.flow_days, days_since_create = excluded.days_since_create,
+        reject_flag = excluded.reject_flag, version = excluded.version
     `)
 
     for (const task of tasks) {
-      const id = uuidv4()
+      const taskid = uuidv4()
       const exists = db.prepare('SELECT id, title, status FROM tasks WHERE source_id = ?').get(task.sourceId) as Record<string, unknown> | undefined
 
       upsertStmt.run(
-        id, task.sourceId, task.intranetId, task.title, task.description, task.module, task.moduleShort, task.product,
+        taskid, task.sourceId, task.intranetId, task.title, task.description, task.module, task.moduleShort, task.product,
         task.priority, task.status, task.deadline, task.createTime || new Date().toISOString(), task.updateTime || new Date().toISOString(), JSON.stringify(task.tags),
         task.project, task.customer, task.customerManager, task.taskType, task.bugOrReq, task.workHours, task.submitTime,
         task.developer, task.supervisor, task.supervisorId, task.productManager, task.devLeader, task.handler,
@@ -348,9 +328,9 @@ router.post('/sync', async (_req, res) => {
         task.staleDays, task.flowDays, task.daysSinceCreate, task.rejectFlag ? 1 : 0, task.flowId, task.workId, task.version
       )
 
-      if (!exists) { newTasks++ }
-      else if (exists.title !== task.title || exists.status !== task.status) { updatedTasks++ }
-      else { unchangedTasks++ }
+      if (!exists) newTasks++
+      else if (exists.title !== task.title || exists.status !== task.status) updatedTasks++
+      else unchangedTasks++
     }
 
     db.prepare(`
@@ -366,28 +346,31 @@ router.post('/sync', async (_req, res) => {
 
 /**
  * GET /api/agent/stats
- * 获取统计概览
+ * 队列统计
  */
 router.get('/stats', (_req, res) => {
   try {
     const db = getDb()
+    const todoList = getTodoList()
+
     const total = (db.prepare('SELECT COUNT(*) as c FROM tasks WHERE is_closed = 0').get() as { c: number }).c
-    const pending = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'pending' AND is_closed = 0").get() as { c: number }).c
-    const inProgress = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'in_progress' AND is_closed = 0").get() as { c: number }).c
-    const urgent = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE priority = 'urgent' AND is_closed = 0").get() as { c: number }).c
-    const overdue = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE deadline < date('now','localtime') AND is_closed = 0 AND status NOT IN ('completed','rejected')").get() as { c: number }).c
-    const lastSync = db.prepare("SELECT value FROM sync_config WHERE key = 'lastRawData'").get() as { value: string } | undefined
+    const inDev = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_dev'").get() as { c: number }).c
+    const inReview = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_review'").get() as { c: number }).c
+    const rework = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_rework'").get() as { c: number }).c
+
+    // 当前正在开发的任务
+    const currentTask = db.prepare("SELECT id, title, ai_status FROM tasks WHERE ai_status = 'ai_dev' LIMIT 1").get() as { id: string; title: string; ai_status: string } | undefined
 
     res.json({
       code: 0,
       message: 'success',
       data: {
-        total,
-        pending,
-        inProgress,
-        urgent,
-        overdue,
-        lastSync: lastSync ? JSON.parse(lastSync.value) : null,
+        todoCount: todoList.length,
+        inDev,
+        inReview,
+        rework,
+        totalTasks: total,
+        currentTask: currentTask || null,
       },
     })
   } catch (err) {

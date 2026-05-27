@@ -202,3 +202,21 @@ export interface TaskGroup {
   gitBranch: string
   createdAt: string
 }
+
+/** 任务版本（AI 迭代版本管理） */
+export interface TaskVersion {
+  id: string
+  taskId: string
+  versionNumber: string
+  iteration: number
+  aiOutput: string
+  devLogs: string[]
+  aiDurationMs: number
+  prevReviewComment: string
+  status: 'pending_review' | 'approved' | 'rejected' | 'archived'
+  isFinal: boolean
+  gitCommitId: string
+  gitCommitTime: string
+  gitBranch: string
+  createdAt: string
+}
