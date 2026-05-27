@@ -55,7 +55,7 @@ const mockTask = (o = {}) => ({
   version: '', projectPath: 'F:/dev', gitBranch: 'main', customDescription: '',
   acceptanceCriteria: '', requirementDoc: '', localPath: '', taskPageUrl: '',
   aiStatus: '', reviewComment: '', reviewTime: '', reviewResult: '',
-  completeTime: '', reworkCount: 0, aiOutput: '', reqDocName: '', reqDocUrl: '', reqDocText: '', groupId: '', ...o,
+  completeTime: '', reworkCount: 0, aiOutput: '', reqDocName: '', reqDocUrl: '', reqDocText: '', groupId: '', aiQuestion: '', ...o,
 })
 
 describe('AI待办页面', () => {

@@ -146,7 +146,7 @@ router.patch('/:id', (req, res) => {
       'project_path', 'git_branch', 'custom_description', 'acceptance_criteria',
       'requirement_doc', 'local_path', 'status', 'priority', 'tags', 'ai_status',
       'task_page_url', 'review_comment', 'review_time', 'review_result',
-      'complete_time', 'rework_count', 'ai_output', 'req_doc_name', 'req_doc_url', 'req_doc_text', 'group_id',
+      'complete_time', 'rework_count', 'ai_output', 'req_doc_name', 'req_doc_url', 'req_doc_text', 'group_id', 'ai_question',
     ])
 
     const setParts: string[] = []
@@ -368,6 +368,7 @@ export function mapDbRowToTask(db: ReturnType<typeof getDb>, row: unknown): Task
     reqDocUrl: (r.req_doc_url as string) || '',
     reqDocText: (r.req_doc_text as string) || '',
     groupId: (r.group_id as string) || '',
+    aiQuestion: (r.ai_question as string) || '',
   }
 }
 

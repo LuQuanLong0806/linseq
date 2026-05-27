@@ -7,6 +7,7 @@
  *   POST /api/agent/task/:id/log        — 上报开发日志（可多次）
  *   POST /api/agent/task/:id/complete   — 提交产出 + 自动建版本 + 移入审核
  *   GET  /api/agent/stats               — 队列统计
+ *   POST /api/agent/task/:id/question   — AI 上报疑问，暂停等待人工回复
  *   POST /api/agent/sync                — 触发内网同步
  *   POST /api/agent/todo-order          — 保存待办队列排序
  *   GET  /api/agent/todo-order          — 获取待办队列排序
@@ -87,8 +88,17 @@ router.get('/next-task', (_req, res) => {
       const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ?").get(id) as { ai_status: string } | undefined
       if (r?.ai_status === 'ai_rework') { taskId = id; break }
     }
-    // 没有返工任务，取第一个
-    if (!taskId) taskId = todoList[0]
+    // 没有返工任务，取第一个非 ai_question 的
+    if (!taskId) {
+      for (const id of todoList) {
+        const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ?").get(id) as { ai_status: string } | undefined
+        if (r?.ai_status !== 'ai_question') { taskId = id; break }
+      }
+    }
+    // 全部都在疑问中，队列为空
+    if (!taskId) {
+      return res.json({ code: 0, message: '所有任务都在等待人工回复', data: null })
+    }
 
     const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
     if (!row) {
@@ -295,6 +305,36 @@ router.post('/task/:id/complete', (req, res) => {
         aiStatus: 'ai_review',
       },
     })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+/**
+ * POST /api/agent/task/:id/question
+ * AI 上报疑问，移出待办队列，AI 继续取下一个任务
+ * 用户在前端回复后，任务重新入列继续开发
+ */
+router.post('/task/:id/question', (req, res) => {
+  try {
+    const db = getDb()
+    const id = req.params.id
+    const { question } = req.body as { question?: string }
+    if (!question) {
+      return res.status(400).json({ code: 400, message: '请输入疑问内容', data: null })
+    }
+
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    if (!row) {
+      return res.status(404).json({ code: 404, message: '任务不存在', data: null })
+    }
+
+    db.prepare("UPDATE tasks SET ai_status = 'ai_question', ai_question = ?, update_time = datetime('now', 'localtime') WHERE id = ?").run(question, id)
+    // 从 todoList 移出，让 AI 可以继续取下一个任务
+    removeFromTodoList(id)
+    addDevLog(db, id, '疑问', `AI 提出疑问: ${question}`, 'agent', false)
+
+    res.json({ code: 0, message: '已提交疑问并移至待回复列表', data: { taskId: id, aiStatus: 'ai_question' } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }

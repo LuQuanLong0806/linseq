@@ -13,6 +13,28 @@ BASE_URL = http://localhost:3201/api/agent
 
 ---
 
+## 〇、口语化命令对照表
+
+以下是人类可能说的自然语言指令，以及对应的 API 调用。收到这类指令时直接执行对应操作。
+
+| 人类说 | AI 应该做 | 调用链 |
+|---|---|---|
+| "开始工作" / "继续开发" / "取任务" / "干活了" | 从待办队列取任务并开始 | `GET /next-task` → 如果有任务 → `POST /task/:id/start` |
+| "跳过这个" / "先做下一个" | 放弃当前任务，取下一个 | `POST /task/:id/question`（记录跳过原因） → `GET /next-task` |
+| "这个需求不清楚" / "我没看懂需求" | 提交疑问，移出队列，继续取下一个 | `POST /task/:id/question` → `GET /next-task` |
+| "完成了" / "搞定了" / "提交" | 提交开发产出，移入审核 | `POST /task/:id/complete` → `GET /next-task` |
+| "还有多少任务" / "队列情况" | 查看队列统计 | `GET /stats` |
+| "同步一下" / "拉取最新任务" | 从内网同步任务数据 | `POST /sync` |
+| "停一下" / "暂停" | 完成当前任务后停止，不再取新任务 | `POST /task/:id/complete`（如有进行中任务），不再调 `/next-task` |
+
+**执行原则：**
+- 人类说话通常包含多余信息，提取核心意图即可
+- 如果不确定意图，上报日志询问而不是猜测
+- "开始工作"类指令应循环执行：取任务→开发→提交→取下一个，直到队列为空
+- 遇到需求不明确的任务，调用 `/question` 后立即继续取下一个，不要等
+
+---
+
 ## 二、核心开发循环
 
 ```
@@ -44,13 +66,15 @@ BASE_URL = http://localhost:3201/api/agent
 4. **自测通过** — 提交前必须运行目标项目的测试和类型检查，确保不引入编译错误
 5. **日志详实** — 每个关键步骤都通过 `/task/:id/log` 上报，便于人工审核追溯
 
-### 遇到以下情况应暂停并上报日志
+### 遇到以下情况应提交疑问并继续下一个任务
 
 - 需求描述模糊，无法确定具体实现方案
 - 发现需求与现有功能冲突
 - 需要修改数据库结构
 - 发现目标项目有编译错误（非本次引入）
 - 任务的项目路径不存在或无代码
+
+**处理方式：** 调用 `POST /task/:id/question` 提交疑问，任务自动从待办队列移出，然后调用 `GET /next-task` 继续取下一个任务。**不要停等工作。**
 
 ---
 
@@ -194,6 +218,38 @@ BASE_URL = http://localhost:3201/api/agent
 }
 ```
 
+### 5. POST /api/agent/task/:id/question
+
+遇到需求不明确、无法继续开发时调用。任务自动从待办队列移出，AI 应立即继续取下一个任务。
+
+**请求体：**
+
+```json
+{
+  "question": "需求文档中提到的「用户中心」是指哪个模块？当前项目中没有找到对应的路由和组件。"
+}
+```
+
+- `question` 必填，描述具体不明确的点
+
+**响应：**
+
+```json
+{
+  "code": 0,
+  "message": "已提交疑问并移至待回复列表",
+  "data": { "taskId": "xxx", "aiStatus": "ai_question" }
+}
+```
+
+**流程：**
+1. AI 调用 `/question` 提交疑问
+2. 任务状态变为 `ai_question`，从待办队列移出
+3. AI 立即调用 `GET /next-task` 取下一个任务继续工作
+4. 用户在前端看到 AI 的疑问，填写回复
+5. 回复后任务重新加入待办队列（状态变回 `ai_todo`）
+6. AI 后续取到该任务时继续开发
+
 ---
 
 ## 五、辅助接口
@@ -224,13 +280,17 @@ BASE_URL = http://localhost:3201/api/agent
 
 ```
 (空) ──入待办──→ ai_todo ──start──→ ai_dev ──complete──→ ai_review
-                  ↑                                      │
-                  └──── reject (返工) ←──────────────────┘
-                                                         │
-                                                   approve (通过)
-                                                         │
-                                                         ↓
-                                                      (结束)
+                  ↑                    │                      │
+                  │                    │ question              │
+                  │                    ↓                      │
+                  │              ai_question ──人工回复──→ ai_todo
+                  │                                           │
+                  └──── reject (返工) ←──────────────────────┘
+                                                              │
+                                                        approve (通过)
+                                                              │
+                                                              ↓
+                                                           (结束)
 ```
 
 | 状态值 | 含义 |
@@ -239,6 +299,8 @@ BASE_URL = http://localhost:3201/api/agent
 | `ai_dev` | 开发中 |
 | `ai_review` | 待审核 |
 | `ai_rework` | 返工（审核不通过，需重新开发） |
+| `ai_question` | AI 有疑问，等待人工回复（已从待办队列移出） |
+| `ai_done` | 已通过 |
 
 ---
 
@@ -316,6 +378,8 @@ GET  /api/versions/:id                — 获取版本详情
 
 ## 十一、完整调用示例
 
+### 正常开发流程
+
 ```bash
 # 1. 取任务
 curl http://localhost:3201/api/agent/next-task
@@ -343,6 +407,18 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
   }'
 
 # 5. 继续下一个
+curl http://localhost:3201/api/agent/next-task
+```
+
+### 遇到需求不明确时
+
+```bash
+# 1. 提交疑问，任务移出队列
+curl -X POST http://localhost:3201/api/agent/task/{taskId}/question \
+  -H "Content-Type: application/json" \
+  -d '{"question": "需求中提到的「用户中心」找不到对应模块，请确认具体位置"}'
+
+# 2. 立即取下一个任务继续工作
 curl http://localhost:3201/api/agent/next-task
 ```
 

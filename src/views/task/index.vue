@@ -679,7 +679,8 @@ function getAiStatusType(
     ai_rework: 'danger',
     ai_dev: 'primary',
     ai_review: 'primary',
-    ai_done: 'success'
+    ai_done: 'success',
+    ai_question: 'warning'
   };
   return map[aiStatus] || 'info';
 }
@@ -691,6 +692,7 @@ function getAiStatusLabel(aiStatus: string): string {
     ai_rework: '待返工',
     ai_dev: '开发中',
     ai_review: '待审核',
+    ai_question: '待回复',
     ai_done: 'AI完成'
   };
   return map[aiStatus] || '未加入';

@@ -86,6 +86,7 @@ export interface Task {
   completeTime: string
   reworkCount: number
   aiOutput: string
+  aiQuestion: string
   reqDocName: string
   reqDocUrl: string
   reqDocText: string
@@ -189,6 +190,7 @@ export interface TaskUpdateParams {
   completeTime?: string
   reworkCount?: number
   aiOutput?: string
+  aiQuestion?: string
   reqDocText?: string
   groupId?: string
 }

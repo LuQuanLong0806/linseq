@@ -69,6 +69,7 @@ export interface Task {
   reqDocUrl: string
   reqDocText: string
   groupId: string
+  aiQuestion: string
 }
 
 export interface DevLogEntry {

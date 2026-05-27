@@ -116,6 +116,7 @@ export function initDatabase(): void {
     ['req_doc_url', 'TEXT DEFAULT ""'],
     ['req_doc_text', 'TEXT DEFAULT ""'],
     ['group_id', 'TEXT DEFAULT ""'],
+    ['ai_question', 'TEXT DEFAULT ""'],
   ]
 
   // task_versions 新增列

@@ -110,6 +110,23 @@
             <div class="desc-content empty" v-else>点击编辑按钮添加验收标准</div>
           </el-card>
 
+          <!-- AI 疑问卡片 -->
+          <el-card v-if="task.aiStatus === 'ai_question' && task.aiQuestion" shadow="hover" class="content-card question-card" style="margin-top:20px;">
+            <template #header>
+              <div class="card-header-flex">
+                <span class="card-title" style="color:#e6a23c;">AI 有疑问，等待回复</span>
+              </div>
+            </template>
+            <div class="question-content">
+              <div class="question-label">AI 提出的问题：</div>
+              <div class="question-text">{{ task.aiQuestion }}</div>
+            </div>
+            <div class="question-reply" style="margin-top:16px;">
+              <el-input v-model="questionReply" type="textarea" :rows="3" placeholder="请输入补充说明，回复后 AI 将继续开发..." />
+              <el-button type="warning" style="margin-top:8px;" @click="handleReplyQuestion" :loading="replying">回复并继续开发</el-button>
+            </div>
+          </el-card>
+
           <!-- 版本历史 -->
           <el-card v-if="versions.length > 0" shadow="hover" class="content-card" style="margin-top:20px;">
             <template #header>
@@ -406,6 +423,8 @@ const docEditing = ref(false)
 const docEditText = ref('')
 const docSaving = ref(false)
 const extractingPdf = ref(false)
+const questionReply = ref('')
+const replying = ref(false)
 
 const logForm = reactive({ action: '开发', content: '' })
 
@@ -521,6 +540,26 @@ async function saveDocEdit() {
   }
 }
 
+async function handleReplyQuestion() {
+  if (!task.value || !questionReply.value.trim()) return
+  replying.value = true
+  try {
+    const newDesc = (task.value.customDescription || '') + '\n\n[人工回复] ' + questionReply.value.trim()
+    await taskStore.updateTask(task.value.id, { customDescription: newDesc, aiQuestion: '', aiStatus: 'ai_todo' } as any)
+    task.value.customDescription = newDesc
+    task.value.aiQuestion = ''
+    task.value.aiStatus = 'ai_todo'
+    // 重新加入 AI 待办队列
+    if (!taskStore.isInTodoList(task.value.id)) {
+      taskStore.toggleTodo(task.value)
+    }
+    questionReply.value = ''
+    ElMessage.success('已回复，任务已重新加入待办队列')
+  } finally {
+    replying.value = false
+  }
+}
+
 const isOverdue = computed(() => {
   if (!task.value) return false
   return task.value.status !== 'completed' && new Date(task.value.deadline).getTime() < Date.now()
@@ -588,14 +627,14 @@ function getStatusLabel(status: string): string {
 
 function getAiStatusType(aiStatus: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
   const map: Record<string, 'success' | 'primary' | 'warning' | 'danger' | 'info'> = {
-    '': 'info', ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success',
+    '': 'info', ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success', ai_question: 'warning',
   }
   return map[aiStatus] || 'info'
 }
 
 function getAiStatusLabel(aiStatus: string): string {
   const map: Record<string, string> = {
-    '': '-', ai_todo: 'AI待办', ai_rework: '待返工', ai_dev: '开发中', ai_review: '待审核', ai_done: 'AI完成',
+    '': '-', ai_todo: 'AI待办', ai_rework: '待返工', ai_dev: '开发中', ai_review: '待审核', ai_done: 'AI完成', ai_question: '待回复',
   }
   return map[aiStatus] || aiStatus
 }
@@ -694,6 +733,10 @@ onMounted(() => {
   line-height: 1.8; color: #303133; font-size: 14px;
   &.empty { color: #c0c4cc; font-style: italic; }
 }
+
+.question-card { border-color: #e6a23c !important; }
+.question-label { font-size: 13px; color: #909399; margin-bottom: 6px; }
+.question-text { line-height: 1.8; color: #303133; font-size: 14px; padding: 10px 14px; background: #fdf6ec; border-radius: 6px; border-left: 3px solid #e6a23c; }
 
 .path-text { font-family: Consolas, monospace; font-size: 13px; color: #409eff; word-break: break-all; }
 .branch-text { font-family: Consolas, monospace; font-size: 13px; color: #67c23a; }

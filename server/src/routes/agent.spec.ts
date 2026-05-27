@@ -94,15 +94,16 @@ describe('Agent API Routes', () => {
       id: 't1', source_id: 'S001', title: '测试任务', priority: 'high',
       ai_status: 'ai_todo', rework_count: 0, project_path: 'F:/proj',
       git_branch: 'main', req_doc_text: '需求内容', custom_description: '自定义',
-      acceptance_criteria: '验收标准', review_comment: '',
+      acceptance_criteria: '验收标准', review_comment: '', group_id: '',
     }
     let callCount = 0
     mockPrepare.mockImplementation(() => {
       callCount++
       if (callCount === 1) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
       if (callCount === 2) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_todo' }) }
-      if (callCount === 3) return { get: vi.fn().mockReturnValue(mockTask) }
-      if (callCount === 4) return { get: vi.fn().mockReturnValue({ max_iter: null }) }
+      if (callCount === 3) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_todo' }) }
+      if (callCount === 4) return { get: vi.fn().mockReturnValue(mockTask) }
+      if (callCount === 5) return { get: vi.fn().mockReturnValue({ max_iter: null }) }
       return { get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) }
     })
 
@@ -208,16 +209,17 @@ describe('Agent API Routes', () => {
       callCount++
       if (callCount === 1) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
       if (callCount === 2) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_todo' }) }
-      if (callCount === 3) return { get: vi.fn().mockReturnValue(mockTask) }
-      if (callCount === 4) return { get: vi.fn().mockReturnValue({ max_iter: null }) }
+      if (callCount === 3) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_todo' }) }
+      if (callCount === 4) return { get: vi.fn().mockReturnValue(mockTask) }
+      if (callCount === 5) return { get: vi.fn().mockReturnValue({ max_iter: null }) }
       // group lookup
-      if (callCount === 5) return { get: vi.fn().mockReturnValue({ id: 'grp1', name: '登录模块', task_ids: JSON.stringify(['t1', 't2']) }) }
+      if (callCount === 6) return { get: vi.fn().mockReturnValue({ id: 'grp1', name: '登录模块', task_ids: JSON.stringify(['t1', 't2']) }) }
       // sibling task t2
-      if (callCount === 6) return { get: vi.fn().mockReturnValue({ id: 't2', title: '分组任务B', ai_status: 'ai_todo' }) }
+      if (callCount === 7) return { get: vi.fn().mockReturnValue({ id: 't2', title: '分组任务B', ai_status: 'ai_todo' }) }
       // completed count check for t1
-      if (callCount === 7) return { get: vi.fn().mockReturnValue(undefined) }
-      // completed count check for t2
       if (callCount === 8) return { get: vi.fn().mockReturnValue(undefined) }
+      // completed count check for t2
+      if (callCount === 9) return { get: vi.fn().mockReturnValue(undefined) }
       return { get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) }
     })
 
@@ -243,8 +245,9 @@ describe('Agent API Routes', () => {
       callCount++
       if (callCount === 1) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
       if (callCount === 2) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_todo' }) }
-      if (callCount === 3) return { get: vi.fn().mockReturnValue(mockTask) }
-      if (callCount === 4) return { get: vi.fn().mockReturnValue({ max_iter: null }) }
+      if (callCount === 3) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_todo' }) }
+      if (callCount === 4) return { get: vi.fn().mockReturnValue(mockTask) }
+      if (callCount === 5) return { get: vi.fn().mockReturnValue({ max_iter: null }) }
       return { get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) }
     })
 
@@ -307,5 +310,39 @@ describe('Agent API Routes', () => {
     expect(JSON.parse(callArgs[callArgs.length - 3])).toEqual(filesChanged)
     expect(JSON.parse(callArgs[callArgs.length - 2])).toEqual(testResult)
     expect(callArgs[callArgs.length - 1]).toBe('完成登录')
+  })
+
+  // ===== 新增：question 端点 =====
+  it('POST /task/:id/question 成功提交疑问', async () => {
+    const runMock = vi.fn()
+    mockPrepare.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT * FROM tasks')) return { get: vi.fn().mockReturnValue({ id: 't1', title: 'T' }) }
+      if (sql.includes('UPDATE tasks SET')) return { run: runMock }
+      if (sql.includes('INSERT INTO dev_logs')) return { run: vi.fn() }
+      // getTodoList / saveTodoList / removeFromTodoList
+      return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: runMock, all: vi.fn().mockReturnValue([]) }
+    })
+
+    const res = await request(app)
+      .post('/api/agent/task/t1/question')
+      .send({ question: '需求中提到的「用户中心」找不到对应模块' })
+    expect(res.status).toBe(200)
+    expect(res.body.data.aiStatus).toBe('ai_question')
+    expect(res.body.message).toContain('待回复')
+  })
+
+  it('POST /task/:id/question 缺少 question 返回 400', async () => {
+    const res = await request(app)
+      .post('/api/agent/task/t1/question')
+      .send({ question: '' })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /task/:id/question 任务不存在返回 404', async () => {
+    mockPrepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn() })
+    const res = await request(app)
+      .post('/api/agent/task/nonexist/question')
+      .send({ question: '不明白需求' })
+    expect(res.status).toBe(404)
   })
 })
