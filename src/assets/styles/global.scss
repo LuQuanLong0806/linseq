@@ -355,4 +355,19 @@ html, body, #app {
   50% { box-shadow: 0 0 20px rgba(0, 229, 255, 0.5); }
 }
 
+@keyframes rotateGlow { to { --glow-angle: 360deg; } }
+@property --glow-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+
 .fade-in { animation: fadeIn 0.3s ease-out; }
+
+// Reusable hover glow scan effect — apply to any element
+.cyber-hover-glow {
+  position: relative; overflow: hidden;
+  &::after {
+    content: ''; position: absolute; inset: -1px; border-radius: inherit; z-index: -1;
+    background: conic-gradient(from var(--glow-angle, 0deg), transparent 70%, rgba(0,229,255,0.3), rgba(157,92,255,0.2), transparent 90%);
+    animation: rotateGlow 6s linear infinite;
+    opacity: 0; transition: opacity 0.4s; pointer-events: none;
+  }
+  &:hover::after { opacity: 1; }
+}

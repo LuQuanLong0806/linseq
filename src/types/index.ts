@@ -200,8 +200,7 @@ export interface TaskGroup {
   id: string
   name: string
   taskIds: string[]
-  projectPath: string
-  gitBranch: string
+  description: string
   createdAt: string
 }
 

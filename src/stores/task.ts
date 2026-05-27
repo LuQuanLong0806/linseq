@@ -27,13 +27,13 @@ export const useTaskStore = defineStore('task', () => {
     groups.value = res.data
   }
 
-  async function createGroup(name: string, taskIds?: string[]) {
-    const res = await groupApi.create({ name, taskIds })
+  async function createGroup(name: string, taskIds?: string[], description?: string) {
+    const res = await groupApi.create({ name, taskIds, description })
     groups.value.unshift(res.data)
     return res.data
   }
 
-  async function updateGroup(id: string, data: Partial<{ name: string; taskIds: string[]; projectPath: string; gitBranch: string }>) {
+  async function updateGroup(id: string, data: Partial<{ name: string; taskIds: string[]; description: string }>) {
     const res = await groupApi.update(id, data)
     const idx = groups.value.findIndex(g => g.id === id)
     if (idx !== -1) groups.value[idx] = res.data

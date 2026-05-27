@@ -154,10 +154,10 @@ router.get('/next-task', (_req, res) => {
     }
 
     // 分组上下文
-    let groupData: { id: string; name: string; taskCount: number; completedInGroup: number; siblingTasks: { taskId: string; title: string; aiStatus: string }[] } | null = null
+    let groupData: { id: string; name: string; description: string; taskCount: number; completedInGroup: number; siblingTasks: { taskId: string; title: string; aiStatus: string }[] } | null = null
     const groupId = (row.group_id as string) || ''
     if (groupId) {
-      const groupRow = db.prepare('SELECT id, name, task_ids FROM task_groups WHERE id = ?').get(groupId) as { id: string; name: string; task_ids: string } | undefined
+      const groupRow = db.prepare('SELECT id, name, task_ids, description FROM task_groups WHERE id = ?').get(groupId) as { id: string; name: string; task_ids: string; description: string } | undefined
       if (groupRow) {
         const groupTaskIds: string[] = JSON.parse(groupRow.task_ids || '[]')
         const siblings = groupTaskIds
@@ -171,7 +171,7 @@ router.get('/next-task', (_req, res) => {
           const t = db.prepare("SELECT ai_status FROM tasks WHERE id = ? AND ai_status = 'ai_review'").get(tid)
           return !!t
         }).length
-        groupData = { id: groupRow.id, name: groupRow.name, taskCount: groupTaskIds.length, completedInGroup: completedCount, siblingTasks: siblings }
+        groupData = { id: groupRow.id, name: groupRow.name, description: groupRow.description || '', taskCount: groupTaskIds.length, completedInGroup: completedCount, siblingTasks: siblings }
       }
     }
 

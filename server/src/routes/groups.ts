@@ -1,5 +1,5 @@
 /**
- * 任务分组 API 路由
+ * 任务分组 API 路由（v2 — 分组补充说明 + 任务排序）
  */
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
@@ -11,8 +11,7 @@ interface TaskGroup {
   id: string
   name: string
   taskIds: string[]
-  projectPath: string
-  gitBranch: string
+  description: string
   createdAt: string
 }
 
@@ -21,8 +20,7 @@ function mapRow(r: Record<string, unknown>): TaskGroup {
     id: r.id as string,
     name: r.name as string,
     taskIds: JSON.parse((r.task_ids as string) || '[]'),
-    projectPath: (r.project_path as string) || '',
-    gitBranch: (r.git_branch as string) || '',
+    description: (r.description as string) || '',
     createdAt: (r.created_at as string) || '',
   }
 }
@@ -42,16 +40,17 @@ router.get('/', (_req, res) => {
 router.post('/', (req, res) => {
   try {
     const db = getDb()
-    const { name, taskIds, projectPath, gitBranch } = req.body
+    const { name, taskIds, description } = req.body
+    if (!name) return res.status(400).json({ code: 400, message: '分组名称不能为空', data: null })
     const id = uuidv4()
     const ids = JSON.stringify(taskIds || [])
     db.prepare(
-      'INSERT INTO task_groups (id, name, task_ids, project_path, git_branch) VALUES (?, ?, ?, ?, ?)'
-    ).run(id, name || '未命名分组', ids, projectPath || '', gitBranch || '')
+      'INSERT INTO task_groups (id, name, task_ids, description) VALUES (?, ?, ?, ?)'
+    ).run(id, name, ids, description || '')
 
     // 更新任务的 group_id
     if (Array.isArray(taskIds) && taskIds.length > 0) {
-      const updateStmt = db.prepare('UPDATE tasks SET group_id = ? WHERE id = ?')
+      const updateStmt = db.prepare("UPDATE tasks SET group_id = ? WHERE id = ?")
       for (const tid of taskIds) {
         updateStmt.run(id, tid)
       }
@@ -68,7 +67,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const db = getDb()
-    const { name, taskIds, projectPath, gitBranch } = req.body
+    const { name, taskIds, description } = req.body
 
     // 获取旧分组数据
     const old = db.prepare('SELECT task_ids FROM task_groups WHERE id = ?').get(req.params.id) as { task_ids: string } | undefined
@@ -89,15 +88,16 @@ router.put('/:id', (req, res) => {
       }
     }
 
-    db.prepare(
-      `UPDATE task_groups SET name = ?, task_ids = ?, project_path = ?, git_branch = ? WHERE id = ?`
-    ).run(
-      name !== undefined ? name : undefined,
-      taskIds !== undefined ? JSON.stringify(taskIds) : undefined,
-      projectPath !== undefined ? projectPath : undefined,
-      gitBranch !== undefined ? gitBranch : undefined,
-      req.params.id
-    )
+    const updates: string[] = []
+    const values: unknown[] = []
+    if (name !== undefined) { updates.push('name = ?'); values.push(name) }
+    if (taskIds !== undefined) { updates.push('task_ids = ?'); values.push(JSON.stringify(taskIds)) }
+    if (description !== undefined) { updates.push('description = ?'); values.push(description) }
+
+    if (updates.length > 0) {
+      values.push(req.params.id)
+      db.prepare(`UPDATE task_groups SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+    }
 
     const row = db.prepare('SELECT * FROM task_groups WHERE id = ?').get(req.params.id) as Record<string, unknown>
     res.json({ code: 0, message: 'success', data: mapRow(row) })

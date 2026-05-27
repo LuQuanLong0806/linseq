@@ -15,12 +15,10 @@
           <span class="stat-label">开发中</span>
         </div>
         <div class="stat-divider"></div>
-        <!-- 分组功能暂时隐藏
         <div class="stat-item">
           <span class="stat-num">{{ taskStore.groups.length }}</span>
           <span class="stat-label">分组</span>
         </div>
-        -->
       </div>
 
       <div class="page-header">
@@ -31,8 +29,7 @@
           <p class="page-desc">QClaw 自动执行引擎 · 双队列调度</p>
           <div class="header-actions">
             <el-button type="success" size="small" @click="openPublishDialog">发布任务</el-button>
-            <!-- 分组功能暂时隐藏 -->
-            <!-- <el-button v-if="ungroupedTodoTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">+ 新建分组</el-button> -->
+            <el-button v-if="ungroupedTodoTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">+ 新建分组</el-button>
           </div>
         </div>
       </div>
@@ -55,38 +52,57 @@
             <p>队列为空</p>
           </div>
 
-          <!-- 分组功能暂时隐藏 -->
-          <!--
+          <!-- 分组卡片 -->
           <div v-for="group in taskStore.groups" :key="group.id" class="group-card">
             <div class="group-header" @click="toggleGroup(group.id)">
               <div class="group-left">
                 <span class="group-arrow" :class="{ expanded: expandedGroups.has(group.id) }">▸</span>
                 <span class="group-name">{{ group.name }}</span>
-                <el-tag size="small" type="info">{{ getGroupTasks(group.id).length }}</el-tag>
+                <el-tag size="small" type="info">{{ getGroupTasks(group.id).length }}个任务</el-tag>
               </div>
               <div class="group-right" @click.stop>
-                <span v-if="group.projectPath" class="group-config">📁 {{ group.projectPath }}</span>
-                <el-button link type="primary" size="small" @click="editGroupSettings(group)">配置</el-button>
+                <el-button link type="primary" size="small" @click="editGroupSettings(group)">编辑</el-button>
                 <el-button link type="danger" size="small" @click="handleDeleteGroup(group)">解散</el-button>
               </div>
+            </div>
+            <!-- 分组补充说明 -->
+            <div v-if="group.description" class="group-desc" @click.stop>
+              <span class="group-desc-text">{{ group.description }}</span>
             </div>
             <Transition name="collapse">
               <div v-if="expandedGroups.has(group.id)" class="group-tasks">
                 <div v-for="(task, idx) in getGroupTasks(group.id)" :key="task.id" class="sub-task"
-                  draggable="true" @dragstart="onSubDragStart(group.id, idx, $event)" @dragover.prevent @drop="onSubDrop(group.id, idx)" @dragend="onDragEnd">
+                  :draggable="editingDescId !== task.id"
+                  @dragstart="onSubDragStart(group.id, idx, $event)" @dragover.prevent @drop="onSubDrop(group.id, idx)" @dragend="onDragEnd">
                   <span class="sub-rank">{{ idx + 1 }}</span>
-                  <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
-                  <span class="sub-title">{{ task.title }}</span>
+                  <div class="sub-body">
+                    <div class="sub-top">
+                      <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+                      <span class="sub-title">{{ task.title }}</span>
+                    </div>
+                    <!-- 任务补充说明 -->
+                    <div v-if="task.customDescription && editingDescId !== task.id" class="sub-desc" @click.stop="openDescEditor(task)">
+                      <span>{{ task.customDescription }}</span>
+                      <span class="sub-desc-edit">✎</span>
+                    </div>
+                    <span v-if="!task.customDescription && editingDescId !== task.id" class="sub-desc-add" @click.stop="openDescEditor(task)">+ 补充</span>
+                    <div v-if="editingDescId === task.id" class="sub-desc-editor" @click.stop @mousedown.stop>
+                      <el-input v-model="editingDescText" type="textarea" :rows="2" placeholder="补充需求说明..." resize="none" @keydown.escape="cancelDescEdit" />
+                      <div class="sub-desc-actions">
+                        <el-button size="small" @click="cancelDescEdit">取消</el-button>
+                        <el-button type="primary" size="small" @click="saveDescEdit(task)" :loading="savingDesc">保存</el-button>
+                      </div>
+                    </div>
+                  </div>
                   <div class="sub-actions" @click.stop>
                     <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
                     <el-button type="success" link size="small" @click="handleComplete(task)">完成</el-button>
                   </div>
                 </div>
-                <div v-if="getGroupTasks(group.id).length === 0" class="group-empty">拖入任务或解散此分组</div>
+                <div v-if="getGroupTasks(group.id).length === 0" class="group-empty">分组内暂无任务</div>
               </div>
             </Transition>
           </div>
-          -->
 
           <!-- 待办任务列表 -->
           <TransitionGroup v-if="todoQueueTasks.length > 0" name="card" tag="div" class="card-list">
@@ -200,12 +216,14 @@
         </div>
       </div>
 
-      <!-- 弹窗部分 -->
-      <!-- 分组弹窗暂时隐藏
-      <el-dialog v-model="showGroupDialog" title="新建分组" width="420px" :close-on-click-modal="false">
-        <el-form label-width="80px">
+      <!-- 新建分组弹窗 -->
+      <el-dialog v-model="showGroupDialog" title="新建分组" width="480px" :close-on-click-modal="false">
+        <el-form label-width="90px">
           <el-form-item label="分组名称">
             <el-input v-model="newGroupName" placeholder="如：宁对接前端需求" />
+          </el-form-item>
+          <el-form-item label="补充说明">
+            <el-input v-model="newGroupDesc" type="textarea" :rows="3" placeholder="告诉 Agent 分组任务的关联关系、执行顺序、注意事项...&#10;如：一个是管理端，一个是企业端，企业端填报管理端回显" />
           </el-form-item>
           <el-form-item label="选择任务">
             <el-checkbox-group v-model="newGroupTaskIds">
@@ -221,18 +239,19 @@
         </template>
       </el-dialog>
 
-      <el-dialog v-model="showGroupEdit" :title="`分组配置 - ${editingGroup?.name || ''}`" width="420px" :close-on-click-modal="false">
-        <el-form label-width="80px">
+      <!-- 编辑分组弹窗 -->
+      <el-dialog v-model="showGroupEdit" :title="`编辑分组 - ${editingGroup?.name || ''}`" width="480px" :close-on-click-modal="false">
+        <el-form label-width="90px">
           <el-form-item label="分组名称"><el-input v-model="groupEditForm.name" /></el-form-item>
-          <el-form-item label="项目路径"><el-input v-model="groupEditForm.projectPath" placeholder="F:\your-project" /></el-form-item>
-          <el-form-item label="Git 分支"><el-input v-model="groupEditForm.gitBranch" placeholder="feature/xxx" /></el-form-item>
+          <el-form-item label="补充说明">
+            <el-input v-model="groupEditForm.description" type="textarea" :rows="4" placeholder="告诉 Agent 分组任务的关联关系、执行顺序、注意事项..." />
+          </el-form-item>
         </el-form>
         <template #footer>
           <el-button @click="showGroupEdit = false">取消</el-button>
           <el-button type="primary" @click="handleSaveGroupEdit">保存</el-button>
         </template>
       </el-dialog>
-      -->
 
       <el-dialog v-model="showPublishDialog" title="发布任务到 AI 待办" width="620px" :close-on-click-modal="false" destroy-on-close>
         <el-radio-group v-model="publishMode" style="margin-bottom:16px">
@@ -318,9 +337,10 @@ const expandedGroups = reactive(new Set<string>())
 const showGroupDialog = ref(false)
 const newGroupName = ref('')
 const newGroupTaskIds = ref<string[]>([])
+const newGroupDesc = ref('')
 const showGroupEdit = ref(false)
 const editingGroup = ref<TaskGroup | null>(null)
-const groupEditForm = reactive({ name: '', projectPath: '', gitBranch: '' })
+const groupEditForm = reactive({ name: '', description: '' })
 
 // Publish dialog
 const showPublishDialog = ref(false)
@@ -420,19 +440,19 @@ function toggleGroup(id: string) {
 async function handleCreateGroup() {
   const name = newGroupName.value.trim()
   if (!name) return
-  const group = await taskStore.createGroup(name, newGroupTaskIds.value.length > 0 ? newGroupTaskIds.value : undefined)
+  const group = await taskStore.createGroup(name, newGroupTaskIds.value.length > 0 ? newGroupTaskIds.value : undefined, newGroupDesc.value || undefined)
   expandedGroups.add(group.id)
   showGroupDialog.value = false
   newGroupName.value = ''
   newGroupTaskIds.value = []
+  newGroupDesc.value = ''
   ElMessage.success('分组已创建')
 }
 
 function editGroupSettings(group: TaskGroup) {
   editingGroup.value = group
   groupEditForm.name = group.name
-  groupEditForm.projectPath = group.projectPath
-  groupEditForm.gitBranch = group.gitBranch
+  groupEditForm.description = group.description
   showGroupEdit.value = true
 }
 
@@ -519,7 +539,7 @@ async function saveDescEdit(task: Task) {
 }
 function isOverdue(task: Task) { return task.status !== 'completed' && new Date(task.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
-function getPriorityType(p: string) { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, string>)[p] || 'info' }
+function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as const)[p] || 'info' }
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
 
 onMounted(async () => {
@@ -647,30 +667,43 @@ onMounted(async () => {
 // Group cards (inside todo panel)
 .group-card {
   background: rgba(10,16,31,0.15);
-  border: 1px solid rgba(0,229,255,0.08);
+  border: 1px solid rgba(157,92,255,0.15);
   border-radius: 10px;
   margin-bottom: 10px;
   overflow: hidden;
+  transition: border-color 0.3s;
+  &:hover { border-color: rgba(157,92,255,0.35); }
 }
 .group-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; transition: background 0.2s;
-  &:hover { background: rgba(102,126,234,0.08); }
+  &:hover { background: rgba(157,92,255,0.08); }
 }
 .group-left { display: flex; align-items: center; gap: 8px; }
-.group-arrow { color: #00E5FF; font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
+.group-arrow { color: #9D5CFF; font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
 .group-name { font-size: 14px; font-weight: 600; color: #e0e0ef; }
 .group-right { display: flex; align-items: center; gap: 8px; }
-.group-config { font-size: 11px; color: #00E5FF; opacity: 0.8; }
-.group-tasks { border-top: 1px solid rgba(102,126,234,0.08); }
+.group-desc { padding: 0 14px 8px; }
+.group-desc-text { font-size: 11px; color: #9D5CFF; line-height: 1.5; opacity: 0.85; }
+.group-tasks { border-top: 1px solid rgba(157,92,255,0.1); }
 .group-empty { padding: 12px; text-align: center; color: #8c8ca1; font-size: 12px; }
 .sub-task {
-  display: flex; align-items: center; gap: 8px; padding: 8px 14px;
-  border-bottom: 1px solid rgba(102,126,234,0.04); transition: background 0.2s; cursor: grab;
+  display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid rgba(157,92,255,0.05); transition: background 0.2s; cursor: grab;
   &:last-child { border-bottom: none; }
-  &:hover { background: rgba(102,126,234,0.06); }
+  &:hover { background: rgba(157,92,255,0.06); }
 }
-.sub-rank { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(102,126,234,0.15); border-radius: 5px; font-size: 10px; font-weight: 700; color: #00E5FF; flex-shrink: 0; }
+.sub-rank { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(157,92,255,0.15); border-radius: 5px; font-size: 10px; font-weight: 700; color: #9D5CFF; flex-shrink: 0; margin-top: 2px; }
+.sub-body { flex: 1; min-width: 0; }
+.sub-top { display: flex; align-items: center; gap: 6px; }
 .sub-title { flex: 1; font-size: 12px; color: #e0e0ef; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.sub-desc { margin-top: 4px; font-size: 11px; color: #00E5FF; opacity: 0.8; cursor: pointer; display: flex; align-items: flex-start; gap: 4px;
+  span:first-child { flex: 1; line-height: 1.4; }
+  &:hover { opacity: 1; }
+}
+.sub-desc-edit { font-size: 10px; opacity: 0.5; flex-shrink: 0; }
+.sub-desc-add { margin-top: 4px; font-size: 11px; color: #9D5CFF; cursor: pointer; opacity: 0.6; &:hover { opacity: 1; } }
+.sub-desc-editor { margin-top: 6px; }
+.sub-desc-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.sub-actions { display: flex; gap: 4px; flex-shrink: 0; margin-top: 2px; }
 
 .collapse-enter-active,.collapse-leave-active { transition: all 0.25s ease; overflow: hidden; }
 .collapse-enter-from,.collapse-leave-to { opacity: 0; max-height: 0; }

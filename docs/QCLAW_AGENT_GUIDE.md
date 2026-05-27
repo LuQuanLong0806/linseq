@@ -112,6 +112,7 @@ BASE_URL = http://localhost:3201/api/agent
     "group": {
       "id": "group-uuid 或空字符串",
       "name": "分组名称",
+      "description": "分组补充说明（任务关联关系、执行顺序、注意事项）",
       "taskCount": 3,
       "completedInGroup": 1,
       "siblingTasks": [
@@ -382,12 +383,43 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
 
 ## 九、分组任务处理
 
-当 `group` 字段非空时，说明当前任务属于一个分组：
+当 `group` 字段非空时，说明当前任务属于一个任务分组。分组用于**关联同一项目中有先后依赖关系的多个任务**。
 
-- **同组任务共享同一份需求文档**，避免重复实现相同功能
-- **同组任务共享项目配置**（project_path / git_branch）
-- **查看 siblingTasks**：了解同组其他任务的进度，如果已完成类似功能可参考
-- **同组任务应保持代码风格一致**
+### 分组说明字段
+
+分组有一个 `description`（补充说明）字段，由用户在创建/编辑分组时填写，用于向 Agent 传达：
+
+- **任务间的关联关系**：如"任务 A 是企业端填报，任务 B 是管理端回显，B 依赖 A 的数据结构"
+- **执行顺序建议**：如"先完成企业端接口，再做管理端页面"
+- **代码复用提示**：如"两个任务共用相同的 API 接口和数据模型，注意保持一致"
+- **架构约束**：如"企业端用 Vue3，管理端用 React，但共享同一个后端 API"
+
+### 分组上下文（next-task 响应）
+
+```json
+{
+  "group": {
+    "id": "group-uuid",
+    "name": "宁对接前端需求",
+    "description": "一个是管理端(React)，一个是企业端(Vue3)。企业端填报 → 管理端回显。先做企业端接口和数据模型，再做管理端。共用 src/api/ 下的接口文件。",
+    "taskCount": 2,
+    "completedInGroup": 0,
+    "siblingTasks": [
+      { "taskId": "xxx", "title": "企业端-填报表单", "aiStatus": "ai_todo" },
+      { "taskId": "yyy", "title": "管理端-数据回显", "aiStatus": "ai_todo" }
+    ]
+  }
+}
+```
+
+### 分组处理原则
+
+1. **必须阅读 `description`** — 这是用户给出的最关键上下文，说明了任务间的关系和注意事项
+2. **查看 `siblingTasks`** — 了解同组其他任务的进度，避免重复开发
+3. **尊重执行顺序** — 如果 description 建议了先后顺序，应先完成排在前面的任务
+4. **代码风格统一** — 同组任务应保持一致的命名规范和代码结构
+5. **避免冲突** — 如果同组有任务正在开发中（`ai_dev`），注意不要修改它正在改动的文件
+6. **参考已完成的同组任务** — 如果 `completedInGroup > 0`，先查看已完成任务的代码风格和实现方式
 
 ---
 

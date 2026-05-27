@@ -131,6 +131,10 @@ export function initDatabase(): void {
   for (const [col, type] of versionColumns) {
     try { db.exec(`ALTER TABLE task_versions ADD COLUMN ${col} ${type}`) } catch { /* 已存在 */ }
   }
+
+  // task_groups 新增 description 列（安全添加）
+  try { db.exec(`ALTER TABLE task_groups ADD COLUMN description TEXT DEFAULT ''`) } catch { /* 已存在 */ }
+
   for (const [col, type] of newColumns) {
     try {
       db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${type}`)
@@ -145,8 +149,7 @@ export function initDatabase(): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       task_ids TEXT DEFAULT '[]',
-      project_path TEXT DEFAULT '',
-      git_branch TEXT DEFAULT '',
+      description TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `)
