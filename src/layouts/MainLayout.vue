@@ -37,6 +37,10 @@
           <el-icon><Refresh /></el-icon>
           <template #title>同步中心</template>
         </el-menu-item>
+        <el-menu-item index="/projects">
+          <el-icon><FolderOpened /></el-icon>
+          <template #title>项目配置</template>
+        </el-menu-item>
         <el-menu-item index="/devlog">
           <el-icon><Notebook /></el-icon>
           <template #title>开发记录</template>
@@ -89,7 +93,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
-import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked } from '@element-plus/icons-vue'
+import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 const route = useRoute()

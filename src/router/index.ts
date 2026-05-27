@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '同步中心', icon: 'Refresh' },
       },
       {
+        path: 'projects',
+        name: 'Projects',
+        component: () => import('@/views/projects/index.vue'),
+        meta: { title: '项目配置', icon: 'FolderOpened' },
+      },
+      {
         path: 'ai-todo',
         name: 'AITodo',
         component: () => import('@/views/ai-todo/index.vue'),

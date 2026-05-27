@@ -318,7 +318,7 @@
     <el-dialog
       v-model="projectDialogVisible"
       :title="isBatchMode ? '批量项目配置' : '项目配置'"
-      width="520px"
+      width="560px"
       @close="resetProjectForm"
     >
       <div v-if="isBatchMode" class="batch-info">
@@ -327,6 +327,26 @@
         >
       </div>
       <el-form :model="projectForm" label-width="110px" label-position="right">
+        <el-form-item label="项目配置">
+          <el-select
+            v-model="selectedProjectName"
+            placeholder="选择已配置的项目（自动填充路径和分支）"
+            clearable
+            filterable
+            style="width:100%"
+            @change="handleProjectSelect"
+          >
+            <el-option
+              v-for="p in projectConfigs"
+              :key="p.id"
+              :label="p.name"
+              :value="p.name"
+            >
+              <span>{{ p.name }}</span>
+              <span style="float:right;color:#909399;font-size:12px">{{ p.localPath || '未配置路径' }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="本地项目路径">
           <el-input
             v-model="projectForm.projectPath"
@@ -335,11 +355,21 @@
           />
         </el-form-item>
         <el-form-item label="Git 分支">
-          <el-input
+          <el-select
             v-model="projectForm.gitBranch"
-            placeholder="例: feature/task-123"
+            placeholder="选择或输入分支"
             clearable
-          />
+            filterable
+            allow-create
+            style="width:100%"
+          >
+            <el-option
+              v-for="b in selectedProjectBranches"
+              :key="b"
+              :label="b"
+              :value="b"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item v-if="!isBatchMode" label="需求文件路径">
           <el-input
@@ -376,6 +406,7 @@ import {
   Switch
 } from '@element-plus/icons-vue';
 import type { TaskStatus, Task } from '@/types';
+import { projectApi, type ProjectConfig } from '@/api/project';
 import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { ElTable } from 'element-plus';
@@ -402,6 +433,9 @@ const saving = ref(false);
 const currentEditTask = ref<Task | null>(null);
 const isBatchMode = ref(false);
 const batchProjectName = ref('');
+const projectConfigs = ref<ProjectConfig[]>([]);
+const selectedProjectName = ref('');
+const selectedProjectBranches = ref<string[]>([]);
 const projectForm = reactive({
   projectPath: '',
   gitBranch: '',
@@ -551,17 +585,50 @@ function handleToggleTodo(task: Task) {
 }
 
 // Project settings
-function openProjectSettings(task: Task) {
+async function loadProjectConfigs() {
+  try {
+    const res = await projectApi.list();
+    projectConfigs.value = res.data;
+  } catch { /* ignore */ }
+}
+
+function handleProjectSelect(name: string) {
+  const config = projectConfigs.value.find(p => p.name === name);
+  if (config) {
+    if (config.localPath) projectForm.projectPath = config.localPath;
+    if (config.defaultBranch) projectForm.gitBranch = config.defaultBranch;
+    selectedProjectBranches.value = [...config.branches];
+  } else {
+    selectedProjectBranches.value = [];
+  }
+}
+
+async function openProjectSettings(task: Task) {
   isBatchMode.value = false;
   batchProjectName.value = '';
   currentEditTask.value = task;
   projectForm.projectPath = task.projectPath || '';
   projectForm.gitBranch = task.gitBranch || '';
   projectForm.taskPageUrl = task.taskPageUrl || '';
+  selectedProjectName.value = '';
+  selectedProjectBranches.value = [];
+
+  await loadProjectConfigs();
+
+  // Auto-select matching project config
+  const projectName = task.project || task.customer || '';
+  const match = projectConfigs.value.find(p => p.name === projectName);
+  if (match) {
+    selectedProjectName.value = match.name;
+    selectedProjectBranches.value = [...match.branches];
+    if (!projectForm.projectPath && match.localPath) projectForm.projectPath = match.localPath;
+    if (!projectForm.gitBranch && match.defaultBranch) projectForm.gitBranch = match.defaultBranch;
+  }
+
   projectDialogVisible.value = true;
 }
 
-function handleBatchSettings() {
+async function handleBatchSettings() {
   const selected = selectedTasks.value;
   const projectName = selected[0]?.project || selected[0]?.customer || '';
   const sameProject = selected.every(
@@ -576,6 +643,20 @@ function handleBatchSettings() {
   projectForm.projectPath = '';
   projectForm.gitBranch = '';
   projectForm.taskPageUrl = '';
+  selectedProjectName.value = '';
+  selectedProjectBranches.value = [];
+
+  await loadProjectConfigs();
+
+  // Auto-select matching project config
+  const match = projectConfigs.value.find(p => p.name === projectName);
+  if (match) {
+    selectedProjectName.value = match.name;
+    selectedProjectBranches.value = [...match.branches];
+    if (match.localPath) projectForm.projectPath = match.localPath;
+    if (match.defaultBranch) projectForm.gitBranch = match.defaultBranch;
+  }
+
   projectDialogVisible.value = true;
 }
 
@@ -584,6 +665,8 @@ function resetProjectForm() {
   projectForm.gitBranch = '';
   projectForm.taskPageUrl = '';
   currentEditTask.value = null;
+  selectedProjectName.value = '';
+  selectedProjectBranches.value = [];
 }
 
 async function saveProjectSettings() {
@@ -599,8 +682,7 @@ async function saveProjectSettings() {
         await taskStore.updateTask(task.id, payload);
       }
       ElMessage.success(`已批量配置 ${selectedTasks.value.length} 个任务`);
-    } else {
-      if (!currentEditTask.value) return;
+    } else if (currentEditTask.value) {
       await taskStore.updateTask(currentEditTask.value.id, payload);
       ElMessage.success('配置已保存');
     }
@@ -951,5 +1033,15 @@ onMounted(() => {
 
 .batch-info {
   margin-bottom: 16px;
+}
+
+.linked-config-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: rgba(103, 194, 58, 0.06);
+  border-radius: 6px;
 }
 </style>

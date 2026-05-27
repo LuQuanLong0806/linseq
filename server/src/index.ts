@@ -11,6 +11,7 @@ import devlogRoutes from './routes/devlogs.js'
 import agentRoutes from './routes/agent.js'
 import groupRoutes from './routes/groups.js'
 import versionRoutes from './routes/versions.js'
+import projectRoutes from './routes/projects.js'
 import { startCookieRefresh, stopCookieRefresh } from './scraper/intranet.js'
 
 const app = express()
@@ -34,6 +35,7 @@ app.use('/api/devlogs', devlogRoutes)
 app.use('/api/agent', agentRoutes)
 app.use('/api/groups', groupRoutes)
 app.use('/api/versions', versionRoutes)
+app.use('/api/projects', projectRoutes)
 
 // 健康检查
 app.get('/api/health', (_req, res) => {

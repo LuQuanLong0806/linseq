@@ -148,6 +148,22 @@ export function initDatabase(): void {
     )
   `)
 
+  // ========== 项目配置表 ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_configs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      local_path TEXT DEFAULT '',
+      git_url TEXT DEFAULT '',
+      branches TEXT DEFAULT '[]',
+      default_branch TEXT DEFAULT '',
+      tags TEXT DEFAULT '[]',
+      note TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+
   // ========== 任务版本表（AI 迭代版本管理） ==========
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_versions (
@@ -216,6 +232,7 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_project_path ON tasks(project_path);
     CREATE INDEX IF NOT EXISTS idx_tasks_ai_status ON tasks(ai_status);
     CREATE INDEX IF NOT EXISTS idx_dev_logs_task_id ON dev_logs(task_id);
+    CREATE INDEX IF NOT EXISTS idx_project_configs_name ON project_configs(name);
   `)
 
   console.log('[DB] 数据库初始化完成:', DB_PATH)
