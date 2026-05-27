@@ -92,8 +92,8 @@
           <TransitionGroup v-if="todoQueueTasks.length > 0" name="card" tag="div" class="card-list">
             <div v-for="(task, index) in todoQueueTasks" :key="task.id"
               class="todo-card"
-              :class="{ dragging: dragFrom?.type === 'ungrouped' && dragFrom?.index === index }"
-              draggable="true"
+              :class="{ dragging: dragFrom?.type === 'ungrouped' && dragFrom?.index === index, 'is-editing': editingDescId === task.id }"
+              :draggable="editingDescId !== task.id"
               @dragstart="onDragStart(index, $event)" @dragover.prevent="onDragOver(index)" @drop="onDrop(index)" @dragend="onDragEnd">
               <div class="card-glow"></div>
               <div class="card-rank">{{ index + 1 }}</div>
@@ -112,6 +112,32 @@
                 <div v-if="task.projectPath || task.gitBranch" class="card-config">
                   <span v-if="task.projectPath" class="config-item">📁 {{ task.projectPath }}</span>
                   <span v-if="task.gitBranch" class="config-item">🌿 {{ task.gitBranch }}</span>
+                </div>
+                <!-- 补充说明：显示已有内容 + 编辑入口 -->
+                <div v-if="task.customDescription" class="card-desc-preview" @click="openDescEditor(task)">
+                  <span class="desc-label">补充说明</span>
+                  <span class="desc-text">{{ task.customDescription }}</span>
+                  <span class="desc-edit-icon">✎</span>
+                </div>
+                <div class="card-desc-actions">
+                  <span v-if="!editingDescId || editingDescId !== task.id" class="desc-add-btn" @click.stop="openDescEditor(task)">
+                    {{ task.customDescription ? '编辑说明' : '+ 补充说明' }}
+                  </span>
+                </div>
+                <!-- 补充说明编辑区 -->
+                <div v-if="editingDescId === task.id" class="card-desc-editor" @click.stop @dragstart.stop @mousedown.stop>
+                  <el-input
+                    v-model="editingDescText"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="输入补充需求说明，给 Agent 参考..."
+                    resize="none"
+                    @keydown.escape="cancelDescEdit"
+                  />
+                  <div class="desc-editor-actions">
+                    <el-button size="small" @click="cancelDescEdit">取消</el-button>
+                    <el-button type="primary" size="small" @click="saveDescEdit(task)" :loading="savingDesc">保存</el-button>
+                  </div>
                 </div>
               </div>
               <div class="card-actions">
@@ -467,6 +493,30 @@ function saveOrder() {
 
 function handleRemove(task: Task) { taskStore.toggleTodo(task); ElMessage.success('已移出 AI 待办') }
 async function handleComplete(task: Task) { await taskStore.updateTask(task.id, { aiStatus: 'ai_review' }); taskStore.toggleTodo(task); ElMessage.success('已提交审核') }
+
+// Inline description editor
+const editingDescId = ref<string | null>(null)
+const editingDescText = ref('')
+const savingDesc = ref(false)
+
+function openDescEditor(task: Task) {
+  editingDescId.value = task.id
+  editingDescText.value = task.customDescription || ''
+}
+function cancelDescEdit() {
+  editingDescId.value = null
+  editingDescText.value = ''
+}
+async function saveDescEdit(task: Task) {
+  savingDesc.value = true
+  try {
+    await taskStore.updateTask(task.id, { customDescription: editingDescText.value })
+    editingDescId.value = null
+    editingDescText.value = ''
+    ElMessage.success('补充说明已保存')
+  } catch { ElMessage.error('保存失败') }
+  finally { savingDesc.value = false }
+}
 function isOverdue(task: Task) { return task.status !== 'completed' && new Date(task.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 function getPriorityType(p: string) { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, string>)[p] || 'info' }
@@ -637,6 +687,7 @@ onMounted(async () => {
   backdrop-filter: blur(2px);
   &:hover { border-color: rgba(0,229,255,0.35); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
   &.dragging { opacity: 0.4; transform: scale(0.97); }
+  &.is-editing { cursor: default; }
 }
 .card-glow {
   position: absolute; inset: -1px; border-radius: 10px;
@@ -661,6 +712,29 @@ onMounted(async () => {
   .config-item { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .card-actions { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 10px; }
+
+// Inline description editor
+.card-desc-preview {
+  margin-top: 8px; padding: 6px 10px; border-radius: 6px;
+  background: rgba(0,229,255,0.06); border: 1px solid rgba(0,229,255,0.1);
+  cursor: pointer; transition: border-color 0.2s;
+  display: flex; align-items: flex-start; gap: 6px;
+  &:hover { border-color: rgba(0,229,255,0.3); }
+}
+.desc-label { font-size: 10px; color: #00E5FF; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+.desc-text { flex: 1; font-size: 12px; color: #cfd3dc; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.desc-edit-icon { font-size: 12px; color: #00E5FF; opacity: 0.5; flex-shrink: 0; }
+.card-desc-actions { margin-top: 4px; }
+.desc-add-btn {
+  font-size: 11px; color: #00E5FF; cursor: pointer; opacity: 0.7; transition: opacity 0.2s;
+  &:hover { opacity: 1; }
+}
+.card-desc-editor {
+  margin-top: 8px; padding: 8px; border-radius: 6px;
+  background: rgba(10,16,31,0.5); border: 1px solid rgba(0,229,255,0.2);
+}
+.desc-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
 // Dev card
 .dev-card {
