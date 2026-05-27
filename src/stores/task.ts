@@ -127,11 +127,13 @@ export const useTaskStore = defineStore('task', () => {
     syncing.value = true
     try {
       const res = await taskApi.syncFromIntranet()
-      // 清除被隐藏任务的待办引用
-      const visibleIds = new Set((await taskApi.getTasks({ pageSize: 9999 })).data.list.map(t => t.id))
-      todoList.value = todoList.value.filter(id => visibleIds.has(id))
-      localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
-      agentApi.saveTodoOrder(todoList.value).catch(() => {})
+      // 清除被隐藏任务的待办引用（不阻塞主流程）
+      taskApi.getTasks({ pageSize: 9999 }).then(r => {
+        const visibleIds = new Set(r.data.list.map(t => t.id))
+        todoList.value = todoList.value.filter(id => visibleIds.has(id))
+        localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
+        agentApi.saveTodoOrder(todoList.value).catch(() => {})
+      }).catch(() => {})
       return res.data
     } finally {
       syncing.value = false
