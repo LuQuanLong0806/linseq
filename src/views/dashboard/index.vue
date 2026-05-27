@@ -126,7 +126,7 @@
               <el-button type="primary" link @click="$router.push('/tasks')">查看全部 →</el-button>
             </div>
           </div>
-          <el-table :data="recentTasks" stripe style="width: 100%">
+          <el-table :data="recentTasks" stripe border style="width: 100%">
             <el-table-column prop="sourceId" label="ID" width="80" />
             <el-table-column prop="title" label="任务标题" min-width="250" show-overflow-tooltip />
             <el-table-column prop="status" label="状态" width="100">
@@ -387,6 +387,7 @@ onMounted(() => {
 
 .table-row {
   .task-card {
+    backdrop-filter: none;
     .panel-header {
       padding: 14px 20px;
     }

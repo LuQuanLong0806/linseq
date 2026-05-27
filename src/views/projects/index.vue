@@ -41,6 +41,7 @@
       <el-table
         :data="paginatedProjects"
         v-loading="loading"
+        border
         style="width:100%"
         :header-cell-style="{ background: 'rgba(0,229,255,0.04)', color: 'var(--cyber-text-primary)', fontWeight: 600 }"
         empty-text="暂无项目配置，点击上方按钮新建"
@@ -371,8 +372,8 @@ onMounted(() => {
 .page-hero {
   position: relative;
   padding: 28px 32px 24px;
-  background: linear-gradient(135deg, #0a0e27 0%, #1a1040 40%, #0d1f3c 100%);
-  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(10,14,39,0.15) 0%, rgba(26,16,64,0.15) 40%, rgba(13,31,60,0.15) 100%);
+  border-radius: 14px;
   overflow: hidden;
   margin-bottom: 20px;
   border: 1px solid rgba(0,229,255,0.15);
@@ -584,8 +585,7 @@ onMounted(() => {
 /* ===== Table Card ===== */
 .table-card {
   position: relative;
-  background: rgba(10,16,31,0.3);
-  backdrop-filter: blur(12px);
+  background: rgba(10,16,31,0.15);
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   border: 1px solid var(--cyber-glass-border);

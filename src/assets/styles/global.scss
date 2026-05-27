@@ -109,7 +109,10 @@ html, body, #app {
   .el-table__header-wrapper,
   .el-table__footer-wrapper,
   .el-table__body tr,
-  .el-table__header tr {
+  .el-table__header tr,
+  .el-table__body tr.el-table__row--striped td,
+  .el-table__header th,
+  .el-table__header th .cell {
     background-color: transparent !important;
   }
   // Empty state
@@ -144,29 +147,48 @@ html, body, #app {
 }
 
 // Tooltip / Popover / Dropdown — global dark overrides (these teleport to body)
+.el-popper,
+.el-tooltip__popper {
+  // Prevent mouse entering tooltip area — fixes "tooltip won't dismiss when moving between rows"
+  pointer-events: none !important;
+}
+
 .el-popper.is-dark,
 .el-tooltip__popper.is-dark {
-  background: rgba(10, 16, 31, 0.92) !important;
-  border: 1px solid rgba(0, 229, 255, 0.15) !important;
+  background: rgba(10, 16, 31, 0.95) !important;
+  border: 1px solid rgba(0, 229, 255, 0.2) !important;
   color: var(--cyber-text-primary) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 12px !important;
+  // Increase gap between tooltip and trigger element
+  margin-bottom: 8px !important;
   .el-popper__arrow::before {
-    background: rgba(10, 16, 31, 0.92) !important;
-    border: 1px solid rgba(0, 229, 255, 0.15) !important;
+    background: rgba(10, 16, 31, 0.95) !important;
+    border: 1px solid rgba(0, 229, 255, 0.2) !important;
   }
 }
 .el-popper.is-light,
 .el-tooltip__popper.is-light {
-  background: rgba(10, 16, 31, 0.92) !important;
-  border: 1px solid rgba(0, 229, 255, 0.15) !important;
+  background: rgba(10, 16, 31, 0.95) !important;
+  border: 1px solid rgba(0, 229, 255, 0.2) !important;
   color: var(--cyber-text-primary) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 12px !important;
+  margin-bottom: 8px !important;
   .el-popper__arrow::before {
-    background: rgba(10, 16, 31, 0.92) !important;
-    border-color: rgba(0, 229, 255, 0.15) !important;
+    background: rgba(10, 16, 31, 0.95) !important;
+    border-color: rgba(0, 229, 255, 0.2) !important;
   }
 }
 .el-dropdown__popper {
-  background: rgba(10, 16, 31, 0.92) !important;
-  border: 1px solid rgba(0, 229, 255, 0.15) !important;
+  pointer-events: auto !important;
+  background: rgba(10, 16, 31, 0.95) !important;
+  border: 1px solid rgba(0, 229, 255, 0.2) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 .el-dropdown-menu {
   background: transparent !important;

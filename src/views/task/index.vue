@@ -139,6 +139,7 @@
         ref="tableRef"
         :data="taskStore.tasks"
         stripe
+        border
         style="width: 100%"
         row-class-name="task-row"
         @selection-change="handleSelectionChange"
@@ -823,6 +824,7 @@ onMounted(() => {
 }
 
 .table-card {
+  backdrop-filter: none;
   :deep .task-row {
     cursor: pointer;
     td {
