@@ -9,7 +9,7 @@ vi.mock('three', () => {
   function MockScene() { this.add = vi.fn(); this.children = [] }
   function MockCamera() { this.position = { z: 0 }; this.aspect = 1; this.updateProjectionMatrix = vi.fn() }
   function MockRenderer() { this.setPixelRatio = vi.fn(); this.setClearColor = vi.fn(); this.setSize = vi.fn(); this.render = vi.fn(); this.dispose = vi.fn() }
-  function MockBufferGeometry() { this.setAttribute = vi.fn() }
+  function MockBufferGeometry() { this.setAttribute = vi.fn(); this.getAttribute = vi.fn(() => ({ array: new Float32Array(600*3), needsUpdate: false })) }
   function MockColor() { this.clone = () => ({ lerp: () => ({ r: 0, g: 0, b: 0 }) }) }
   function MockClock() { this.getElapsedTime = () => 0 }
   function MockPoints() { this.rotation = { x: 0, y: 0, z: 0 } }
@@ -19,8 +19,8 @@ vi.mock('three', () => {
     Scene: MockScene, PerspectiveCamera: MockCamera, WebGLRenderer: MockRenderer,
     BufferGeometry: MockBufferGeometry, BufferAttribute: vi.fn(), Float32BufferAttribute: vi.fn(),
     PointsMaterial: vi.fn(), Points: MockPoints, LineBasicMaterial: vi.fn(),
-    LineSegments: MockLineSegments, RingGeometry: vi.fn(), MeshBasicMaterial: vi.fn(),
-    Mesh: MockMesh, DoubleSide: {}, Color: MockColor, Clock: MockClock,
+    LineSegments: MockLineSegments, RingGeometry: vi.fn(), TorusGeometry: vi.fn(),
+    MeshBasicMaterial: vi.fn(), Mesh: MockMesh, DoubleSide: {}, Color: MockColor, Clock: MockClock,
   }
 })
 
@@ -39,7 +39,7 @@ vi.mock('@/api/agent', () => ({
 }))
 
 const stubs = {
-  'el-tag': { props: ['type', 'size', 'effect'], template: '<span><slot /></span>' },
+  'el-tag': { props: ['type', 'size', 'effect', 'round'], template: '<span><slot /></span>' },
   'el-button': { props: ['type', 'size', 'link'], template: '<button><slot /></button>' },
 }
 
@@ -77,8 +77,8 @@ describe('AI待办页面', () => {
   it('渲染空状态', async () => {
     const w = mountWith()
     await flushPromises(); await nextTick()
-    expect(w.find('.empty-state').exists()).toBe(true)
-    expect(w.text()).toContain('暂无 AI 待办任务')
+    expect(w.find('.panel-empty').exists()).toBe(true)
+    expect(w.text()).toContain('队列为空')
   })
 
   it('渲染待办卡片', async () => {
@@ -87,7 +87,7 @@ describe('AI待办页面', () => {
       s.todoList = ['t1']
     })
     await flushPromises(); await nextTick()
-    expect(w.find('.card-grid').exists()).toBe(true)
+    expect(w.find('.card-list').exists()).toBe(true)
     expect(w.findAll('.todo-card').length).toBe(1)
     expect(w.text()).toContain('开发登录页')
     expect(w.find('.card-rank').text()).toBe('1')
@@ -143,6 +143,37 @@ describe('AI待办页面', () => {
     await flushPromises()
     const glow = w.find('.glow-text')
     expect(glow.exists()).toBe(true)
-    expect(glow.text()).toContain('AI 待办队列')
+    expect(glow.text()).toContain('AI 任务调度中心')
+  })
+
+  it('开发中任务显示在右面板', async () => {
+    const w = mountWith(s => {
+      s.tasks = [
+        mockTask({ id: 't1', title: '待办任务', aiStatus: 'ai_todo' }),
+        mockTask({ id: 't2', title: '开发中任务', aiStatus: 'ai_dev' }),
+      ]
+      s.todoList = ['t1', 't2']
+    })
+    await flushPromises(); await nextTick()
+    // 左面板有待办卡片
+    expect(w.findAll('.todo-card').length).toBe(1)
+    expect(w.find('.todo-card .card-title').text()).toBe('待办任务')
+    // 右面板有开发中卡片
+    expect(w.findAll('.dev-card').length).toBe(1)
+    expect(w.find('.dev-card .card-title').text()).toBe('开发中任务')
+  })
+
+  it('统计条显示正确数量', async () => {
+    const w = mountWith(s => {
+      s.tasks = [
+        mockTask({ id: 't1', aiStatus: '' }),
+        mockTask({ id: 't2', aiStatus: 'ai_dev' }),
+      ]
+      s.todoList = ['t1', 't2']
+    })
+    await flushPromises(); await nextTick()
+    const stats = w.findAll('.stat-num')
+    expect(stats[0].text()).toBe('1') // 待开发
+    expect(stats[1].text()).toBe('1') // 开发中
   })
 })

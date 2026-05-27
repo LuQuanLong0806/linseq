@@ -22,6 +22,11 @@ interface TaskVersion {
   gitCommitTime: string
   gitBranch: string
   createdAt: string
+  filesChanged: { path: string; action: string }[]
+  testResult: { passed: boolean; typeCheck: boolean; details: string }
+  summary: string
+  screenshots: string[]
+  reportText: string
 }
 
 function mapRow(r: Record<string, unknown>): TaskVersion {
@@ -40,6 +45,11 @@ function mapRow(r: Record<string, unknown>): TaskVersion {
     gitCommitTime: (r.git_commit_time as string) || '',
     gitBranch: (r.git_branch as string) || '',
     createdAt: (r.created_at as string) || '',
+    filesChanged: JSON.parse((r.files_changed as string) || '[]'),
+    testResult: JSON.parse((r.test_result as string) || '{}'),
+    summary: (r.summary as string) || '',
+    screenshots: JSON.parse((r.screenshots as string) || '[]'),
+    reportText: (r.report_text as string) || '',
   }
 }
 

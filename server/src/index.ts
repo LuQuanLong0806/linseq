@@ -4,6 +4,8 @@
  */
 import express from 'express'
 import cors from 'cors'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { initDatabase } from './db/index.js'
 import taskRoutes from './routes/tasks.js'
 import syncRoutes from './routes/sync.js'
@@ -12,8 +14,10 @@ import agentRoutes from './routes/agent.js'
 import groupRoutes from './routes/groups.js'
 import versionRoutes from './routes/versions.js'
 import projectRoutes from './routes/projects.js'
+import settingsRoutes from './routes/settings.js'
 import { startCookieRefresh, stopCookieRefresh } from './scraper/intranet.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = 3201
 
@@ -28,8 +32,12 @@ app.use((req, _res, next) => {
   next()
 })
 
+// 静态文件：截图访问
+app.use('/api/screenshots', express.static(path.resolve(__dirname, '../data/screenshots')))
+
 // 路由
 app.use('/api/tasks', taskRoutes)
+app.use('/api/settings', settingsRoutes)
 app.use('/api/sync', syncRoutes)
 app.use('/api/devlogs', devlogRoutes)
 app.use('/api/agent', agentRoutes)

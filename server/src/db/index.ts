@@ -125,6 +125,8 @@ export function initDatabase(): void {
     ['files_changed', "TEXT DEFAULT '[]'"],
     ['test_result', "TEXT DEFAULT ''"],
     ['summary', "TEXT DEFAULT ''"],
+    ['screenshots', "TEXT DEFAULT '[]'"],
+    ['report_text', "TEXT DEFAULT ''"],
   ]
   for (const [col, type] of versionColumns) {
     try { db.exec(`ALTER TABLE task_versions ADD COLUMN ${col} ${type}`) } catch { /* 已存在 */ }

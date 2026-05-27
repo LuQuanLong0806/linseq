@@ -22,6 +22,14 @@
             <el-form-item label="数据存储路径">
               <el-input v-model="settings.dataPath" placeholder="./data" />
             </el-form-item>
+            <el-form-item label="自测报告输出目录">
+              <el-input v-model="settings.reportOutputDir" placeholder="F:\0_workspace\00_Agent自测报告">
+                <template #append>
+                  <el-button @click="handleOpenReportDir">选择目录</el-button>
+                </template>
+              </el-input>
+              <div class="form-tip">AI 完成开发后自测报告（Word）将输出到此目录</div>
+            </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="handleSave">保存设置</el-button>
               <el-button @click="handleReset">重置默认</el-button>
@@ -73,8 +81,9 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { settingsApi } from '@/api/settings'
 
 const settings = reactive({
   appName: '灵序 LINSEQ',
@@ -82,11 +91,24 @@ const settings = reactive({
   eslintEnabled: true,
   autoTest: true,
   dataPath: './data',
+  reportOutputDir: 'F:\\0_workspace\\00_Agent自测报告',
 })
 
-function handleSave() {
+onMounted(async () => {
+  try {
+    const res = await settingsApi.getReportDir()
+    settings.reportOutputDir = res.data.reportOutputDir
+  } catch { /* use default */ }
+})
+
+async function handleSave() {
   localStorage.setItem('linesequence-settings', JSON.stringify(settings))
-  ElMessage.success('设置已保存')
+  try {
+    await settingsApi.updateReportDir(settings.reportOutputDir)
+    ElMessage.success('设置已保存')
+  } catch {
+    ElMessage.error('保存报告目录失败')
+  }
 }
 
 function handleReset() {
@@ -95,7 +117,12 @@ function handleReset() {
   settings.eslintEnabled = true
   settings.autoTest = true
   settings.dataPath = './data'
+  settings.reportOutputDir = 'F:\\0_workspace\\00_Agent自测报告'
   ElMessage.success('已重置为默认值')
+}
+
+function handleOpenReportDir() {
+  ElMessage.info('请直接输入报告输出目录的完整路径')
 }
 
 function handleExport() {
@@ -147,5 +174,11 @@ async function handleResetDB() {
   border-bottom: 1px solid #f0f0f0;
 
   &:last-child { border-bottom: none; }
+}
+
+.form-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>

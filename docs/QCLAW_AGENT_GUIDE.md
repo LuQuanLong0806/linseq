@@ -171,12 +171,18 @@ BASE_URL = http://localhost:3201/api/agent
 
 ### 4. POST /api/agent/task/:id/complete
 
-开发完成，提交产出物。系统会自动：
+开发完成，提交产出物。支持两种请求格式：
+- **JSON**（无截图时）：`Content-Type: application/json`
+- **Multipart**（有截图时）：`Content-Type: multipart/form-data`
+
+系统会自动：
 - 创建版本记录（自动递增版本号）
+- 保存截图到服务器
+- 生成 Word 自测报告到配置的输出目录
 - 将任务状态设为 `ai_review`（待审核）
 - 从待办队列移除
 
-**请求体：**
+**请求体（JSON 模式）：**
 
 ```json
 {
@@ -192,8 +198,25 @@ BASE_URL = http://localhost:3201/api/agent
     "passed": true,
     "typeCheck": true,
     "details": "8 tests passed, 0 failed. tsc --noEmit clean."
-  }
+  },
+  "reportText": "完成了登录页面的开发，包括表单验证、接口对接和错误提示。"
 }
+```
+
+**请求体（Multipart 模式）：**
+
+表单字段与 JSON 相同，额外增加 `screenshots` 文件字段（支持多张，最多 10 张）：
+
+```bash
+curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
+  -F "aiOutput=开发产出描述" \
+  -F "summary=完成摘要" \
+  -F "durationMs=120000" \
+  -F 'filesChanged=[{"path":"src/login.vue","action":"created"}]' \
+  -F 'testResult={"passed":true,"typeCheck":true,"details":"8 tests passed"}' \
+  -F "reportText=自测说明文字" \
+  -F "screenshots=@screenshot1.png" \
+  -F "screenshots=@screenshot2.png"
 ```
 
 **字段说明：**
@@ -202,6 +225,8 @@ BASE_URL = http://localhost:3201/api/agent
 - `durationMs`（可选）：开发耗时毫秒
 - `filesChanged`（建议填写）：结构化文件变更列表，`action` 可选值 `created`/`modified`/`deleted`
 - `testResult`（建议填写）：自测结果摘要
+- `reportText`（建议填写）：自测说明文字，将写入 Word 自测报告。内容应去除 AI 痕迹，以人工测试口吻描述
+- `screenshots`（建议提供）：页面截图文件，支持 png/jpg/jpeg/gif/bmp，单张最大 10MB
 
 **响应：**
 
@@ -213,7 +238,8 @@ BASE_URL = http://localhost:3201/api/agent
     "versionId": "uuid",
     "versionNumber": "V1.0",
     "taskId": "xxx",
-    "aiStatus": "ai_review"
+    "aiStatus": "ai_review",
+    "screenshots": ["1706123456789-abc123.png", "1706123456790-def456.png"]
   }
 }
 ```

@@ -263,14 +263,14 @@ describe('Agent API Routes', () => {
       req_doc_text: '', custom_description: '', acceptance_criteria: '',
       review_comment: '请修复空指针', group_id: '',
     }
-    let callCount = 0
-    mockPrepare.mockImplementation(() => {
-      callCount++
-      if (callCount === 1) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
-      if (callCount === 2) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_rework' }) }
-      if (callCount === 3) return { get: vi.fn().mockReturnValue(mockTask) }
-      if (callCount === 4) return { get: vi.fn().mockReturnValue({ max_iter: 0 }) }
-      if (callCount === 5) return { get: vi.fn().mockReturnValue({ version_number: 'V1.0', prev_review_comment: '', ai_output: '上一轮代码产出' }) }
+    mockPrepare.mockImplementation((sql: string) => {
+      if (sql.includes('sync_config') && sql.includes('todoList')) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
+      if (sql.includes('SELECT ai_status FROM tasks') && !sql.includes('ai_review')) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_rework' }) }
+      if (sql.includes('SELECT * FROM tasks WHERE id =')) return { get: vi.fn().mockReturnValue(mockTask) }
+      if (sql.includes('MAX(iteration)')) return { get: vi.fn().mockReturnValue({ max_iter: 0 }) }
+      if (sql.includes('task_versions') && sql.includes('rejected')) return { get: vi.fn().mockReturnValue({ version_number: 'V1.0', prev_review_comment: '', ai_output: '上一轮代码产出' }) }
+      if (sql.includes('task_groups')) return { get: vi.fn().mockReturnValue(undefined) }
+      if (sql.includes('SELECT id, title, ai_status') && sql.includes('WHERE id =')) return { get: vi.fn().mockReturnValue(undefined) }
       return { get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) }
     })
 
@@ -303,13 +303,15 @@ describe('Agent API Routes', () => {
       .send({ aiOutput: '产出', summary: '完成登录', durationMs: 10000, filesChanged, testResult })
     expect(res.status).toBe(200)
     expect(res.body.data.versionNumber).toBe('V1.0')
-    // 验证 INSERT 传入的参数包含 filesChanged 和 testResult
+    // 验证 INSERT 传入的参数包含 filesChanged, testResult, summary, screenshots, reportText
     expect(insertRunMock).toHaveBeenCalled()
     const callArgs = insertRunMock.mock.calls[0]
-    // files_changed 是倒数第3个参数, test_result 倒数第2个, summary 倒数第1个
-    expect(JSON.parse(callArgs[callArgs.length - 3])).toEqual(filesChanged)
-    expect(JSON.parse(callArgs[callArgs.length - 2])).toEqual(testResult)
-    expect(callArgs[callArgs.length - 1]).toBe('完成登录')
+    // files_changed 倒数第5个, test_result 倒数第4个, summary 倒数第3个, screenshots 倒数第2个, report_text 倒数第1个
+    expect(JSON.parse(callArgs[callArgs.length - 5])).toEqual(filesChanged)
+    expect(JSON.parse(callArgs[callArgs.length - 4])).toEqual(testResult)
+    expect(callArgs[callArgs.length - 3]).toBe('完成登录')
+    expect(JSON.parse(callArgs[callArgs.length - 2])).toEqual([])
+    expect(callArgs[callArgs.length - 1]).toBe('')
   })
 
   // ===== 新增：question 端点 =====

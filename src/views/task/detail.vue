@@ -178,6 +178,47 @@
                   <span>Commit: {{ selectedVersion.gitCommitId }}</span>
                 </div>
               </div>
+              <!-- 自测报告 -->
+              <div v-if="selectedVersion.reportText" class="version-section">
+                <div class="version-section-label">自测说明</div>
+                <div class="version-section-content">{{ selectedVersion.reportText }}</div>
+              </div>
+              <!-- 变更文件 -->
+              <div v-if="selectedVersion.filesChanged && selectedVersion.filesChanged.length" class="version-section">
+                <div class="version-section-label">变更文件 ({{ selectedVersion.filesChanged.length }})</div>
+                <div class="version-files">
+                  <div v-for="f in selectedVersion.filesChanged" :key="f.path" class="version-file-item">
+                    <el-tag size="small" :type="f.action === 'created' ? 'success' : 'warning'">{{ f.action }}</el-tag>
+                    <span>{{ f.path }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- 测试结果 -->
+              <div v-if="selectedVersion.testResult && selectedVersion.testResult.passed !== undefined" class="version-section">
+                <div class="version-section-label">测试结果</div>
+                <div class="version-test">
+                  <el-tag :type="selectedVersion.testResult.passed ? 'success' : 'danger'" size="small">
+                    {{ selectedVersion.testResult.passed ? '通过' : '未通过' }}
+                  </el-tag>
+                  <span v-if="selectedVersion.testResult.details">{{ selectedVersion.testResult.details }}</span>
+                </div>
+              </div>
+              <!-- 页面截图 -->
+              <div v-if="selectedVersion.screenshots && selectedVersion.screenshots.length" class="version-section">
+                <div class="version-section-label">页面截图</div>
+                <div class="version-screenshots">
+                  <el-image
+                    v-for="(shot, idx) in selectedVersion.screenshots"
+                    :key="shot"
+                    :src="`/api/screenshots/${task.id}/${shot}`"
+                    :preview-src-list="selectedVersion.screenshots.map(s => `/api/screenshots/${task.id}/${s}`)"
+                    :initial-index="idx"
+                    fit="cover"
+                    class="version-screenshot-img"
+                    preview-teleported
+                  />
+                </div>
+              </div>
             </div>
           </el-card>
 
@@ -806,6 +847,12 @@ onMounted(() => {
   max-height: 400px; overflow-y: auto;
 }
 .version-git { display: flex; gap: 16px; font-size: 12px; color: #67c23a; }
+
+.version-files { display: flex; flex-direction: column; gap: 4px; }
+.version-file-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.version-test { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.version-screenshots { display: flex; gap: 8px; flex-wrap: wrap; }
+.version-screenshot-img { width: 200px; height: 140px; border-radius: 6px; cursor: pointer; }
 
 // 差异对比
 .diff-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px; }

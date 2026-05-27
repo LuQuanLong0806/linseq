@@ -221,4 +221,9 @@ export interface TaskVersion {
   gitCommitTime: string
   gitBranch: string
   createdAt: string
+  filesChanged: { path: string; action: string }[]
+  testResult: { passed: boolean; typeCheck: boolean; details: string }
+  summary: string
+  screenshots: string[]
+  reportText: string
 }

@@ -14,8 +14,31 @@
  */
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import multer from 'multer'
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 import { getDb } from '../db/index.js'
 import { mapDbRowToTask, addDevLog } from './tasks.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const screenshotsDir = path.resolve(__dirname, '../../data/screenshots')
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const taskId = _req.params.id
+      const dir = path.join(screenshotsDir, taskId)
+      fs.mkdirSync(dir, { recursive: true })
+      cb(null, dir)
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.png'
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`)
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+})
 
 const router = Router()
 
@@ -238,15 +261,35 @@ router.post('/task/:id/log', (req, res) => {
 
 /**
  * POST /api/agent/task/:id/complete
- * QClaw 开发完成：提交产出 + 自动建版本 + 移入审核
+ * QClaw 开发完成：提交产出 + 截图上传 + 自动建版本 + 生成自测报告 + 移入审核
+ * 支持 multipart/form-data（截图文件）和 JSON body 两种模式
  */
-router.post('/task/:id/complete', (req, res) => {
+router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const { aiOutput = '', summary = '', durationMs = 0, filesChanged, testResult } = req.body as {
-      aiOutput?: string; summary?: string; durationMs?: number
-      filesChanged?: { path: string; action: string }[]; testResult?: { passed: boolean; typeCheck: boolean; details: string }
+
+    // 兼容 multipart 和 JSON 两种模式
+    let aiOutput = '', summary = '', durationMs = 0, reportText = ''
+    let filesChanged: { path: string; action: string }[] = []
+    let testResult: { passed: boolean; typeCheck: boolean; details: string } = { passed: false, typeCheck: false, details: '' }
+
+    if (req.is('multipart/form-data')) {
+      const body = req.body as Record<string, string>
+      aiOutput = body.aiOutput || ''
+      summary = body.summary || ''
+      durationMs = Number(body.durationMs) || 0
+      reportText = body.reportText || ''
+      try { filesChanged = JSON.parse(body.filesChanged || '[]') } catch { /* ignore */ }
+      try { testResult = JSON.parse(body.testResult || '{}') } catch { /* ignore */ }
+    } else {
+      const body = req.body as Record<string, unknown>
+      aiOutput = (body.aiOutput as string) || ''
+      summary = (body.summary as string) || ''
+      durationMs = (body.durationMs as number) || 0
+      reportText = (body.reportText as string) || ''
+      filesChanged = (body.filesChanged as { path: string; action: string }[]) || []
+      testResult = (body.testResult as { passed: boolean; typeCheck: boolean; details: string }) || { passed: false, typeCheck: false, details: '' }
     }
 
     const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
@@ -276,13 +319,17 @@ router.post('/task/:id/complete', (req, res) => {
       "SELECT * FROM dev_logs WHERE task_id = ? ORDER BY time ASC"
     ).all(id) as Record<string, unknown>[]
 
-    // 创建版本记录
+    // 截图文件名列表
+    const screenshotFiles = (req.files as Express.Multer.File[] || []).map(f => f.filename)
+
+    // 创建版本记录（含截图和报告）
     const versionId = uuidv4()
     db.prepare(`
-      INSERT INTO task_versions (id, task_id, version_number, iteration, ai_output, dev_logs, ai_duration_ms, prev_review_comment, status, files_changed, test_result, summary)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?)
+      INSERT INTO task_versions (id, task_id, version_number, iteration, ai_output, dev_logs, ai_duration_ms, prev_review_comment, status, files_changed, test_result, summary, screenshots, report_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?)
     `).run(versionId, id, versionNumber, iteration, aiOutput, JSON.stringify(devLogs), durationMs, prevComment,
-      JSON.stringify(filesChanged || []), JSON.stringify(testResult || {}), summary)
+      JSON.stringify(filesChanged), JSON.stringify(testResult), summary,
+      JSON.stringify(screenshotFiles), reportText)
 
     // 更新任务状态
     db.prepare(`
@@ -295,6 +342,16 @@ router.post('/task/:id/complete', (req, res) => {
 
     addDevLog(db, id, '开发完成', summary || `完成开发，生成版本 ${versionNumber}`, 'agent', false)
 
+    // 异步生成 Word 自测报告（不阻塞响应）
+    generateDocxReport({
+      sourceId: row.source_id as string,
+      title: row.title as string,
+      versionNumber,
+      reportText: reportText || summary,
+      screenshots: (req.files as Express.Multer.File[] || []),
+      filesChanged,
+    }).catch(err => console.error('[Report] 生成自测报告失败:', err))
+
     res.json({
       code: 0,
       message: 'success',
@@ -303,6 +360,7 @@ router.post('/task/:id/complete', (req, res) => {
         versionNumber,
         taskId: id,
         aiStatus: 'ai_review',
+        screenshots: screenshotFiles,
       },
     })
   } catch (err) {
@@ -455,5 +513,129 @@ router.get('/stats', (_req, res) => {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
 })
+
+// ========== 自测报告生成（Word .docx） ==========
+
+interface ReportParams {
+  sourceId: string
+  title: string
+  versionNumber: string
+  reportText: string
+  screenshots: Express.Multer.File[]
+  filesChanged: { path: string; action: string }[]
+}
+
+async function generateDocxReport(params: ReportParams): Promise<void> {
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, HeadingLevel, AlignmentType } = await import('docx')
+  const db = getDb()
+
+  // 读取报告输出目录
+  const cfgRow = db.prepare("SELECT value FROM sync_config WHERE key = 'reportOutputDir'").get() as { value: string } | undefined
+  const outputDir = cfgRow?.value ? JSON.parse(cfgRow.value) : 'F:\\0_workspace\\00_Agent自测报告'
+  fs.mkdirSync(outputDir, { recursive: true })
+
+  const sanitizedName = params.title.replace(/[\\/:*?"<>|]/g, '_').substring(0, 80)
+  const filename = `${params.sourceId}_${sanitizedName}_${params.versionNumber}.docx`
+  const filePath = path.join(outputDir, filename)
+
+  // 构建文档内容（混合 Paragraph 和 Table）
+  const children: InstanceType<typeof Paragraph | typeof Table>[] = []
+
+  // 标题
+  children.push(new Paragraph({
+    text: '自测报告',
+    heading: HeadingLevel.HEADING_1,
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 400 },
+  }))
+
+  // 任务信息表格
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({ width: { size: 25, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: '任务单号', bold: true, size: 22 })] })] }),
+          new TableCell({ width: { size: 75, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: params.sourceId, size: 22 })] })] }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          new TableCell({ width: { size: 25, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: '任务标题', bold: true, size: 22 })] })] }),
+          new TableCell({ width: { size: 75, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: params.title, size: 22 })] })] }),
+        ],
+      }),
+    ],
+  }))
+
+  // 开发说明
+  if (params.reportText) {
+    children.push(new Paragraph({ text: '', spacing: { before: 300 } }))
+    children.push(new Paragraph({
+      text: '开发说明',
+      heading: HeadingLevel.HEADING_2,
+      spacing: { after: 100 },
+    }))
+    for (const line of params.reportText.split('\n')) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line, size: 22 })],
+        spacing: { after: 60 },
+      }))
+    }
+  }
+
+  // 变更文件列表
+  if (params.filesChanged.length > 0) {
+    children.push(new Paragraph({ text: '', spacing: { before: 300 } }))
+    children.push(new Paragraph({
+      text: '变更文件',
+      heading: HeadingLevel.HEADING_2,
+      spacing: { after: 100 },
+    }))
+    for (const f of params.filesChanged) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: `[${f.action}] `, bold: true, size: 22 }),
+          new TextRun({ text: f.path, size: 22 }),
+        ],
+        spacing: { after: 40 },
+      }))
+    }
+  }
+
+  // 页面截图
+  if (params.screenshots.length > 0) {
+    children.push(new Paragraph({ text: '', spacing: { before: 300 } }))
+    children.push(new Paragraph({
+      text: '页面截图',
+      heading: HeadingLevel.HEADING_2,
+      spacing: { after: 100 },
+    }))
+    for (const img of params.screenshots) {
+      const imgBuffer = fs.readFileSync(img.path)
+      const imgExt = path.extname(img.originalname).toLowerCase()
+      if (!['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(imgExt)) continue
+      children.push(new Paragraph({
+        children: [
+          new ImageRun({
+            data: imgBuffer,
+            transformation: { width: 500, height: 350 },
+            type: imgExt === '.png' ? 'png' : imgExt === '.gif' ? 'gif' : imgExt === '.bmp' ? 'bmp' : 'jpg',
+          }),
+        ],
+        spacing: { after: 200 },
+        alignment: AlignmentType.CENTER,
+      }))
+    }
+  }
+
+  const doc = new Document({
+    sections: [{ children: children as InstanceType<typeof Paragraph>[] }],
+  })
+
+  const buffer = await Packer.toBuffer(doc)
+  fs.writeFileSync(filePath, buffer)
+  console.log(`[Report] 自测报告已生成: ${filePath}`)
+}
 
 export default router

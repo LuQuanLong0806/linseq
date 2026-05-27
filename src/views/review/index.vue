@@ -43,7 +43,58 @@
             <span v-if="task.gitBranch">{{ task.gitBranch }}</span>
           </div>
 
-          <div v-if="task.aiOutput" class="card-output">
+          <!-- 自测报告区域 -->
+          <div v-if="versionMap[task.id]" class="card-report">
+            <!-- 截图画廊 -->
+            <div v-if="versionMap[task.id].screenshots.length" class="card-screenshots">
+              <span class="report-label">页面截图</span>
+              <div class="screenshot-list">
+                <el-image
+                  v-for="(shot, idx) in versionMap[task.id].screenshots"
+                  :key="shot"
+                  :src="`/api/screenshots/${task.id}/${shot}`"
+                  :preview-src-list="versionMap[task.id].screenshots.map(s => `/api/screenshots/${task.id}/${s}`)"
+                  :initial-index="idx"
+                  fit="cover"
+                  class="screenshot-thumb"
+                  preview-teleported
+                />
+              </div>
+            </div>
+            <!-- 报告文本 -->
+            <div v-if="versionMap[task.id].reportText" class="card-report-text">
+              <span class="report-label">自测说明</span>
+              <p>{{ versionMap[task.id].reportText }}</p>
+            </div>
+            <!-- 变更文件 -->
+            <div v-if="versionMap[task.id].filesChanged.length" class="card-files">
+              <span class="report-label">变更文件 ({{ versionMap[task.id].filesChanged.length }})</span>
+              <div class="file-list">
+                <span v-for="f in versionMap[task.id].filesChanged.slice(0, 5)" :key="f.path" class="file-item">
+                  <el-tag size="small" :type="f.action === 'created' ? 'success' : 'warning'">{{ f.action }}</el-tag>
+                  {{ f.path }}
+                </span>
+                <span v-if="versionMap[task.id].filesChanged.length > 5" class="file-more">
+                  ...还有 {{ versionMap[task.id].filesChanged.length - 5 }} 个文件
+                </span>
+              </div>
+            </div>
+            <!-- 测试结果 -->
+            <div v-if="versionMap[task.id].testResult && versionMap[task.id].testResult.passed !== undefined" class="card-test">
+              <span class="report-label">测试结果</span>
+              <el-tag :type="versionMap[task.id].testResult.passed ? 'success' : 'danger'" size="small">
+                {{ versionMap[task.id].testResult.passed ? '通过' : '未通过' }}
+              </el-tag>
+              <span v-if="versionMap[task.id].testResult.details" class="test-details">{{ versionMap[task.id].testResult.details }}</span>
+            </div>
+            <!-- 开发耗时 -->
+            <div v-if="versionMap[task.id].aiDurationMs" class="card-duration">
+              <span class="report-label">开发耗时</span>
+              <span>{{ (versionMap[task.id].aiDurationMs / 1000).toFixed(0) }}s</span>
+            </div>
+          </div>
+
+          <div v-if="task.aiOutput && !versionMap[task.id]" class="card-output">
             <span class="output-label">AI 产出：</span>
             <span>{{ task.aiOutput }}</span>
           </div>
@@ -79,7 +130,8 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
-import type { Task } from '@/types'
+import type { Task, TaskVersion } from '@/types'
+import { versionApi } from '@/api/version'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
 import * as THREE from 'three'
@@ -88,9 +140,26 @@ const router = useRouter()
 const taskStore = useTaskStore()
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 
+// 版本数据缓存（按 taskId）
+const versionMap = ref<Record<string, TaskVersion>>({})
+
 const reviewTasks = computed(() =>
   taskStore.tasks.filter(t => t.aiStatus === 'ai_review')
 )
+
+// 加载审核任务的最新版本数据
+async function loadVersionData() {
+  for (const task of reviewTasks.value) {
+    if (versionMap.value[task.id]) continue
+    try {
+      const res = await versionApi.list(task.id)
+      const versions = res.data
+      if (versions.length > 0) {
+        versionMap.value[task.id] = versions[versions.length - 1]
+      }
+    } catch { /* ignore */ }
+  }
+}
 
 // Reject dialog
 const rejectDialogVisible = ref(false)
@@ -226,6 +295,7 @@ function resize() {
 
 onMounted(async () => {
   await taskStore.fetchTasks()
+  await loadVersionData()
   await nextTick()
   initThree()
   window.addEventListener('resize', resize)
@@ -408,6 +478,95 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   font-size: 12px;
   color: #a0a0b8;
   .output-label { color: #00e5a0; font-weight: 600; }
+}
+
+/* 自测报告区域 */
+.card-report {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.report-label {
+  color: #00e5a0;
+  font-size: 12px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.card-screenshots {
+  margin-bottom: 10px;
+}
+
+.screenshot-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.screenshot-thumb {
+  width: 100px;
+  height: 70px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 229, 160, 0.2);
+  cursor: pointer;
+  object-fit: cover;
+}
+
+.card-report-text {
+  margin-bottom: 10px;
+  p {
+    margin: 0;
+    font-size: 12px;
+    color: #a0a0b8;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+}
+
+.card-files {
+  margin-bottom: 10px;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.file-item {
+  font-size: 11px;
+  color: #a0a0b8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-more {
+  font-size: 11px;
+  color: #606266;
+}
+
+.card-test {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.test-details {
+  font-size: 11px;
+  color: #a0a0b8;
+}
+
+.card-duration {
+  margin-bottom: 8px;
+  span:last-child {
+    color: #ffd700;
+    font-size: 12px;
+    font-weight: 600;
+  }
 }
 
 .card-actions {
