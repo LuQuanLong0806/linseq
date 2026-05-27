@@ -149,7 +149,7 @@ function upsertTask(db: ReturnType<typeof getDb>, task: ScrapedTask): 'new' | 'u
   }
 }
 
-// 触发同步
+// 触发同步（复用 tasks 路由中的完整同步逻辑，含隐藏/项目关联）
 router.post('/trigger', async (_req, res) => {
   try {
     const { scrapTasksFromIntranet } = await import('../scraper/intranet.js')
@@ -158,22 +158,38 @@ router.post('/trigger', async (_req, res) => {
 
     let newTasks = 0
     let updatedTasks = 0
+    let unchangedTasks = 0
 
     for (const task of tasks) {
       const result = upsertTask(db, task)
       if (result === 'new') newTasks++
       else if (result === 'updated') updatedTasks++
+      else unchangedTasks++
     }
 
-    const unchangedTasks = tasks.length - newTasks - updatedTasks
+    // 隐藏不在本次同步中的旧任务（手动创建的除外），并清除其 AI 待办状态
+    if (tasks.length > 0) {
+      const syncedIds = tasks.map(t => t.sourceId)
+      const placeholders = syncedIds.map(() => '?').join(',')
+      db.prepare(`UPDATE tasks SET is_hidden = 1, ai_status = '' WHERE source_id NOT IN (${placeholders}) AND is_hidden = 0 AND source_id NOT LIKE 'manual_%'`).run(...syncedIds)
+      db.prepare(`UPDATE tasks SET is_hidden = 0 WHERE source_id IN (${placeholders})`).run(...syncedIds)
+    }
+
+    // 同步后自动关联项目配置
+    const configs = db.prepare('SELECT name, local_path, default_branch FROM project_configs WHERE local_path != ""').all() as { name: string; local_path: string; default_branch: string }[]
+    if (configs.length > 0) {
+      const updateStmt = db.prepare('UPDATE tasks SET project_path = ?, git_branch = ? WHERE project = ? AND (project_path = "" OR project_path IS NULL)')
+      for (const cfg of configs) {
+        updateStmt.run(cfg.local_path, cfg.default_branch, cfg.name)
+      }
+    }
 
     // 记录
-    const recordStmt = db.prepare(`
+    const recordId = uuidv4()
+    db.prepare(`
       INSERT INTO sync_records (id, status, total_tasks, new_tasks, updated_tasks, unchanged_tasks)
       VALUES (?, 'success', ?, ?, ?, ?)
-    `)
-    const recordId = uuidv4()
-    recordStmt.run(recordId, tasks.length, newTasks, updatedTasks, unchangedTasks)
+    `).run(recordId, tasks.length, newTasks, updatedTasks, unchangedTasks)
 
     const record = {
       id: recordId,
@@ -188,6 +204,11 @@ router.post('/trigger', async (_req, res) => {
 
     res.json({ code: 0, message: 'success', data: record })
   } catch (err) {
+    const db = getDb()
+    db.prepare(`
+      INSERT INTO sync_records (id, status, total_tasks, error_messages)
+      VALUES (?, 'failed', 0, ?)
+    `).run(uuidv4(), JSON.stringify([String(err)]))
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
 })

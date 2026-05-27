@@ -8,6 +8,63 @@ import type { Task, TaskStatus } from './types.js'
 
 const router = Router()
 
+// ========== 手动创建任务 ==========
+
+router.post('/manual', (req, res) => {
+  try {
+    const db = getDb()
+    const { title, description, customDescription, acceptanceCriteria, projectPath, gitBranch, project, module, priority, deadline } = req.body
+    if (!title) return res.status(400).json({ code: 400, message: '任务标题不能为空', data: null })
+
+    const id = uuidv4()
+    const sourceId = `manual_${Date.now()}`
+    db.prepare(`
+      INSERT INTO tasks (id, source_id, title, description, module, priority, status, deadline,
+        project, project_path, git_branch, custom_description, acceptance_criteria, ai_status,
+        create_time, update_time)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, 'ai_todo',
+        datetime('now','localtime'), datetime('now','localtime'))
+    `).run(id, sourceId, title, description || '', module || '', priority || 'medium', deadline || '',
+      project || '', projectPath || '', gitBranch || '', customDescription || '', acceptanceCriteria || '')
+
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, row) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// ========== 重新发布任务到 AI 待办 ==========
+
+router.post('/:id/republish', (req, res) => {
+  try {
+    const db = getDb()
+    const id = req.params.id
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    if (!row) return res.status(404).json({ code: 404, message: '任务不存在', data: null })
+
+    const { customDescription, projectPath, gitBranch } = req.body
+    const reworkCount = ((row as Record<string, unknown>).rework_count as number || 0) + 1
+
+    const updates: string[] = ['ai_status = ?', 'rework_count = ?', 'update_time = datetime(\'now\',\'localtime\')']
+    const values: unknown[] = ['ai_rework', reworkCount]
+
+    if (customDescription) { updates.push('custom_description = ?'); values.push(customDescription) }
+    if (projectPath) { updates.push('project_path = ?'); values.push(projectPath) }
+    if (gitBranch) { updates.push('git_branch = ?'); values.push(gitBranch) }
+
+    values.push(id)
+    db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+
+    addDevLog(db, id, '重新发布', `第 ${reworkCount} 次发布到 AI 待办`, 'user', false)
+
+    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, updated) })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
 // ========== 查询 ==========
 
 router.get('/', (req, res) => {
@@ -15,7 +72,7 @@ router.get('/', (req, res) => {
     const db = getDb()
     const { page = '1', pageSize = '20', keyword, status, priority, project, customer, module, projectPath, isClosed } = req.query
 
-    let whereClause = 'WHERE 1=1'
+    let whereClause = 'WHERE is_hidden = 0'
     const params: unknown[] = []
 
     if (keyword) {
@@ -267,6 +324,17 @@ router.post('/sync', async (_req, res) => {
       } else {
         unchangedTasks++
       }
+    }
+
+    // 隐藏不在本次同步中的旧任务（手动创建的除外），并清除其 AI 待办状态
+    // 同步数据中已有的任务确保显示（is_hidden = 0）
+    if (tasks.length > 0) {
+      const syncedIds = tasks.map(t => t.sourceId)
+      const placeholders = syncedIds.map(() => '?').join(',')
+      // 仅隐藏非手动创建、且不在本次同步中的任务
+      db.prepare(`UPDATE tasks SET is_hidden = 1, ai_status = '' WHERE source_id NOT IN (${placeholders}) AND is_hidden = 0 AND source_id NOT LIKE 'manual_%'`).run(...syncedIds)
+      // 同步数据中存在的任务确保可见
+      db.prepare(`UPDATE tasks SET is_hidden = 0 WHERE source_id IN (${placeholders})`).run(...syncedIds)
     }
 
     // 同步后自动关联项目配置

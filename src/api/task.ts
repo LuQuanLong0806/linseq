@@ -24,7 +24,7 @@ export const taskApi = {
 
   /** 从内网同步任务 */
   syncFromIntranet(): Promise<ApiResponse<SyncResult>> {
-    return http.post('/tasks/sync')
+    return http.post('/tasks/sync', {}, { timeout: 120000 })
   },
 
   /** 添加开发记录 */
@@ -35,6 +35,16 @@ export const taskApi = {
   /** 提取 PDF 文字内容 */
   extractPdf(taskId: string): Promise<ApiResponse<{ reqDocText: string }>> {
     return http.post(`/tasks/${taskId}/extract-pdf`)
+  },
+
+  /** 手动创建任务 */
+  createManualTask(data: Partial<Task>): Promise<ApiResponse<Task>> {
+    return http.post('/tasks/manual', data)
+  },
+
+  /** 重新发布任务到 AI 待办 */
+  republishTask(id: string, data?: Partial<Task>): Promise<ApiResponse<Task>> {
+    return http.post(`/tasks/${id}/republish`, data)
   },
 }
 

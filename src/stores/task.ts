@@ -8,6 +8,7 @@ import { agentApi } from '@/api/agent'
 export const useTaskStore = defineStore('task', () => {
   // State
   const tasks = ref<Task[]>([])
+  const totalTasks = ref(0)
   const loading = ref(false)
   const currentTask = ref<Task | null>(null)
   const syncing = ref(false)
@@ -79,11 +80,12 @@ export const useTaskStore = defineStore('task', () => {
   })
 
   // Actions
-  async function fetchTasks() {
+  async function fetchTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: string; priority?: string; module?: string; projectPath?: string }) {
     loading.value = true
     try {
-      const res = await taskApi.getTasks()
+      const res = await taskApi.getTasks(params)
       tasks.value = res.data.list
+      totalTasks.value = res.data.total
     } finally {
       loading.value = false
     }
@@ -125,7 +127,11 @@ export const useTaskStore = defineStore('task', () => {
     syncing.value = true
     try {
       const res = await taskApi.syncFromIntranet()
-      await fetchTasks()
+      // 清除被隐藏任务的待办引用
+      const visibleIds = new Set((await taskApi.getTasks({ pageSize: 9999 })).data.list.map(t => t.id))
+      todoList.value = todoList.value.filter(id => visibleIds.has(id))
+      localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
+      agentApi.saveTodoOrder(todoList.value).catch(() => {})
       return res.data
     } finally {
       syncing.value = false
@@ -171,8 +177,31 @@ export const useTaskStore = defineStore('task', () => {
     agentApi.saveTodoOrder(todoList.value).catch(() => {})
   }
 
+  async function createAndAddTodo(data: Partial<Task>) {
+    const res = await taskApi.createManualTask(data)
+    tasks.value.unshift(res.data)
+    todoList.value.push(res.data.id)
+    localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
+    agentApi.saveTodoOrder(todoList.value).catch(() => {})
+    return res.data
+  }
+
+  async function republishToTodo(taskId: string, data?: Partial<Task>) {
+    const res = await taskApi.republishTask(taskId, data)
+    const idx = tasks.value.findIndex(t => t.id === taskId)
+    if (idx !== -1) tasks.value[idx] = res.data
+    else tasks.value.unshift(res.data)
+    if (!todoList.value.includes(taskId)) {
+      todoList.value.unshift(taskId)
+    }
+    localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
+    agentApi.saveTodoOrder(todoList.value).catch(() => {})
+    return res.data
+  }
+
   return {
     tasks,
+    totalTasks,
     loading,
     currentTask,
     syncing,
@@ -187,6 +216,8 @@ export const useTaskStore = defineStore('task', () => {
     todoList,
     isInTodoList,
     toggleTodo,
+    createAndAddTodo,
+    republishToTodo,
     groups,
     fetchGroups,
     createGroup,

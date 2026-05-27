@@ -137,7 +137,7 @@
     <el-card v-show="viewMode === 'table'" shadow="hover" class="table-card">
       <el-table
         ref="tableRef"
-        :data="paginatedTasks"
+        :data="taskStore.tasks"
         stripe
         style="width: 100%"
         row-class-name="task-row"
@@ -256,7 +256,7 @@
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
-          :total="filteredTasks.length"
+          :total="taskStore.totalTasks"
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
           background
@@ -390,7 +390,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue';
+import { ref, computed, reactive, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTaskStore } from '@/stores/task';
 import {
@@ -442,33 +442,7 @@ const projectForm = reactive({
   taskPageUrl: ''
 });
 
-const modules = computed(() => {
-  const set = new Set(taskStore.tasks.map((t) => t.module).filter(Boolean));
-  return Array.from(set);
-});
-
-const filteredTasks = computed(() => {
-  let list = [...taskStore.tasks];
-  if (filters.keyword) {
-    const kw = filters.keyword.toLowerCase();
-    list = list.filter(
-      (t) => t.title.toLowerCase().includes(kw) || t.sourceId.includes(kw)
-    );
-  }
-  if (filters.status) list = list.filter((t) => t.status === filters.status);
-  if (filters.priority)
-    list = list.filter((t) => t.priority === filters.priority);
-  if (filters.module) list = list.filter((t) => t.module === filters.module);
-  return list.sort(
-    (a, b) =>
-      new Date(b.updateTime).getTime() - new Date(a.updateTime).getTime()
-  );
-});
-
-const paginatedTasks = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredTasks.value.slice(start, start + pageSize.value);
-});
+const modules = ref<string[]>([]);
 
 const kanbanColumns = [
   { key: 'pending', label: '待开发', color: '#909399' },
@@ -479,8 +453,21 @@ const kanbanColumns = [
   { key: 'rejected', label: '已驳回', color: '#f56c6c' }
 ];
 
+async function loadData() {
+  await taskStore.fetchTasks({
+    page: currentPage.value,
+    pageSize: pageSize.value,
+    keyword: filters.keyword || undefined,
+    status: filters.status || undefined,
+    priority: filters.priority || undefined,
+    module: filters.module || undefined,
+  });
+  const set = new Set<string>(taskStore.tasks.map((t: Task) => t.module).filter(Boolean));
+  modules.value = Array.from(set);
+}
+
 function getTasksByStatus(status: string) {
-  return filteredTasks.value.filter((t) => t.status === status);
+  return taskStore.tasks.filter((t) => t.status === status);
 }
 
 function handleSelectionChange(rows: Task[]) {
@@ -519,6 +506,7 @@ async function handleBatchStatusChange(status: string) {
 
 function handleSearch() {
   currentPage.value = 1;
+  loadData();
 }
 
 function handleReset() {
@@ -527,12 +515,14 @@ function handleReset() {
   filters.priority = '';
   filters.module = '';
   currentPage.value = 1;
+  loadData();
 }
 
 async function handleSync() {
   try {
     await taskStore.syncTasks();
     ElMessage.success('同步完成');
+    await loadData();
   } catch {
     ElMessage.error('同步失败');
   }
@@ -784,8 +774,10 @@ function formatDate(date: string): string {
   return dayjs(date).format('MM-DD HH:mm');
 }
 
+watch([currentPage, pageSize], () => { loadData(); });
+
 onMounted(() => {
-  taskStore.fetchTasks();
+  loadData();
 });
 </script>
 

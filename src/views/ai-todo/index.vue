@@ -9,9 +9,14 @@
         </h2>
         <div class="page-header-bar">
           <p class="page-desc">QClaw 自动执行队列 · 拖拽排序调整优先级</p>
-          <el-button v-if="ungroupedTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">
-            + 新建分组
-          </el-button>
+          <div class="header-actions">
+            <el-button type="success" size="small" @click="openPublishDialog">
+              发布任务
+            </el-button>
+            <el-button v-if="ungroupedTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">
+              + 新建分组
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -148,6 +153,105 @@
           <el-button type="primary" @click="handleSaveGroupEdit">保存</el-button>
         </template>
       </el-dialog>
+
+      <!-- 发布任务弹窗 -->
+      <el-dialog v-model="showPublishDialog" title="发布任务到 AI 待办" width="620px" :close-on-click-modal="false" destroy-on-close>
+        <el-radio-group v-model="publishMode" style="margin-bottom:16px">
+          <el-radio-button value="new">新建任务</el-radio-button>
+          <el-radio-button value="existing">关联已有任务</el-radio-button>
+        </el-radio-group>
+
+        <!-- 新建任务模式 -->
+        <el-form v-if="publishMode === 'new'" label-width="100px" label-position="right">
+          <el-form-item label="任务标题" required>
+            <el-input v-model="publishForm.title" placeholder="描述要完成的工作" />
+          </el-form-item>
+          <el-form-item label="项目配置">
+            <el-select v-model="publishForm.projectName" placeholder="选择项目（自动填充路径和分支）" clearable filterable style="width:100%" @change="handlePublishProjectSelect">
+              <el-option v-for="p in projectConfigs" :key="p.id" :label="p.name" :value="p.name">
+                <span>{{ p.name }}</span>
+                <span style="float:right;color:#909399;font-size:12px">{{ p.localPath || '未配置路径' }}</span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="本地路径">
+            <el-input v-model="publishForm.projectPath" placeholder="F:\your-project" />
+          </el-form-item>
+          <el-form-item label="Git 分支">
+            <el-select v-model="publishForm.gitBranch" placeholder="选择或输入分支" clearable filterable allow-create style="width:100%">
+              <el-option v-for="b in publishBranches" :key="b" :label="b" :value="b" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="自定义描述">
+            <el-input v-model="publishForm.customDescription" type="textarea" :rows="3" placeholder="详细说明要做什么，如：对接后端接口字段、修改列表页查询逻辑" />
+          </el-form-item>
+          <el-form-item label="验收标准">
+            <el-input v-model="publishForm.acceptanceCriteria" type="textarea" :rows="2" placeholder="可选，描述完成的验收条件" />
+          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="优先级">
+                <el-select v-model="publishForm.priority" style="width:100%">
+                  <el-option label="紧急" value="urgent" />
+                  <el-option label="高" value="high" />
+                  <el-option label="中" value="medium" />
+                  <el-option label="低" value="low" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="所属项目">
+                <el-input v-model="publishForm.project" placeholder="可选" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+
+        <!-- 关联已有任务模式 -->
+        <el-form v-else label-width="100px" label-position="right">
+          <el-form-item label="选择任务" required>
+            <el-select v-model="publishForm.existingTaskId" placeholder="搜索任务标题或单号" filterable remote :remote-method="searchExistingTasks" :loading="searchingTasks" style="width:100%" value-key="id">
+              <el-option v-for="t in searchedTasks" :key="t.id" :label="`${t.sourceId} - ${t.title}`" :value="t.id" />
+            </el-select>
+          </el-form-item>
+          <div v-if="selectedExistingTask" class="existing-task-info">
+            <el-descriptions :column="2" size="small" border>
+              <el-descriptions-item label="标题">{{ selectedExistingTask.title }}</el-descriptions-item>
+              <el-descriptions-item label="项目">{{ selectedExistingTask.project || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="状态">{{ selectedExistingTask.status }}</el-descriptions-item>
+              <el-descriptions-item label="AI状态">{{ selectedExistingTask.aiStatus || '-' }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <el-form-item label="补充描述">
+            <el-input v-model="publishForm.customDescription" type="textarea" :rows="3" placeholder="补充说明这次要做什么修改，如：对接后端新增的接口字段" />
+          </el-form-item>
+          <el-form-item label="项目配置">
+            <el-select v-model="publishForm.projectName" placeholder="选择项目覆盖路径和分支" clearable filterable style="width:100%" @change="handlePublishProjectSelect">
+              <el-option v-for="p in projectConfigs" :key="p.id" :label="p.name" :value="p.name">
+                <span>{{ p.name }}</span>
+                <span style="float:right;color:#909399;font-size:12px">{{ p.localPath || '未配置路径' }}</span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="本地路径">
+                <el-input v-model="publishForm.projectPath" placeholder="F:\your-project" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Git 分支">
+                <el-input v-model="publishForm.gitBranch" placeholder="feature/xxx" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+
+        <template #footer>
+          <el-button @click="showPublishDialog = false">取消</el-button>
+          <el-button type="primary" @click="handlePublish" :loading="publishing" :disabled="!canPublish">发布到 AI 待办</el-button>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -156,6 +260,8 @@
 import { ref, computed, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { agentApi } from '@/api/agent'
+import { projectApi, type ProjectConfig } from '@/api/project'
+import { taskApi } from '@/api/task'
 import type { Task, TaskGroup } from '@/types'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -176,6 +282,104 @@ const newGroupTaskIds = ref<string[]>([])
 const showGroupEdit = ref(false)
 const editingGroup = ref<TaskGroup | null>(null)
 const groupEditForm = reactive({ name: '', projectPath: '', gitBranch: '' })
+
+// Publish dialog state
+const showPublishDialog = ref(false)
+const publishing = ref(false)
+const publishMode = ref<'new' | 'existing'>('new')
+const projectConfigs = ref<ProjectConfig[]>([])
+const publishBranches = ref<string[]>([])
+const searchingTasks = ref(false)
+const searchedTasks = ref<Task[]>([])
+const publishForm = reactive({
+  title: '',
+  projectName: '',
+  projectPath: '',
+  gitBranch: '',
+  customDescription: '',
+  acceptanceCriteria: '',
+  priority: 'medium' as string,
+  project: '',
+  existingTaskId: '',
+})
+
+const selectedExistingTask = computed(() => {
+  if (!publishForm.existingTaskId) return null
+  return taskStore.tasks.find(t => t.id === publishForm.existingTaskId) || null
+})
+
+const canPublish = computed(() => {
+  if (publishMode.value === 'new') return !!publishForm.title.trim()
+  return !!publishForm.existingTaskId
+})
+
+function openPublishDialog() {
+  publishMode.value = 'new'
+  publishForm.title = ''
+  publishForm.projectName = ''
+  publishForm.projectPath = ''
+  publishForm.gitBranch = ''
+  publishForm.customDescription = ''
+  publishForm.acceptanceCriteria = ''
+  publishForm.priority = 'medium'
+  publishForm.project = ''
+  publishForm.existingTaskId = ''
+  searchedTasks.value = []
+  publishBranches.value = []
+  projectApi.list().then(res => { projectConfigs.value = res.data }).catch(() => {})
+  showPublishDialog.value = true
+}
+
+function handlePublishProjectSelect(name: string) {
+  const config = projectConfigs.value.find(p => p.name === name)
+  if (config) {
+    if (config.localPath) publishForm.projectPath = config.localPath
+    if (config.defaultBranch) publishForm.gitBranch = config.defaultBranch
+    publishBranches.value = [...config.branches]
+  } else {
+    publishBranches.value = []
+  }
+}
+
+async function searchExistingTasks(query: string) {
+  if (!query) { searchedTasks.value = []; return }
+  searchingTasks.value = true
+  try {
+    const res = await taskApi.getTasks({ keyword: query, pageSize: 20 })
+    searchedTasks.value = res.data.list
+  } catch { searchedTasks.value = [] }
+  finally { searchingTasks.value = false }
+}
+
+async function handlePublish() {
+  publishing.value = true
+  try {
+    if (publishMode.value === 'new') {
+      await taskStore.createAndAddTodo({
+        title: publishForm.title,
+        customDescription: publishForm.customDescription,
+        acceptanceCriteria: publishForm.acceptanceCriteria,
+        projectPath: publishForm.projectPath,
+        gitBranch: publishForm.gitBranch,
+        priority: publishForm.priority as any,
+        project: publishForm.project,
+      })
+      ElMessage.success('任务已创建并加入 AI 待办')
+    } else {
+      await taskStore.republishToTodo(publishForm.existingTaskId, {
+        customDescription: publishForm.customDescription,
+        projectPath: publishForm.projectPath,
+        gitBranch: publishForm.gitBranch,
+      })
+      ElMessage.success('任务已重新发布到 AI 待办')
+    }
+    showPublishDialog.value = false
+  } catch (err: any) {
+    ElMessage.error(err?.message || '发布失败')
+  } finally {
+    publishing.value = false
+  }
+}
 
 // Computed
 const todoTasks = computed(() =>

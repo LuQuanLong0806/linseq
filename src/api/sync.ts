@@ -19,7 +19,7 @@ export const syncApi = {
 
   /** 触发手动同步 */
   triggerSync(): Promise<ApiResponse<SyncRecord>> {
-    return http.post('/sync/trigger')
+    return http.post('/sync/trigger', {}, { timeout: 120000 })
   },
 
   /** 内网登录 */
