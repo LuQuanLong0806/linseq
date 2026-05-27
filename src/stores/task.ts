@@ -4,6 +4,10 @@ import type { Task, TaskGroup, DashboardStats, TaskStatus, TaskUpdateParams } fr
 import { taskApi } from '@/api/task'
 import { groupApi } from '@/api/group'
 import { agentApi } from '@/api/agent'
+import { createPersistedRef, loadPersisted, persist } from '@/utils/persistence'
+
+export type ViewMode = 'table' | 'card' | 'planetary' | 'holographic' | 'datastream' | 'constellation'
+const validModes: ViewMode[] = ['table', 'card', 'planetary', 'holographic', 'datastream', 'constellation']
 
 export const useTaskStore = defineStore('task', () => {
   // State
@@ -13,19 +17,16 @@ export const useTaskStore = defineStore('task', () => {
   const currentTask = ref<Task | null>(null)
   const syncing = ref(false)
 
-  // Todo list (localStorage persisted, for QClaw automation)
-  const todoList = ref<string[]>([])
-  try {
-    todoList.value = JSON.parse(localStorage.getItem('linesequence-todo-list') || '[]')
-  } catch { /* ignore parse error */ }
+  // Todo list — persisted via utility
+  const todoList = createPersistedRef<string[]>('todo-list', [])
 
-  // View mode persistence
-  const savedMode = localStorage.getItem('linesequence-view-mode')
-  const viewMode = ref<'table' | 'card'>(savedMode === 'card' ? 'card' : 'table')
-  function setViewMode(mode: 'table' | 'card') {
-    viewMode.value = mode
-    localStorage.setItem('linesequence-view-mode', mode)
-  }
+  // View mode — persisted via utility, with validation
+  const rawViewMode = createPersistedRef<string>('view-mode', 'table')
+  const viewMode = computed<ViewMode>({
+    get: () => validModes.includes(rawViewMode.value as ViewMode) ? (rawViewMode.value as ViewMode) : 'table',
+    set: (v: ViewMode) => { if (validModes.includes(v)) rawViewMode.value = v },
+  })
+  function setViewMode(mode: ViewMode) { viewMode.value = mode }
 
   // 任务分组
   const groups = ref<TaskGroup[]>([])
@@ -139,7 +140,6 @@ export const useTaskStore = defineStore('task', () => {
       taskApi.getTasks({ pageSize: 9999 }).then(r => {
         const visibleIds = new Set(r.data.list.map(t => t.id))
         todoList.value = todoList.value.filter(id => visibleIds.has(id))
-        localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
         agentApi.saveTodoOrder(todoList.value).catch(() => {})
       }).catch(() => {})
       return res.data
@@ -183,7 +183,6 @@ export const useTaskStore = defineStore('task', () => {
       todoList.value.splice(idx, 1)
       updateTask(task.id, { aiStatus: '' })
     }
-    localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
     agentApi.saveTodoOrder(todoList.value).catch(() => {})
   }
 
@@ -191,7 +190,6 @@ export const useTaskStore = defineStore('task', () => {
     const res = await taskApi.createManualTask(data)
     tasks.value.unshift(res.data)
     todoList.value.push(res.data.id)
-    localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
     agentApi.saveTodoOrder(todoList.value).catch(() => {})
     return res.data
   }
@@ -204,7 +202,6 @@ export const useTaskStore = defineStore('task', () => {
     if (!todoList.value.includes(taskId)) {
       todoList.value.unshift(taskId)
     }
-    localStorage.setItem('linesequence-todo-list', JSON.stringify(todoList.value))
     agentApi.saveTodoOrder(todoList.value).catch(() => {})
     return res.data
   }

@@ -70,33 +70,7 @@
     <!-- 操作栏：左侧视图切换，右侧批量操作 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <div class="view-switch">
-          <button
-            class="view-btn"
-            :class="{ active: taskStore.viewMode === 'table' }"
-            @click="taskStore.setViewMode('table')"
-            title="列表视图"
-          >
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
-              <rect x="2" y="3" width="16" height="3" rx="1" />
-              <rect x="2" y="8.5" width="16" height="3" rx="1" />
-              <rect x="2" y="14" width="16" height="3" rx="1" />
-            </svg>
-          </button>
-          <button
-            class="view-btn"
-            :class="{ active: taskStore.viewMode === 'card' }"
-            @click="taskStore.setViewMode('card')"
-            title="卡片视图"
-          >
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
-              <rect x="2" y="2" width="7" height="7" rx="1.5" />
-              <rect x="11" y="2" width="7" height="7" rx="1.5" />
-              <rect x="2" y="11" width="7" height="7" rx="1.5" />
-              <rect x="11" y="11" width="7" height="7" rx="1.5" />
-            </svg>
-          </button>
-        </div>
+        <ViewModeSelector :model-value="taskStore.viewMode" @update:model-value="taskStore.setViewMode" />
       </div>
       <div class="toolbar-right">
         <span v-if="selectedTasks.length > 0" class="selected-count"
@@ -338,6 +312,42 @@
       </div>
     </div>
 
+    <!-- 行星轨道视图 (v-if for WebGL canvas dimensions) -->
+    <PlanetaryOrbitView
+      v-if="taskStore.viewMode === 'planetary'"
+      :tasks="taskStore.tasks"
+      @config="openProjectSettings"
+      @toggle-todo="handleToggleTodo"
+      @status-change="handleStatusChangeWrapper"
+    />
+
+    <!-- 全息HUD视图 -->
+    <HolographicHudView
+      v-show="taskStore.viewMode === 'holographic'"
+      :tasks="taskStore.tasks"
+      @config="openProjectSettings"
+      @toggle-todo="handleToggleTodo"
+      @status-change="handleStatusChangeWrapper"
+    />
+
+    <!-- 赛博数据流视图 -->
+    <CyberDataStreamView
+      v-show="taskStore.viewMode === 'datastream'"
+      :tasks="taskStore.tasks"
+      @config="openProjectSettings"
+      @toggle-todo="handleToggleTodo"
+      @status-change="handleStatusChangeWrapper"
+    />
+
+    <!-- 星座图谱视图 -->
+    <ConstellationMapView
+      v-show="taskStore.viewMode === 'constellation'"
+      :tasks="taskStore.tasks"
+      @config="openProjectSettings"
+      @toggle-todo="handleToggleTodo"
+      @status-change="handleStatusChangeWrapper"
+    />
+
     <!-- 右侧抽屉配置面板 -->
     <Transition name="fade-mask">
       <div v-if="drawerOpen" class="drawer-mask" @click="drawerOpen = false"></div>
@@ -412,6 +422,11 @@
 import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTaskStore } from '@/stores/task';
+import ViewModeSelector from './components/ViewModeSelector.vue'
+import PlanetaryOrbitView from './components/PlanetaryOrbitView.vue'
+import HolographicHudView from './components/HolographicHudView.vue'
+import CyberDataStreamView from './components/CyberDataStreamView.vue'
+import ConstellationMapView from './components/ConstellationMapView.vue'
 import {
   Search,
   RefreshRight,
@@ -539,6 +554,10 @@ async function handleStatusChange(task: Task, status: string) {
   } catch {
     ElMessage.error('状态更新失败');
   }
+}
+
+async function handleStatusChangeWrapper(task: Task, status: string) {
+  await handleStatusChange(task, status)
 }
 
 function isOverdue(task: Task) {
@@ -812,25 +831,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.view-switch {
-  display: flex; gap: 4px;
-  background: rgba(10,16,31,0.4); border: 1px solid rgba(0,229,255,0.12);
-  border-radius: 8px; padding: 3px; backdrop-filter: blur(8px);
-}
-
-.view-btn {
-  width: 32px; height: 28px; border: none; background: transparent;
-  border-radius: 6px; cursor: pointer; color: #8c8ca1; display: flex;
-  align-items: center; justify-content: center; transition: all 0.25s ease;
-  svg { width: 16px; height: 16px; }
-
-  &:hover { color: #00E5FF; background: rgba(0,229,255,0.08); }
-  &.active {
-    color: #00E5FF; background: rgba(0,229,255,0.15);
-    box-shadow: 0 0 8px rgba(0,229,255,0.2);
-  }
 }
 
 .toolbar-right {
