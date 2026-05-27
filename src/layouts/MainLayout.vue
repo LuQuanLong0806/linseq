@@ -272,7 +272,7 @@ onUnmounted(() => {
 @keyframes globalScanRotate { to { --global-scan-angle: 360deg; } }
 @property --global-scan-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 
-/* Global linear sweep beam — left to right */
+/* Global linear sweep beam — left to right, delayed 4s to offset from rotate */
 .main-content::after {
   content: '';
   position: fixed;
@@ -289,6 +289,7 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 9998;
   animation: scanBeam 8s ease-in-out infinite;
+  animation-delay: 4s;
 }
 
 @keyframes scanBeam {
