@@ -126,7 +126,7 @@ function navStatus(task: Task, status: string) { popupTask.value = null; emit('s
 
 function isOverdue(t: Task) { return t.status !== 'completed' && new Date(t.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
-function getPriorityType(p: string) { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string,string>)[p] || 'info' }
+function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, 'success' | 'primary' | 'warning' | 'danger' | 'info'>)[p] || 'info' }
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string,string>)[p] || p }
 </script>
 

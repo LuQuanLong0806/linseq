@@ -341,10 +341,14 @@ async function handleSave() {
 }
 
 async function handleDelete(row: ProjectConfig) {
-  await ElMessageBox.confirm(`确定删除「${row.name}」？`, '删除确认', { type: 'warning' })
-  await projectApi.remove(row.id)
-  ElMessage.success('已删除')
-  await loadProjects()
+  try {
+    await ElMessageBox.confirm(`确定删除「${row.name}」？`, '删除确认', { type: 'warning' })
+    await projectApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadProjects()
+  } catch {
+    ElMessage.error('删除项目失败')
+  }
 }
 
 async function handleFetchBranches(row: ProjectConfig & { _fetching?: boolean }) {

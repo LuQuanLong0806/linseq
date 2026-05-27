@@ -51,6 +51,7 @@
             <div class="action-item">
               <span>导入任务数据</span>
               <el-button size="small" @click="handleImport">选择文件</el-button>
+              <input type="file" ref="importInputRef" accept=".json" @change="onImportFile" style="display:none" />
             </div>
             <div class="action-item">
               <span>清空本地缓存</span>
@@ -81,9 +82,10 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, onMounted } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { settingsApi } from '@/api/settings'
+import dayjs from 'dayjs'
 
 const settings = reactive({
   appName: '灵序 LINSEQ',
@@ -125,26 +127,66 @@ function handleOpenReportDir() {
   ElMessage.info('请直接输入报告输出目录的完整路径')
 }
 
-function handleExport() {
-  ElMessage.info('导出功能开发中...')
+const importInputRef = ref<HTMLInputElement | null>(null)
+
+async function handleExport() {
+  try {
+    const { taskApi } = await import('@/api/task')
+    const res = await taskApi.getTasks({ pageSize: 9999 })
+    const blob = new Blob([JSON.stringify(res.data.list, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `linesequence-tasks-${dayjs().format('YYYYMMDD-HHmmss')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success(`已导出 ${res.data.list.length} 条任务数据`)
+  } catch {
+    ElMessage.error('导出失败')
+  }
 }
 
 function handleImport() {
-  ElMessage.info('导入功能开发中...')
+  importInputRef.value?.click()
+}
+
+function onImportFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result as string)
+      if (Array.isArray(data)) {
+        ElMessage.info(`检测到 ${data.length} 条数据，导入功能开发中...`)
+      } else {
+        ElMessage.warning('文件格式不正确，请选择导出的 JSON 文件')
+      }
+    } catch {
+      ElMessage.error('文件解析失败')
+    }
+    // Reset input
+    if (importInputRef.value) importInputRef.value.value = ''
+  }
+  reader.readAsText(file)
 }
 
 async function handleClearCache() {
   try {
     await ElMessageBox.confirm('确定清空本地缓存？此操作不可恢复。', '警告', { type: 'warning' })
-    localStorage.removeItem('linesequence-cache')
-    ElMessage.success('缓存已清空')
+    // Clear all linesequence-prefixed localStorage keys
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('linesequence-'))
+    keys.forEach(k => localStorage.removeItem(k))
+    ElMessage.success(`已清空 ${keys.length} 项缓存`)
   } catch { /* cancelled */ }
 }
 
 async function handleResetDB() {
   try {
-    await ElMessageBox.confirm('确定重置数据库？所有本地数据将丢失！', '危险操作', { type: 'error' })
-    ElMessage.success('数据库已重置')
+    await ElMessageBox.confirm('确定重置？此操作将清空所有本地缓存数据（数据库需手动重置）。', '危险操作', { type: 'error' })
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('linesequence-'))
+    keys.forEach(k => localStorage.removeItem(k))
+    ElMessage.success(`已清空 ${keys.length} 项本地缓存`)
   } catch { /* cancelled */ }
 }
 </script>

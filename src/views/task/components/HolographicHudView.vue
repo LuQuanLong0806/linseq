@@ -78,9 +78,10 @@ function navStatus(task: Task, status: string) { popupTask.value = null; emit('s
 
 function isOverdue(t: Task) { return t.status !== 'completed' && new Date(t.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
-function getPriorityType(p: string) { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string,string>)[p] || 'info' }
+type TagType = 'success' | 'primary' | 'warning' | 'danger' | 'info'
+function getPriorityType(p: string): TagType { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, TagType>)[p] || 'info' }
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string,string>)[p] || p }
-function getAiStatusType(s: string) { return ({ ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success' } as Record<string,string>)[s] || 'info' }
+function getAiStatusType(s: string): TagType { return ({ ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success' } as Record<string, TagType>)[s] || 'info' }
 function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework: '待返工', ai_dev: '开发中', ai_review: '待审核', ai_done: 'AI完成' } as Record<string,string>)[s] || '未加入' }
 </script>
 

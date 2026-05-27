@@ -29,7 +29,7 @@ export function clearPersisted(key: string): void {
  * Call inside setup() or a composable.
  */
 export function createPersistedRef<T>(key: string, fallback: T): Ref<T> {
-  const r = ref<T>(loadPersisted(key, fallback))
+  const r = ref(loadPersisted(key, fallback)) as Ref<T>
   watch(r, (v) => persist(key, v), { deep: true })
   return r
 }

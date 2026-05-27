@@ -125,7 +125,10 @@ BASE_URL = http://localhost:3201/api/agent
     "review": {
       "prevComment": "上轮审核意见（仅返工时有值）",
       "prevVersion": "V1.0（仅返工时有值）",
-      "prevOutput": "上轮开发产出描述（仅返工时有值）"
+      "prevOutput": "上轮开发产出描述（仅返工时有值）",
+      "prevFilesChanged": [
+        { "path": "src/views/login.vue", "action": "modified" }
+      ]
     },
 
     "nextVersion": "V1.0"
@@ -139,6 +142,8 @@ BASE_URL = http://localhost:3201/api/agent
 - `requirement.docText` 可能不完整或为空，需结合 `customDescription` 综合判断
 - `group` 为分组信息：如果任务属于分组，应参考同组其他任务避免重复开发
 - `review.prevOutput` 仅在返工时返回上轮开发产出的代码描述
+- `review.prevFilesChanged` 仅在返工时返回上轮变更的文件列表，用于快速定位需要修改的文件
+- **任务取用顺序**：后端按待办队列（todoList）顺序返回任务。如果同组任务有先后依赖，用户应在前端调整队列顺序（拖拽排序），Agent 按队列顺序逐个执行即可
 
 ### 2. POST /api/agent/task/:id/start
 
@@ -315,12 +320,11 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
                   │                    ↓                      │
                   │              ai_question ──人工回复──→ ai_todo
                   │                                           │
-                  └──── reject (返工) ←──────────────────────┘
+                  └──── reject (返工) ←── version.reject ────┘
                                                               │
-                                                        approve (通过)
-                                                              │
+                                              version.approve │
                                                               ↓
-                                                           (结束)
+                                                           ai_done (结束)
 ```
 
 | 状态值 | 含义 |
@@ -331,6 +335,32 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
 | `ai_rework` | 返工（审核不通过，需重新开发） |
 | `ai_question` | AI 有疑问，等待人工回复（已从待办队列移出） |
 | `ai_done` | 已通过 |
+
+### 前端审核操作技术实现
+
+前端审核页面同时操作版本记录和任务状态：
+
+**审核通过**：
+1. 调用 `POST /api/versions/:id/approve` → 版本状态变为 `approved`，`is_final=1`
+2. 调用 `PATCH /api/tasks/:id` → 任务 `aiStatus` 设为 `ai_done`
+
+**审核打回**：
+1. 调用 `POST /api/versions/:id/reject` → 后端自动处理：
+   - 版本状态变为 `rejected`
+   - 任务 `aiStatus` 设为 `ai_rework`
+   - 任务 `rework_count` 自增
+   - 任务 `review_comment` 写入驳回原因
+2. 前端将任务重新加入待办队列（todoList.push）
+3. 任务优先级自动提升（low→medium→high→urgent）
+
+### 版本状态流转
+
+| 版本状态 | 含义 | 触发条件 |
+|---|---|---|
+| `pending_review` | 待审核 | Agent 提交 complete 时创建 |
+| `approved` | 已通过 | 人工审核通过 |
+| `rejected` | 已驳回 | 人工审核打回 |
+| `archived` | 已归档 | 新版本提交时，旧版本自动归档 |
 
 ---
 
@@ -411,8 +441,9 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
 当 `isRework=true` 时：
 1. 阅读 `review.prevComment` 了解审核意见
 2. 阅读 `review.prevOutput` 了解上轮做了什么
-3. **只针对审核意见修改**，不要推翻重来
-4. 提交时 commit message 标注 fix：`git commit -m "fix: <针对审核意见的修改>"`
+3. 查看 `review.prevFilesChanged` 了解上轮改了哪些文件，**优先在这些文件中定位和修复问题**，避免盲目全项目搜索
+4. **只针对审核意见修改**，不要推翻重来
+5. 提交时 commit message 标注 fix：`git commit -m "fix: <针对审核意见的修改>"`
 
 ---
 
@@ -451,10 +482,10 @@ curl -X POST http://localhost:3201/api/agent/task/{taskId}/complete \
 
 1. **必须阅读 `description`** — 这是用户给出的最关键上下文，说明了任务间的关系和注意事项
 2. **查看 `siblingTasks`** — 了解同组其他任务的进度，避免重复开发
-3. **尊重执行顺序** — 如果 description 建议了先后顺序，应先完成排在前面的任务
+3. **按队列顺序执行** — 后端按 todoList 顺序返回任务，用户已在前端排好序。如果 `siblingTasks` 中有未完成的排在前面的任务，说明它会在当前任务之前被取到。Agent 不需要自行调整顺序，按队列逐个执行即可
 4. **代码风格统一** — 同组任务应保持一致的命名规范和代码结构
 5. **避免冲突** — 如果同组有任务正在开发中（`ai_dev`），注意不要修改它正在改动的文件
-6. **参考已完成的同组任务** — 如果 `completedInGroup > 0`，先查看已完成任务的代码风格和实现方式
+6. **参考已完成的同组任务** — 如果 `completedInGroup > 0`，先查看已完成任务的代码风格和实现方式，特别是 `siblingTasks` 中状态为 `ai_review` 或 `ai_done` 的任务
 
 ---
 

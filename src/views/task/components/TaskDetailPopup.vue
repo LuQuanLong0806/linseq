@@ -31,7 +31,7 @@
               <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8l4 4 8-8"/></svg>
               {{ isInTodo ? 'AI待办中' : '入AI待办' }}
             </button>
-            <select class="pa-select" @change="(e) => $emit('statusChange', task, (e.target as HTMLSelectElement).value)">
+            <select class="pa-select" @change="onStatusChange">
               <option value="">状态</option>
               <option value="pending">待开发</option>
               <option value="in_progress">开发中</option>
@@ -58,7 +58,7 @@ const props = defineProps<{
   y: number
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   close: []
   detail: [task: Task]
   config: [task: Task]
@@ -75,21 +75,26 @@ const posStyle = computed(() => ({
 }))
 
 function formatDate(d: string) { return dayjs(d).format('MM-DD HH:mm') }
-function getPriorityType(p: string) {
-  const m: Record<string, string> = { urgent: 'danger', high: 'warning', medium: 'info', low: 'success' }
+function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
+  const m: Record<string, 'success' | 'primary' | 'warning' | 'danger' | 'info'> = { urgent: 'danger', high: 'warning', medium: 'info', low: 'success' }
   return m[p] || 'info'
 }
 function getPriorityLabel(p: string) {
   const m: Record<string, string> = { urgent: '紧急', high: '高', medium: '中', low: '低' }
   return m[p] || p
 }
-function getAiStatusType(s: string) {
-  const m: Record<string, string> = { ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success' }
+function getAiStatusType(s: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
+  const m: Record<string, 'success' | 'primary' | 'warning' | 'danger' | 'info'> = { ai_todo: 'warning', ai_rework: 'danger', ai_dev: 'primary', ai_review: 'primary', ai_done: 'success' }
   return m[s] || 'info'
 }
 function getAiStatusLabel(s: string) {
   const m: Record<string, string> = { ai_todo: 'AI待办', ai_rework: '待返工', ai_dev: '开发中', ai_review: '待审核', ai_done: 'AI完成' }
   return m[s] || '未加入'
+}
+
+function onStatusChange(e: Event) {
+  if (!props.task) return
+  emit('statusChange', props.task, (e.target as HTMLSelectElement).value)
 }
 </script>
 

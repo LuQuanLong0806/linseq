@@ -40,7 +40,10 @@ vi.mock('@/api/group', () => ({
 }))
 
 vi.mock('@/api/agent', () => ({
-  agentApi: { saveTodoOrder: vi.fn().mockResolvedValue({ code: 0 }), getTodoOrder: vi.fn().mockResolvedValue({ code: 0, data: { todoList: [] } }) },
+  agentApi: {
+    saveTodoOrder: vi.fn().mockResolvedValue({ code: 0 }),
+    getTodoOrder: vi.fn().mockRejectedValue(new Error('no backend')),
+  },
 }))
 
 const stubs = {
@@ -75,7 +78,10 @@ describe('AI待办页面', () => {
   })
 
   function mountWith(setup?: (store: ReturnType<typeof useTaskStore>) => void) {
-    if (setup) setup(useTaskStore())
+    const store = useTaskStore()
+    store.fetchTasks = vi.fn().mockResolvedValue(undefined)
+    store.fetchGroups = vi.fn().mockResolvedValue(undefined)
+    if (setup) setup(store)
     return mount(AITodo, { global: { plugins: [pinia], stubs }, attachTo: document.body })
   }
 
@@ -89,7 +95,7 @@ describe('AI待办页面', () => {
   it('渲染待办卡片', async () => {
     const w = mountWith(s => {
       s.tasks = [mockTask({ id: 't1', sourceId: 'S100', title: '开发登录页' })]
-      s.todoList = ['t1']
+      s.todoList.splice(0, s.todoList.length, 't1')
     })
     await flushPromises(); await nextTick()
     expect(w.find('.card-list').exists()).toBe(true)
@@ -100,18 +106,18 @@ describe('AI待办页面', () => {
 
   it('显示项目配置信息', async () => {
     const w = mountWith(s => {
-      s.tasks = [mockTask({ id: 't1', projectPath: 'F:/proj', gitBranch: 'feat/x' })]
-      s.todoList = ['t1']
+      s.tasks = [mockTask({ id: 't1', project: '项目A', module: '核心模块' })]
+      s.todoList.splice(0, s.todoList.length, 't1')
     })
     await flushPromises(); await nextTick()
-    expect(w.text()).toContain('F:/proj')
-    expect(w.text()).toContain('feat/x')
+    expect(w.text()).toContain('项目A')
+    expect(w.text()).toContain('核心模块')
   })
 
   it('拖拽排序交换顺序', async () => {
     const w = mountWith(s => {
       s.tasks = [mockTask({ id: 'a', title: '任务A' }), mockTask({ id: 'b', title: '任务B' })]
-      s.todoList = ['a', 'b']
+      s.todoList.splice(0, s.todoList.length, 'a', 'b')
     })
     await flushPromises(); await nextTick()
 
@@ -129,7 +135,7 @@ describe('AI待办页面', () => {
   it('移出待办', async () => {
     const w = mountWith(s => {
       s.tasks = [mockTask({ id: 't1' })]
-      s.todoList = ['t1']
+      s.todoList.splice(0, s.todoList.length, 't1')
     })
     await flushPromises(); await nextTick()
     expect(useTaskStore().isInTodoList('t1')).toBe(true)
@@ -157,7 +163,7 @@ describe('AI待办页面', () => {
         mockTask({ id: 't1', title: '待办任务', aiStatus: 'ai_todo' }),
         mockTask({ id: 't2', title: '开发中任务', aiStatus: 'ai_dev' }),
       ]
-      s.todoList = ['t1', 't2']
+      s.todoList.splice(0, s.todoList.length, 't1', 't2')
     })
     await flushPromises(); await nextTick()
     // 左面板有待办卡片
@@ -174,7 +180,7 @@ describe('AI待办页面', () => {
         mockTask({ id: 't1', aiStatus: '' }),
         mockTask({ id: 't2', aiStatus: 'ai_dev' }),
       ]
-      s.todoList = ['t1', 't2']
+      s.todoList.splice(0, s.todoList.length, 't1', 't2')
     })
     await flushPromises(); await nextTick()
     const stats = w.findAll('.stat-num')

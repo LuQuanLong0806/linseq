@@ -8,10 +8,10 @@ import TaskList from './index.vue'
 import { useTaskStore } from '@/stores/task'
 
 vi.mock('three', () => {
-  function MockScene() { this.add = vi.fn(); this.children = [] }
-  function MockCamera() { this.position = { z: 0 }; this.aspect = 1; this.updateProjectionMatrix = vi.fn() }
-  function MockRenderer() { this.setPixelRatio = vi.fn(); this.setClearColor = vi.fn(); this.setSize = vi.fn(); this.render = vi.fn(); this.dispose = vi.fn() }
-  function MockBufferGeometry() { this.setAttribute = vi.fn(); this.getAttribute = vi.fn(() => ({ array: new Float32Array(300*3), needsUpdate: false })) }
+  function MockScene(this: any) { this.add = vi.fn(); this.children = [] }
+  function MockCamera(this: any) { this.position = { z: 0 }; this.aspect = 1; this.updateProjectionMatrix = vi.fn() }
+  function MockRenderer(this: any) { this.setPixelRatio = vi.fn(); this.setClearColor = vi.fn(); this.setSize = vi.fn(); this.render = vi.fn(); this.dispose = vi.fn() }
+  function MockBufferGeometry(this: any) { this.setAttribute = vi.fn(); this.getAttribute = vi.fn(() => ({ array: new Float32Array(300*3), needsUpdate: false })) }
   return {
     Scene: MockScene, PerspectiveCamera: MockCamera, WebGLRenderer: MockRenderer,
     BufferGeometry: MockBufferGeometry, BufferAttribute: vi.fn(), Float32BufferAttribute: vi.fn(),
@@ -61,7 +61,7 @@ describe('任务列表页面', () => {
     await flushPromises(); await nextTick()
     expect(w.find('.task-list-page').exists()).toBe(true)
     expect(w.find('.filter-card').exists()).toBe(true)
-    expect(w.find('.kanban-view').exists()).toBe(true)
+    expect(w.find('.table-card').exists()).toBe(true)
   })
 
   it('表格列头包含新增3列', async () => {

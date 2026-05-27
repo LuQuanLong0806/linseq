@@ -437,7 +437,7 @@ import {
   Promotion,
   Switch
 } from '@element-plus/icons-vue';
-import type { TaskStatus, Task } from '@/types';
+import type { TaskStatus, TaskPriority, Task } from '@/types';
 import { projectApi, type ProjectConfig } from '@/api/project';
 import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -481,8 +481,8 @@ async function loadData() {
     page: currentPage.value,
     pageSize: pageSize.value,
     keyword: filters.keyword || undefined,
-    status: filters.status || undefined,
-    priority: filters.priority || undefined,
+    status: (filters.status || undefined) as TaskStatus | undefined,
+    priority: (filters.priority || undefined) as TaskPriority | undefined,
     module: filters.module || undefined,
   });
   const set = new Set<string>(taskStore.tasks.map((t: Task) => t.module).filter(Boolean));

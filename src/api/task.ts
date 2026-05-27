@@ -1,5 +1,5 @@
 import http from '@/utils/http'
-import type { Task, TaskStatus, PaginatedResponse, PaginationParams, ApiResponse } from '@/types'
+import type { Task, TaskStatus, TaskUpdateParams, PaginatedResponse, PaginationParams, ApiResponse } from '@/types'
 
 export const taskApi = {
   /** 获取任务列表（分页） */
@@ -18,7 +18,7 @@ export const taskApi = {
   },
 
   /** 更新任务信息 */
-  updateTask(id: string, data: Partial<Task>): Promise<ApiResponse<Task>> {
+  updateTask(id: string, data: Partial<TaskUpdateParams>): Promise<ApiResponse<Task>> {
     return http.patch(`/tasks/${id}`, data)
   },
 

@@ -138,18 +138,20 @@ router.get('/next-task', (_req, res) => {
     const minor = nextIteration % 10
     const nextVersion = `V${major}.${minor}`
 
-    // 如果是返工，取上一轮审核意见
+    // 如果是返工，取上一轮审核意见和变更文件
     let prevReviewComment = ''
     let prevVersion = ''
     let prevOutput = ''
+    let prevFilesChanged: { path: string; action: string }[] = []
     if (row.ai_status === 'ai_rework') {
       const lastVer = db.prepare(
-        "SELECT version_number, prev_review_comment, ai_output FROM task_versions WHERE task_id = ? AND status = 'rejected' ORDER BY iteration DESC LIMIT 1"
-      ).get(taskId) as { version_number: string; prev_review_comment: string; ai_output: string } | undefined
+        "SELECT version_number, prev_review_comment, ai_output, files_changed FROM task_versions WHERE task_id = ? AND status = 'rejected' ORDER BY iteration DESC LIMIT 1"
+      ).get(taskId) as { version_number: string; prev_review_comment: string; ai_output: string; files_changed: string } | undefined
       if (lastVer) {
         prevVersion = lastVer.version_number
         prevReviewComment = (row.review_comment as string) || lastVer.prev_review_comment || ''
         prevOutput = lastVer.ai_output || ''
+        try { prevFilesChanged = JSON.parse(lastVer.files_changed || '[]') } catch { prevFilesChanged = [] }
       }
     }
 
@@ -201,6 +203,7 @@ router.get('/next-task', (_req, res) => {
           prevComment: prevReviewComment,
           prevVersion,
           prevOutput,
+          prevFilesChanged,
         },
 
         group: groupData,

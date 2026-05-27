@@ -219,7 +219,7 @@
             <el-form-item label="需求文档" v-if="drawerTask.reqDocName">
               <div class="drawer-field doc-link">
                 <span>{{ drawerTask.reqDocName }}</span>
-                <el-button v-if="drawerTask.reqDocUrl" type="primary" link size="small" @click="window.open(drawerTask.reqDocUrl)">查看</el-button>
+                <el-button v-if="drawerTask.reqDocUrl" type="primary" link size="small" @click="openUrl(drawerTask.reqDocUrl)">查看</el-button>
               </div>
             </el-form-item>
           </el-form>
@@ -460,13 +460,17 @@ function toggleGroup(id: string) {
 async function handleCreateGroup() {
   const name = newGroupName.value.trim()
   if (!name) return
-  const group = await taskStore.createGroup(name, newGroupTaskIds.value.length > 0 ? newGroupTaskIds.value : undefined, newGroupDesc.value || undefined)
-  expandedGroups.add(group.id)
-  showGroupDialog.value = false
-  newGroupName.value = ''
-  newGroupTaskIds.value = []
-  newGroupDesc.value = ''
-  ElMessage.success('分组已创建')
+  try {
+    const group = await taskStore.createGroup(name, newGroupTaskIds.value.length > 0 ? newGroupTaskIds.value : undefined, newGroupDesc.value || undefined)
+    expandedGroups.add(group.id)
+    showGroupDialog.value = false
+    newGroupName.value = ''
+    newGroupTaskIds.value = []
+    newGroupDesc.value = ''
+    ElMessage.success('分组已创建')
+  } catch {
+    ElMessage.error('创建分组失败')
+  }
 }
 
 function editGroupSettings(group: TaskGroup) {
@@ -478,16 +482,26 @@ function editGroupSettings(group: TaskGroup) {
 
 async function handleSaveGroupEdit() {
   if (!editingGroup.value) return
-  await taskStore.updateGroup(editingGroup.value.id, { ...groupEditForm })
-  showGroupEdit.value = false
-  ElMessage.success('分组配置已更新')
+  try {
+    await taskStore.updateGroup(editingGroup.value.id, { ...groupEditForm })
+    showGroupEdit.value = false
+    ElMessage.success('分组配置已更新')
+  } catch {
+    ElMessage.error('更新分组失败')
+  }
 }
 
 async function handleDeleteGroup(group: TaskGroup) {
-  await ElMessageBox.confirm(`确定解散分组「${group.name}」？`, '解散分组', { type: 'warning' })
-  await taskStore.deleteGroup(group.id)
-  expandedGroups.delete(group.id)
-  ElMessage.success('分组已解散')
+  try {
+    await ElMessageBox.confirm(`确定解散分组「${group.name}」？`, '解散分组', { type: 'warning' })
+    await taskStore.deleteGroup(group.id)
+    expandedGroups.delete(group.id)
+    ElMessage.success('分组已解散')
+  } catch (err: any) {
+    if (err !== 'cancel' && err?.toString() !== 'cancel') {
+      ElMessage.error('解散分组失败')
+    }
+  }
 }
 
 // Drag
@@ -503,7 +517,7 @@ function onDrop(index: number) {
       const toIdx = taskStore.todoList.indexOf(toTask.id)
       if (fromIdx !== -1 && toIdx !== -1) {
         const item = taskStore.todoList.splice(fromIdx, 1)[0]
-        taskStore.todoList.splice(fromIdx < toIdx ? toIdx : toIdx, 0, item)
+        taskStore.todoList.splice(fromIdx < toIdx ? toIdx + 1 : toIdx, 0, item)
         saveOrder()
       }
     }
@@ -560,6 +574,27 @@ async function saveDrawer() {
   } catch { ElMessage.error('保存失败') }
   finally { drawerSaving.value = false }
 }
+// Description editor
+const editingDescId = ref<string | null>(null)
+const editingDescText = ref('')
+const savingDesc = ref(false)
+function openDescEditor(task: Task) {
+  editingDescId.value = task.id
+  editingDescText.value = task.customDescription || ''
+}
+function cancelDescEdit() { editingDescId.value = null; editingDescText.value = '' }
+async function saveDescEdit(task: Task) {
+  savingDesc.value = true
+  try {
+    await taskStore.updateTask(task.id, { customDescription: editingDescText.value })
+    ElMessage.success('已保存')
+    editingDescId.value = null
+  } catch { ElMessage.error('保存失败') }
+  finally { savingDesc.value = false }
+}
+
+function openUrl(url: string) { window.open(url) }
+
 function isOverdue(task: Task) { return task.status !== 'completed' && new Date(task.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as const)[p] || 'info' }

@@ -37,8 +37,4 @@ export const projectApi = {
   detectGit(localPath: string): Promise<{ code: number; message: string; data: { exists: boolean; isGitRepo: boolean; gitUrl: string; branches: string[] } }> {
     return http.post('/projects/detect-git', { localPath })
   },
-
-  getByName(name: string): Promise<{ code: number; message: string; data: ProjectConfig | null }> {
-    return http.get(`/projects/by-name/${encodeURIComponent(name)}`)
-  },
 }

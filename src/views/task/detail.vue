@@ -1,6 +1,10 @@
 <template>
   <div class="task-detail-page" v-loading="taskStore.loading">
-    <div v-if="taskStore.currentTask" class="detail-container">
+    <div v-if="error" class="error-state">
+      <p>{{ error }}</p>
+      <el-button type="primary" @click="error = ''; $router.push('/tasks')">返回列表</el-button>
+    </div>
+    <div v-else-if="taskStore.currentTask" class="detail-container">
       <!-- 头部信息 -->
       <div class="detail-header">
         <div class="header-left">
@@ -456,6 +460,7 @@ import { ElMessage } from 'element-plus'
 const route = useRoute()
 const taskStore = useTaskStore()
 
+const error = ref<string>('')
 const saving = ref(false)
 const showAddLog = ref(false)
 const showEditDevConfig = ref(false)
@@ -578,7 +583,7 @@ async function saveDocEdit() {
   if (!task.value) return
   docSaving.value = true
   try {
-    await taskStore.updateTask(task.value.id, { reqDocText: docEditText.value } as any)
+    await taskStore.updateTask(task.value.id, { reqDocText: docEditText.value })
     task.value.reqDocText = docEditText.value
     docEditing.value = false
     ElMessage.success('保存成功')
@@ -592,7 +597,7 @@ async function handleReplyQuestion() {
   replying.value = true
   try {
     const newDesc = (task.value.customDescription || '') + '\n\n[人工回复] ' + questionReply.value.trim()
-    await taskStore.updateTask(task.value.id, { customDescription: newDesc, aiQuestion: '', aiStatus: 'ai_todo' } as any)
+    await taskStore.updateTask(task.value.id, { customDescription: newDesc, aiQuestion: '', aiStatus: 'ai_todo' })
     task.value.customDescription = newDesc
     task.value.aiQuestion = ''
     task.value.aiStatus = 'ai_todo'
@@ -602,6 +607,8 @@ async function handleReplyQuestion() {
     }
     questionReply.value = ''
     ElMessage.success('已回复，任务已重新加入待办队列')
+  } catch {
+    ElMessage.error('回复失败，请重试')
   } finally {
     replying.value = false
   }
@@ -714,23 +721,39 @@ function formatDate(date: string): string { return dayjs(date).format('YYYY-MM-D
 function formatDateTime(date: string): string { return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-' }
 
 async function handleStartDev() {
-  await taskStore.updateTaskStatus(task.value.id, 'in_progress' as TaskStatus)
-  ElMessage.success('已开始开发')
+  try {
+    await taskStore.updateTaskStatus(task.value.id, 'in_progress' as TaskStatus)
+    ElMessage.success('已开始开发')
+  } catch {
+    ElMessage.error('操作失败，请重试')
+  }
 }
 
 async function handleSelfTest() {
-  await taskStore.updateTaskStatus(task.value.id, 'self_test' as TaskStatus)
-  ElMessage.success('已标记自测完成')
+  try {
+    await taskStore.updateTaskStatus(task.value.id, 'self_test' as TaskStatus)
+    ElMessage.success('已标记自测完成')
+  } catch {
+    ElMessage.error('操作失败，请重试')
+  }
 }
 
 async function handleSubmit() {
-  await taskStore.updateTaskStatus(task.value.id, 'submitted' as TaskStatus)
-  ElMessage.success('已提交测试')
+  try {
+    await taskStore.updateTaskStatus(task.value.id, 'submitted' as TaskStatus)
+    ElMessage.success('已提交测试')
+  } catch {
+    ElMessage.error('操作失败，请重试')
+  }
 }
 
 async function handleStatusCommand(command: string) {
-  await taskStore.updateTaskStatus(task.value.id, command as TaskStatus)
-  ElMessage.success('状态已更新')
+  try {
+    await taskStore.updateTaskStatus(task.value.id, command as TaskStatus)
+    ElMessage.success('状态已更新')
+  } catch {
+    ElMessage.error('操作失败，请重试')
+  }
 }
 
 async function handleAddLog() {
@@ -743,16 +766,25 @@ async function handleAddLog() {
   } catch { ElMessage.error('添加失败') }
 }
 
-onMounted(() => {
+onMounted(async () => {
   const id = route.params.id as string
   if (id) {
-    taskStore.fetchTaskById(id).then(() => loadVersions())
+    try {
+      await taskStore.fetchTaskById(id)
+      await loadVersions()
+    } catch {
+      error.value = '加载任务失败，请检查网络或刷新重试'
+    }
   }
 })
 </script>
 
 <style lang="scss" scoped>
 .task-detail-page { max-width: 1400px; margin: 0 auto; }
+.error-state {
+  text-align: center; padding: 80px 20px; color: #8c8ca1;
+  p { font-size: 14px; margin-bottom: 16px; }
+}
 
 .detail-header {
   display: flex; justify-content: space-between; align-items: flex-start;

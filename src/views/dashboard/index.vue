@@ -157,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { Tickets, Clock, Loading, CircleCheck, WarningFilled, AlarmClock, CloseBold, CircleClose } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
@@ -168,6 +168,8 @@ import type { TaskStatus, TaskPriority } from '@/types'
 const taskStore = useTaskStore()
 const pieChartRef = ref<HTMLElement>()
 const barChartRef = ref<HTMLElement>()
+let pieChart: echarts.ECharts | null = null
+let barChart: echarts.ECharts | null = null
 
 const recentTasks = computed(() => 
   [...taskStore.tasks]
@@ -225,7 +227,7 @@ function formatDate(date: string): string {
 
 function initPieChart() {
   if (!pieChartRef.value) return
-  const chart = echarts.init(pieChartRef.value)
+  pieChart = echarts.init(pieChartRef.value)
   const option: EChartsOption = {
     tooltip: {
       trigger: 'item',
@@ -256,16 +258,21 @@ function initPieChart() {
       ],
     }],
   }
-  chart.setOption(option)
+  pieChart.setOption(option)
 }
 
 function initBarChart() {
   if (!barChartRef.value) return
-  const chart = echarts.init(barChartRef.value)
-  // 模拟本周数据
-  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  const completed = [3, 5, 2, 6, 4, 1, 0]
-  const rejected = [0, 1, 0, 0, 1, 0, 0]
+  barChart = echarts.init(barChartRef.value)
+  // Compute real weekly data from tasks
+  const now = dayjs()
+  const startOfWeek = now.startOf('week')
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = startOfWeek.add(i, 'day')
+    return { label: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.day()], date: d.format('YYYY-MM-DD') }
+  })
+  const completed = days.map(d => taskStore.tasks.filter(t => t.aiStatus === 'ai_done' && dayjs(t.completeTime).format('YYYY-MM-DD') === d.date).length)
+  const rejected = days.map(d => taskStore.tasks.filter(t => t.reviewResult === 'rejected' && dayjs(t.reviewTime).format('YYYY-MM-DD') === d.date).length)
   
   const option: EChartsOption = {
     tooltip: {
@@ -279,13 +286,13 @@ function initBarChart() {
       textStyle: { color: '#8c8ca1' },
     },
     xAxis: {
-      type: 'category',
-      data: days,
+      type: 'category' as const,
+      data: days.map(d => d.label),
       axisLabel: { color: '#8c8ca1' },
       axisLine: { lineStyle: { color: 'rgba(0,229,255,0.15)' } },
     },
     yAxis: {
-      type: 'value',
+      type: 'value' as const,
       axisLabel: { color: '#8c8ca1' },
       axisLine: { lineStyle: { color: 'rgba(0,229,255,0.15)' } },
       splitLine: { lineStyle: { color: 'rgba(0,229,255,0.06)' } },
@@ -295,7 +302,12 @@ function initBarChart() {
       { name: '驳回', type: 'bar', data: rejected, itemStyle: { color: '#FF7D00' }, barWidth: '30%' },
     ],
   }
-  chart.setOption(option)
+  barChart.setOption(option)
+}
+
+function onResize() {
+  pieChart?.resize()
+  barChart?.resize()
 }
 
 onMounted(() => {
@@ -303,6 +315,15 @@ onMounted(() => {
     initPieChart()
     initBarChart()
   })
+  window.addEventListener('resize', onResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+  pieChart?.dispose()
+  barChart?.dispose()
+  pieChart = null
+  barChart = null
 })
 </script>
 

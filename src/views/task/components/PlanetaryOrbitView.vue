@@ -144,7 +144,7 @@ function buildScene() {
     })
     const orbitMesh = new THREE.Mesh(orbitGeo, orbitMat)
     orbitMesh.rotation.x = Math.PI / 2
-    scene.add(orbitMesh)
+    scene!.add(orbitMesh)
 
     // AI todo ring around planet
     let ring: THREE.Mesh | undefined
@@ -158,7 +158,7 @@ function buildScene() {
       mesh.add(ring)
     }
 
-    scene.add(mesh)
+    scene!.add(mesh)
     planetMeshes.push({ mesh, ring, orbitRadius, orbitSpeed, orbitOffset, task })
   })
 }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Task, TaskGroup, DashboardStats, TaskStatus, TaskUpdateParams } from '@/types'
+import type { Task, TaskGroup, DashboardStats, TaskStatus, TaskPriority, TaskUpdateParams } from '@/types'
 import { taskApi } from '@/api/task'
 import { groupApi } from '@/api/group'
 import { agentApi } from '@/api/agent'
@@ -89,7 +89,7 @@ export const useTaskStore = defineStore('task', () => {
   })
 
   // Actions
-  async function fetchTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: string; priority?: string; module?: string; projectPath?: string }) {
+  async function fetchTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: TaskStatus; priority?: TaskPriority; module?: string; projectPath?: string }) {
     loading.value = true
     try {
       const res = await taskApi.getTasks({ pageSize: 9999, ...params })

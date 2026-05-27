@@ -196,20 +196,31 @@ async function handleReject() {
   rejecting.value = true
   try {
     const task = rejectTask.value
+    // 1. 调用版本接口打回（后端处理：version→rejected + task→ai_rework + rework_count++）
+    const version = versionMap.value[task.id]
+    if (version) {
+      await versionApi.reject(version.id, rejectForm.comment.trim())
+    } else {
+      // fallback: 无版本记录时直接更新任务
+      const newReworkCount = (task.reworkCount || 0) + 1
+      await taskStore.updateTask(task.id, {
+        aiStatus: 'ai_rework',
+        reworkCount: newReworkCount,
+        reviewComment: rejectForm.comment.trim(),
+        reviewResult: 'rejected',
+      })
+    }
+    // 2. 将任务重新加入待办队列（不改 aiStatus）
+    if (!taskStore.isInTodoList(task.id)) {
+      taskStore.todoList.push(task.id)
+    }
+    // 3. 提升优先级
     const newPriority = PRIORITY_UPGRADE[task.priority] || 'urgent'
+    await taskStore.updateTask(task.id, { priority: newPriority })
     const newReworkCount = (task.reworkCount || 0) + 1
-    const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
-    await taskStore.updateTask(task.id, {
-      aiStatus: 'ai_rework',
-      priority: newPriority,
-      reworkCount: newReworkCount,
-      reviewComment: rejectForm.comment.trim(),
-      reviewTime: now,
-      reviewResult: 'rejected',
-    })
-    taskStore.toggleTodo(task)
     ElMessage.success(`已打回返工（第${newReworkCount}次），优先级提升为${getPriorityLabel(newPriority)}`)
     rejectDialogVisible.value = false
+    await taskStore.fetchTasks()
   } catch {
     ElMessage.error('操作失败')
   } finally {
@@ -218,14 +229,25 @@ async function handleReject() {
 }
 
 async function handleApprove(task: Task) {
-  const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
-  await taskStore.updateTask(task.id, {
-    aiStatus: 'ai_done',
-    reviewResult: 'approved',
-    reviewTime: now,
-    completeTime: now,
-  })
-  ElMessage.success('审核通过，任务已完成')
+  try {
+    // 1. 调用版本接口通过（后端处理：version→approved + is_final=1）
+    const version = versionMap.value[task.id]
+    if (version) {
+      await versionApi.approve(version.id)
+    }
+    // 2. 更新任务状态
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss')
+    await taskStore.updateTask(task.id, {
+      aiStatus: 'ai_done',
+      reviewResult: 'approved',
+      reviewTime: now,
+      completeTime: now,
+    })
+    ElMessage.success('审核通过，任务已完成')
+    await taskStore.fetchTasks()
+  } catch {
+    ElMessage.error('操作失败')
+  }
 }
 
 // Three.js
@@ -321,8 +343,8 @@ function downloadReport(versionId: string) {
   window.open(`/api/versions/${versionId}/report`, '_blank')
 }
 
-function getPriorityType(p: string) {
-  return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, string>)[p] || 'info'
+function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' {
+  return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as Record<string, 'success' | 'primary' | 'warning' | 'danger' | 'info'>)[p] || 'info'
 }
 
 function getPriorityLabel(p: string) {
