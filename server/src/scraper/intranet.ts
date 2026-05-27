@@ -119,6 +119,7 @@ interface TaskListResponse {
 const INTRANET_BASE = 'http://10.0.12.119:8868'
 const LOGIN_URL = `${INTRANET_BASE}/demo/account/login.htm`
 const TASK_API = `${INTRANET_BASE}/demo/tasklist/getTasklistList.action`
+const FUJIAN_API = `${INTRANET_BASE}/demo/fujian/getFujiansByPid.action`
 const DEFAULT_PAGE_SIZE = 200
 
 /** Cookie 有效期：1 小时 */
@@ -229,7 +230,7 @@ function restoreCookieFromDb(): CookieCache | null {
 /**
  * 获取有效 cookie，优先内存 → DB → 重新登录
  */
-async function getValidCookie(): Promise<string> {
+export async function getValidCookie(): Promise<string> {
   // 1. 内存缓存有效？
   if (cookieCache && cookieCache.expiryMs > Date.now()) {
     return cookieCache.cookie
@@ -420,6 +421,83 @@ async function fetchAllTasks(): Promise<IntranetTask[]> {
   return allTasks
 }
 
+import { PDFParse } from 'pdf-parse'
+
+const YULAN_API = `${INTRANET_BASE}/demo/tasklist/YulanData.action`
+
+/**
+ * 批量获取任务需求文档元数据（附件名 + URL），不下载 PDF
+ */
+async function fetchReqDocs(): Promise<void> {
+  const cookie = await getValidCookie()
+  const db = getDb()
+  const tasks = db.prepare("SELECT id, intranet_id FROM tasks WHERE intranet_id != ''").all() as { id: string; intranet_id: string }[]
+
+  const updateStmt = db.prepare("UPDATE tasks SET req_doc_name = ?, req_doc_url = ? WHERE id = ?")
+  let fetched = 0
+
+  for (const task of tasks) {
+    try {
+      const resp = await fetch(FUJIAN_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookie,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: `pid=${task.intranet_id}`,
+        redirect: 'manual',
+      })
+      if (resp.status !== 200) continue
+
+      const data = await resp.json() as { list?: { fileName: string; id: string; sort: number }[]; success: boolean }
+      if (!data.success || !data.list?.length) continue
+
+      const doc = data.list.find(f => f.sort === 1) || data.list[0]
+      const reqDocName = doc.fileName || ''
+      const reqDocUrl = doc.id ? `${YULAN_API}?id=${doc.id}` : ''
+      updateStmt.run(reqDocName, reqDocUrl, task.id)
+      fetched++
+    } catch {
+      // skip single task error
+    }
+  }
+  console.log(`[intranet] 需求文档元数据同步完成: ${fetched}/${tasks.length}`)
+}
+
+/**
+ * 提取单条任务的 PDF 文字内容（加入 AI 待办时调用）
+ */
+export async function extractPdfText(taskId: string): Promise<string> {
+  const db = getDb()
+  const row = db.prepare('SELECT req_doc_name, req_doc_url, req_doc_text FROM tasks WHERE id = ?').get(taskId) as
+    { req_doc_name: string; req_doc_url: string; req_doc_text: string } | undefined
+  if (!row) throw new Error('任务不存在')
+  if (row.req_doc_text) return row.req_doc_text
+  if (!row.req_doc_url || !row.req_doc_name.toLowerCase().endsWith('.pdf')) return ''
+
+  const cookie = await getValidCookie()
+  const match = row.req_doc_url.match(/[?&]id=([^&]+)/)
+  if (!match) return ''
+
+  const pdfResp = await fetch(`${YULAN_API}?id=${match[1]}`, {
+    headers: { Cookie: cookie },
+    redirect: 'manual',
+  })
+  if (pdfResp.status !== 200) throw new Error(`PDF 下载失败: ${pdfResp.status}`)
+
+  const buf = Buffer.from(await pdfResp.arrayBuffer())
+  if (buf.length > 10 * 1024 * 1024) throw new Error('PDF 文件过大，超过 10MB')
+
+  const parser = new PDFParse({ data: buf })
+  const result = await parser.getText()
+  const text = result.text.replace(/\s+/g, ' ').trim()
+
+  db.prepare('UPDATE tasks SET req_doc_text = ? WHERE id = ?').run(text, taskId)
+  console.log(`[intranet] PDF 文字提取完成: ${taskId}, ${text.length} 字符`)
+  return text
+}
+
 /**
  * 从内网抓取任务列表
  */
@@ -441,6 +519,10 @@ export async function scrapTasksFromIntranet(): Promise<ScrapedTask[]> {
   }))
 
   console.log(`[intranet] 同步完成: ${rawTasks.length} 条, 耗时 ${Date.now() - t0}ms`)
+
+  // 同步需求文档附件
+  await fetchReqDocs()
+
   return tasks
 }
 
@@ -451,5 +533,46 @@ export async function closeBrowser(): Promise<void> {
   if (browserInstance) {
     await browserInstance.close()
     browserInstance = null
+  }
+}
+
+// ========== Cookie 自动刷新 ==========
+
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000 // 30 分钟
+
+/**
+ * 启动 cookie 自动刷新定时器
+ */
+export function startCookieRefresh(): void {
+  if (refreshTimer) return
+  // 立即刷新一次
+  getValidCookie().then(() => {
+    console.log('[intranet] 初始 cookie 已就绪')
+  }).catch(err => {
+    console.warn('[intranet] 初始 cookie 获取失败:', (err as Error).message)
+  })
+  // 每 30 分钟刷新
+  refreshTimer = setInterval(async () => {
+    try {
+      // 强制重新登录（忽略缓存）
+      cookieCache = null
+      await loginIntranet()
+      console.log('[intranet] cookie 定时刷新成功')
+    } catch (err) {
+      console.warn('[intranet] cookie 定时刷新失败:', (err as Error).message)
+    }
+  }, REFRESH_INTERVAL_MS)
+  console.log(`[intranet] cookie 自动刷新已启动，间隔 ${REFRESH_INTERVAL_MS / 60000} 分钟`)
+}
+
+/**
+ * 停止 cookie 自动刷新
+ */
+export function stopCookieRefresh(): void {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+    console.log('[intranet] cookie 自动刷新已停止')
   }
 }

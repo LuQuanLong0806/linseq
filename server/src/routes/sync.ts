@@ -4,7 +4,7 @@
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { getDb } from '../db/index.js'
-import { loginIntranet, checkLoginStatus, type ScrapedTask } from '../scraper/intranet.js'
+import { loginIntranet, checkLoginStatus, getValidCookie, type ScrapedTask } from '../scraper/intranet.js'
 
 const router = Router()
 
@@ -208,6 +208,39 @@ router.get('/login-status', async (_req, res) => {
   try {
     const status = await checkLoginStatus()
     res.json({ code: 0, message: 'success', data: status })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 代理内网需求文档预览（浏览器无需 cookie）
+router.get('/req-doc', async (req, res) => {
+  try {
+    const docId = req.query.id as string
+    if (!docId) {
+      res.status(400).json({ code: 400, message: '缺少 id 参数', data: null })
+      return
+    }
+    const cookie = await getValidCookie()
+    const intranetUrl = `http://10.0.12.119:8868/demo/tasklist/YulanData.action?id=${docId}`
+    const resp = await fetch(intranetUrl, {
+      headers: { Cookie: cookie },
+      redirect: 'manual',
+    })
+    if (resp.status === 302 || resp.status === 301) {
+      res.status(401).json({ code: 401, message: '内网 session 已过期，请稍后重试', data: null })
+      return
+    }
+    if (resp.status !== 200) {
+      res.status(502).json({ code: 502, message: `内网返回 ${resp.status}`, data: null })
+      return
+    }
+    const contentType = resp.headers.get('content-type') || 'application/octet-stream'
+    res.setHeader('Content-Type', contentType)
+    const contentLength = resp.headers.get('content-length')
+    if (contentLength) res.setHeader('Content-Length', contentLength)
+    const buf = Buffer.from(await resp.arrayBuffer())
+    res.send(buf)
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }

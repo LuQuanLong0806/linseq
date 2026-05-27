@@ -31,6 +31,11 @@ export const taskApi = {
   addDevLog(taskId: string, entry: { action: string; content: string }): Promise<ApiResponse<Task>> {
     return http.post(`/tasks/${taskId}/devlog`, entry)
   },
+
+  /** 提取 PDF 文字内容 */
+  extractPdf(taskId: string): Promise<ApiResponse<{ reqDocText: string }>> {
+    return http.post(`/tasks/${taskId}/extract-pdf`)
+  },
 }
 
 interface SyncResult {

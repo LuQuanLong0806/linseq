@@ -86,6 +86,10 @@ export interface Task {
   completeTime: string
   reworkCount: number
   aiOutput: string
+  reqDocName: string
+  reqDocUrl: string
+  reqDocText: string
+  groupId: string
 }
 
 /** 开发记录条目 */
@@ -185,4 +189,16 @@ export interface TaskUpdateParams {
   completeTime?: string
   reworkCount?: number
   aiOutput?: string
+  reqDocText?: string
+  groupId?: string
+}
+
+/** 任务分组 */
+export interface TaskGroup {
+  id: string
+  name: string
+  taskIds: string[]
+  projectPath: string
+  gitBranch: string
+  createdAt: string
 }

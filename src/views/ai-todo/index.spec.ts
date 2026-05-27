@@ -30,6 +30,10 @@ vi.mock('@/utils/http', () => ({
   default: { get: vi.fn().mockResolvedValue({ code: 0, data: { list: [], total: 0 } }), post: vi.fn(), patch: vi.fn().mockResolvedValue({ code: 0, data: {} }) },
 }))
 
+vi.mock('@/api/group', () => ({
+  groupApi: { list: vi.fn().mockResolvedValue({ code: 0, data: [] }), create: vi.fn(), update: vi.fn(), remove: vi.fn() },
+}))
+
 const stubs = {
   'el-tag': { props: ['type', 'size', 'effect'], template: '<span><slot /></span>' },
   'el-button': { props: ['type', 'size', 'link'], template: '<button><slot /></button>' },
@@ -47,7 +51,7 @@ const mockTask = (o = {}) => ({
   version: '', projectPath: 'F:/dev', gitBranch: 'main', customDescription: '',
   acceptanceCriteria: '', requirementDoc: '', localPath: '', taskPageUrl: '',
   aiStatus: '', reviewComment: '', reviewTime: '', reviewResult: '',
-  completeTime: '', reworkCount: 0, aiOutput: '', ...o,
+  completeTime: '', reworkCount: 0, aiOutput: '', reqDocName: '', reqDocUrl: '', reqDocText: '', groupId: '', ...o,
 })
 
 describe('AI待办页面', () => {

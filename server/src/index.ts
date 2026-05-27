@@ -9,6 +9,8 @@ import taskRoutes from './routes/tasks.js'
 import syncRoutes from './routes/sync.js'
 import devlogRoutes from './routes/devlogs.js'
 import agentRoutes from './routes/agent.js'
+import groupRoutes from './routes/groups.js'
+import { startCookieRefresh, stopCookieRefresh } from './scraper/intranet.js'
 
 const app = express()
 const PORT = 3201
@@ -29,6 +31,7 @@ app.use('/api/tasks', taskRoutes)
 app.use('/api/sync', syncRoutes)
 app.use('/api/devlogs', devlogRoutes)
 app.use('/api/agent', agentRoutes)
+app.use('/api/groups', groupRoutes)
 
 // 健康检查
 app.get('/api/health', (_req, res) => {
@@ -45,6 +48,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 async function start() {
   try {
     await initDatabase()
+    startCookieRefresh()
     app.listen(PORT, () => {
       console.log(`\n⚡ 灵序 LINSEQ Server running at http://localhost:${PORT}`)
       console.log(`   API: http://localhost:${PORT}/api`)

@@ -66,11 +66,36 @@
             <template #header>
               <div class="card-header-flex">
                 <span class="card-title">需求文档</span>
-                <el-button type="primary" link size="small" @click="startEdit('requirementDoc')">编辑</el-button>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <el-button v-if="task.reqDocText && !docEditing" type="primary" link size="small" @click="startDocEdit">编辑</el-button>
+                  <el-button v-if="!task.reqDocText && task.reqDocName" type="primary" link size="small" :loading="extractingPdf" @click="handleExtractPdf">
+                    {{ extractingPdf ? '提取中...' : '提取文字' }}
+                  </el-button>
+                </div>
               </div>
             </template>
-            <div class="desc-content" v-if="task.requirementDoc" v-html="task.requirementDoc"></div>
-            <div class="desc-content empty" v-else>点击编辑按钮添加需求文档链接或内容</div>
+            <!-- PDF 解析文字 -->
+            <template v-if="task.reqDocText">
+              <el-input
+                v-if="docEditing"
+                v-model="docEditText"
+                type="textarea"
+                :autosize="{ minRows: 6, maxRows: 25 }"
+                placeholder="编辑需求文档内容"
+              />
+              <div v-else class="doc-text-content" style="max-height:500px;">
+                <div v-for="(line, i) in docTextLines" :key="i" class="doc-text-line">{{ line }}</div>
+              </div>
+              <div v-if="docEditing" style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px;">
+                <el-button size="small" @click="docEditing = false">取消</el-button>
+                <el-button size="small" type="primary" :loading="docSaving" @click="saveDocEdit">保存</el-button>
+              </div>
+            </template>
+            <!-- 无解析文字时展示手动内容 -->
+            <template v-else>
+              <div class="desc-content" v-if="task.requirementDoc" v-html="task.requirementDoc"></div>
+              <div class="desc-content empty" v-else>暂无需求文档内容</div>
+            </template>
           </el-card>
 
           <!-- 验收标准 -->
@@ -164,6 +189,23 @@
               <el-descriptions-item label="内网单号">{{ task.sourceId }}</el-descriptions-item>
               <el-descriptions-item label="流程状态">{{ task.intranetNodeName || '-' }}</el-descriptions-item>
             </el-descriptions>
+          </el-card>
+
+          <!-- 需求文档（右侧摘要） -->
+          <el-card v-if="task.reqDocName" shadow="hover" class="info-card" style="margin-top:20px;">
+            <template #header>
+              <span class="card-title">需求文档</span>
+            </template>
+            <div style="font-size:13px;color:#606266;margin-bottom:8px;">{{ task.reqDocName }}</div>
+            <div style="display:flex;gap:8px;">
+              <a v-if="proxyDocUrl" :href="proxyDocUrl" target="_blank" class="doc-link">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h5l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M9 2v4h4"/></svg>
+                原文件
+              </a>
+            </div>
+            <div v-if="task.reqDocText" style="color:#67c23a;font-size:12px;margin-top:6px;">
+              已提取 {{ task.reqDocText.length }} 字
+            </div>
           </el-card>
 
           <!-- 内网任务信息（只读） -->
@@ -263,6 +305,7 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
+import { taskApi } from '@/api/task'
 import { ArrowLeft, ArrowDown, VideoPlay, CircleCheck, Upload } from '@element-plus/icons-vue'
 import type { TaskStatus } from '@/types'
 import dayjs from 'dayjs'
@@ -275,6 +318,12 @@ const saving = ref(false)
 const showAddLog = ref(false)
 const showEditDevConfig = ref(false)
 const showEditField = ref(false)
+
+// 需求文档编辑
+const docEditing = ref(false)
+const docEditText = ref('')
+const docSaving = ref(false)
+const extractingPdf = ref(false)
 
 const logForm = reactive({ action: '开发', content: '' })
 
@@ -296,6 +345,54 @@ const editFieldTitle = computed(() => {
 })
 
 const task = computed(() => taskStore.currentTask!)
+
+const proxyDocUrl = computed(() => {
+  const url = task.value?.reqDocUrl || ''
+  const match = url.match(/[?&]id=([^&]+)/)
+  return match ? `/api/sync/req-doc?id=${match[1]}` : ''
+})
+
+const docTextLines = computed(() => {
+  const text = task.value?.reqDocText || ''
+  return text.split(/\s{2,}/).filter(Boolean)
+})
+
+async function handleExtractPdf() {
+  if (!task.value) return
+  extractingPdf.value = true
+  try {
+    const res = await taskApi.extractPdf(task.value.id)
+    if (res.data?.reqDocText) {
+      task.value.reqDocText = res.data.reqDocText
+      ElMessage.success('提取成功')
+    } else {
+      ElMessage.warning('未提取到文字内容')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '提取失败')
+  } finally {
+    extractingPdf.value = false
+  }
+}
+
+function startDocEdit() {
+  docEditText.value = task.value?.reqDocText || ''
+  docEditing.value = true
+}
+
+async function saveDocEdit() {
+  if (!task.value) return
+  docSaving.value = true
+  try {
+    await taskStore.updateTask(task.value.id, { reqDocText: docEditText.value } as any)
+    task.value.reqDocText = docEditText.value
+    docEditing.value = false
+    ElMessage.success('保存成功')
+  } finally {
+    docSaving.value = false
+  }
+}
+
 const isOverdue = computed(() => {
   if (!task.value) return false
   return task.value.status !== 'completed' && new Date(task.value.deadline).getTime() < Date.now()
@@ -473,6 +570,32 @@ onMounted(() => {
 .empty-text { color: #c0c4cc; font-style: italic; }
 
 .overdue-text { color: #f56c6c; font-weight: 600; }
+
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #409eff;
+  font-size: 13px;
+  text-decoration: none;
+  word-break: break-all;
+  &:hover { color: #66b1ff; text-decoration: underline; }
+}
+.doc-text-content {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px;
+  background: #fafbfc;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #303133;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.doc-text-line { margin-bottom: 2px; }
+.doc-text-empty { color: #909399; font-size: 13px; }
 .log-entry { display: flex; align-items: center; gap: 8px;
   .log-content { font-size: 13px; color: #606266; }
 }

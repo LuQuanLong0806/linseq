@@ -146,7 +146,7 @@ router.patch('/:id', (req, res) => {
       'project_path', 'git_branch', 'custom_description', 'acceptance_criteria',
       'requirement_doc', 'local_path', 'status', 'priority', 'tags', 'ai_status',
       'task_page_url', 'review_comment', 'review_time', 'review_result',
-      'complete_time', 'rework_count', 'ai_output',
+      'complete_time', 'rework_count', 'ai_output', 'req_doc_name', 'req_doc_url', 'req_doc_text', 'group_id',
     ])
 
     const setParts: string[] = []
@@ -364,6 +364,10 @@ export function mapDbRowToTask(db: ReturnType<typeof getDb>, row: unknown): Task
     completeTime: (r.complete_time as string) || '',
     reworkCount: (r.rework_count as number) || 0,
     aiOutput: (r.ai_output as string) || '',
+    reqDocName: (r.req_doc_name as string) || '',
+    reqDocUrl: (r.req_doc_url as string) || '',
+    reqDocText: (r.req_doc_text as string) || '',
+    groupId: (r.group_id as string) || '',
   }
 }
 
@@ -372,5 +376,16 @@ export function addDevLog(db: ReturnType<typeof getDb>, taskId: string, action: 
   db.prepare(`INSERT INTO dev_logs (id, task_id, action, content, author, auto_fixed) VALUES (?, ?, ?, ?, ?, ?)`).run(id, taskId, action, content, author, autoFixed ? 1 : 0)
   return id
 }
+
+// 提取单条任务的 PDF 文字内容
+router.post('/:id/extract-pdf', async (req, res) => {
+  try {
+    const { extractPdfText } = await import('../scraper/intranet.js')
+    const text = await extractPdfText(req.params.id)
+    res.json({ code: 0, message: 'success', data: { reqDocText: text } })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String((err as Error).message), data: null })
+  }
+})
 
 export default router

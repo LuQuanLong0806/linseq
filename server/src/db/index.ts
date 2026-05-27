@@ -112,6 +112,10 @@ export function initDatabase(): void {
     ['complete_time', 'TEXT DEFAULT ""'],
     ['rework_count', 'INTEGER DEFAULT 0'],
     ['ai_output', 'TEXT DEFAULT ""'],
+    ['req_doc_name', 'TEXT DEFAULT ""'],
+    ['req_doc_url', 'TEXT DEFAULT ""'],
+    ['req_doc_text', 'TEXT DEFAULT ""'],
+    ['group_id', 'TEXT DEFAULT ""'],
   ]
   for (const [col, type] of newColumns) {
     try {
@@ -120,6 +124,18 @@ export function initDatabase(): void {
       // 列已存在
     }
   }
+
+  // ========== 任务分组表 ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      task_ids TEXT DEFAULT '[]',
+      project_path TEXT DEFAULT '',
+      git_branch TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
 
   // ========== 开发记录表 ==========
   db.exec(`

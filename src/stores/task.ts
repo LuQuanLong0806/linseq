@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Task, DashboardStats, TaskStatus, TaskUpdateParams } from '@/types'
+import type { Task, TaskGroup, DashboardStats, TaskStatus, TaskUpdateParams } from '@/types'
 import { taskApi } from '@/api/task'
+import { groupApi } from '@/api/group'
 
 export const useTaskStore = defineStore('task', () => {
   // State
@@ -15,6 +16,32 @@ export const useTaskStore = defineStore('task', () => {
   try {
     todoList.value = JSON.parse(localStorage.getItem('linesequence-todo-list') || '[]')
   } catch { /* ignore parse error */ }
+
+  // 任务分组
+  const groups = ref<TaskGroup[]>([])
+
+  async function fetchGroups() {
+    const res = await groupApi.list()
+    groups.value = res.data
+  }
+
+  async function createGroup(name: string, taskIds?: string[]) {
+    const res = await groupApi.create({ name, taskIds })
+    groups.value.unshift(res.data)
+    return res.data
+  }
+
+  async function updateGroup(id: string, data: Partial<{ name: string; taskIds: string[]; projectPath: string; gitBranch: string }>) {
+    const res = await groupApi.update(id, data)
+    const idx = groups.value.findIndex(g => g.id === id)
+    if (idx !== -1) groups.value[idx] = res.data
+    return res.data
+  }
+
+  async function deleteGroup(id: string) {
+    await groupApi.remove(id)
+    groups.value = groups.value.filter(g => g.id !== id)
+  }
 
   // Getters
   const stats = computed<DashboardStats>(() => {
@@ -126,6 +153,15 @@ export const useTaskStore = defineStore('task', () => {
         todoList.value.push(task.id)
       }
       updateTask(task.id, { aiStatus: isRework ? 'ai_rework' : 'ai_todo' })
+      // 后台提取 PDF 文字，不阻塞 UI
+      if (!task.reqDocText && task.reqDocName) {
+        taskApi.extractPdf(task.id).then(res => {
+          if (res.data?.reqDocText) {
+            const t = tasks.value.find(t => t.id === task.id)
+            if (t) t.reqDocText = res.data.reqDocText
+          }
+        }).catch(() => {})
+      }
     } else {
       todoList.value.splice(idx, 1)
       updateTask(task.id, { aiStatus: '' })
@@ -149,5 +185,10 @@ export const useTaskStore = defineStore('task', () => {
     todoList,
     isInTodoList,
     toggleTodo,
+    groups,
+    fetchGroups,
+    createGroup,
+    updateGroup,
+    deleteGroup,
   }
 })

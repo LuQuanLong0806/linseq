@@ -141,7 +141,6 @@
         stripe
         style="width: 100%"
         row-class-name="task-row"
-        @row-click="handleRowClick"
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="45" fixed="left" />
@@ -171,11 +170,13 @@
         <el-table-column prop="status" label="AI开发状态" width="130">
           <template #default="{ row }">
             <el-tag
+              v-if="row.aiStatus"
               :type="getAiStatusType(row.aiStatus)"
               size="small"
               effect="dark"
               >{{ getAiStatusLabel(row.aiStatus) }}</el-tag
             >
+            <span v-else class="status-idle">未加入</span>
           </template>
         </el-table-column>
         <el-table-column
@@ -215,51 +216,37 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" :fixed="'right'">
+        <el-table-column label="操作" width="280" :fixed="'right'">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              link
-              size="small"
-              @click.stop="$router.push(`/tasks/${row.id}`)"
-              >详情</el-button
-            >
-            <el-button link size="small" @click.stop="openProjectSettings(row)">
-              <el-icon><Setting /></el-icon>配置
-            </el-button>
-            <el-button
-              :type="taskStore.isInTodoList(row.id) ? 'success' : 'primary'"
-              link
-              size="small"
-              @click.stop="handleToggleTodo(row)"
-            >
-              {{ taskStore.isInTodoList(row.id) ? 'AI待办' : '入AI待办' }}
-            </el-button>
-            <el-dropdown
-              trigger="click"
-              @command="(cmd: any) => handleStatusChange(row, cmd)"
-            >
-              <el-button type="warning" link size="small" @click.stop>
-                状态<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="pending">待开发</el-dropdown-item>
-                  <el-dropdown-item command="in_progress"
-                    >开发中</el-dropdown-item
-                  >
-                  <el-dropdown-item command="self_test"
-                    >自测完成</el-dropdown-item
-                  >
-                  <el-dropdown-item command="submitted"
-                    >已提测</el-dropdown-item
-                  >
-                  <el-dropdown-item command="completed"
-                    >已完结</el-dropdown-item
-                  >
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <div class="ops">
+              <span class="op" @click.stop="$router.push(`/tasks/${row.id}`)">
+                <el-icon><View /></el-icon>详情
+              </span>
+              <span class="op" @click.stop="openProjectSettings(row)">
+                <el-icon><Setting /></el-icon>配置
+              </span>
+              <span
+                class="op"
+                :class="taskStore.isInTodoList(row.id) ? 'op-active' : 'op-todo'"
+                @click.stop="handleToggleTodo(row)"
+              >
+                <el-icon><Promotion /></el-icon>{{ taskStore.isInTodoList(row.id) ? 'AI待办' : '入待办' }}
+              </span>
+              <el-dropdown trigger="click" @command="(cmd) => handleStatusChange(row, cmd)">
+                <span class="op" @click.stop>
+                  <el-icon><Switch /></el-icon>状态
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="pending">待开发</el-dropdown-item>
+                    <el-dropdown-item command="in_progress">开发中</el-dropdown-item>
+                    <el-dropdown-item command="self_test">自测完成</el-dropdown-item>
+                    <el-dropdown-item command="submitted">已提测</el-dropdown-item>
+                    <el-dropdown-item command="completed">已完结</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -383,7 +370,10 @@ import {
   ArrowDown,
   List,
   Grid,
-  Setting
+  Setting,
+  View,
+  Promotion,
+  Switch
 } from '@element-plus/icons-vue';
 import type { TaskStatus, Task } from '@/types';
 import dayjs from 'dayjs';
@@ -521,10 +511,6 @@ async function handleStatusChange(task: Task, status: string) {
   } catch {
     ElMessage.error('状态更新失败');
   }
-}
-
-function handleRowClick(row: Task) {
-  router.push(`/tasks/${row.id}`);
 }
 
 function isOverdue(task: Task) {
@@ -707,7 +693,7 @@ function getAiStatusLabel(aiStatus: string): string {
     ai_review: '待审核',
     ai_done: 'AI完成'
   };
-  return map[aiStatus] || aiStatus;
+  return map[aiStatus] || '未加入';
 }
 
 function formatDate(date: string): string {
@@ -756,9 +742,15 @@ onMounted(() => {
 .table-card {
   :deep .task-row {
     cursor: pointer;
+    td {
+      text-align: center;
+    }
     &:hover {
       background-color: #f5f7fa;
     }
+  }
+  :deep .el-table__cell {
+    text-align: center;
   }
 }
 
@@ -787,6 +779,11 @@ onMounted(() => {
 .desc-text {
   color: #606266;
   font-size: 13px;
+}
+
+.status-idle {
+  color: #c0c4cc;
+  font-size: 12px;
 }
 
 .stale-warn {
@@ -894,6 +891,50 @@ onMounted(() => {
   margin-top: 10px;
   display: flex;
   justify-content: flex-end;
+}
+
+.ops {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.op {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 6px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+  user-select: none;
+
+  .el-icon { font-size: 13px; }
+  &:hover {
+    color: #334155;
+    background: #f1f5f9;
+  }
+}
+
+.op-todo {
+  color: #667eea;
+  font-weight: 500;
+  &:hover {
+    background: rgba(102, 126, 234, 0.1);
+  }
+}
+
+.op-active {
+  color: #10b981;
+  font-weight: 500;
+  &:hover {
+    background: rgba(16, 185, 129, 0.1);
+  }
 }
 
 .kanban-deadline {

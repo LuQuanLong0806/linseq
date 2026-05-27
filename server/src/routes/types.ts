@@ -65,6 +65,10 @@ export interface Task {
   completeTime: string
   reworkCount: number
   aiOutput: string
+  reqDocName: string
+  reqDocUrl: string
+  reqDocText: string
+  groupId: string
 }
 
 export interface DevLogEntry {

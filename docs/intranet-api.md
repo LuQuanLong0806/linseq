@@ -184,11 +184,27 @@
 
 请求参数：`{ pid: taskId }`
 
-响应：`{ "list": [{ "id", "fileName", "sort" }] }`
+响应：
+
+```json
+{
+  "list": [
+    {
+      "fileName": "2026052016140188_【前端】宁对接前端需求0414.pdf",
+      "filePath": "D:\\invertImg\\2026052016140188_【前端】宁对接前端需求0414.docx",
+      "pid": "8a808cf79e3ec325019e447435b00288",
+      "id": "B355D8A6-6776-48CD-B86D-55324B264E12",
+      "sort": 1
+    }
+  ],
+  "success": true
+}
+```
 
 - sort=1 → 需求文档
 - sort=2 → 客户确认附件
 - sort=3 → 开发自测报告
+- `list[0].id` 可直接用于预览接口
 
 #### 上传附件（富文本图片）
 
@@ -213,6 +229,11 @@
 #### 预览附件
 
 **GET** `/demo/tasklist/YulanData.action?id={fujianId}`
+
+示例：`http://10.0.12.119:8868/demo/tasklist/YulanData.action?id=B355D8A6-6776-48CD-B86D-55324B264E12`
+
+- 直接在浏览器打开可预览文档（需登录态 JSESSIONID）
+- 返回文件二进制流（Content-Type 根据文件类型自动设置）
 
 #### 删除附件
 
