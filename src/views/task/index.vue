@@ -307,6 +307,13 @@
                 class="req-doc-link"
               >查看原文</a>
               <el-button
+                v-if="currentEditTask.reqDocText && !docEditing"
+                type="primary"
+                link
+                size="small"
+                @click="startDocEdit"
+              >编辑</el-button>
+              <el-button
                 v-if="!currentEditTask.reqDocText && currentEditTask.reqDocName"
                 type="primary"
                 link
@@ -319,9 +326,22 @@
           <div v-if="currentEditTask.reqDocName" class="req-doc-name">
             {{ currentEditTask.reqDocName }}
           </div>
-          <div v-if="currentEditTask.reqDocText" class="req-doc-content">
-            <div v-for="(line, i) in currentEditTask.reqDocText.split('\n').filter(l => l.trim())" :key="i" class="req-doc-line">{{ line }}</div>
-          </div>
+          <template v-if="currentEditTask.reqDocText">
+            <el-input
+              v-if="docEditing"
+              v-model="docEditText"
+              type="textarea"
+              :autosize="{ minRows: 4, maxRows: 20 }"
+              placeholder="编辑需求文档内容"
+            />
+            <div v-else class="req-doc-content">
+              <div v-for="(line, i) in currentEditTask.reqDocText.split('\n').filter(l => l.trim())" :key="i" class="req-doc-line">{{ line }}</div>
+            </div>
+            <div v-if="docEditing" style="margin-top:8px;display:flex;justify-content:flex-end;gap:8px;">
+              <el-button size="small" @click="docEditing = false">取消</el-button>
+              <el-button size="small" type="primary" :loading="docSaving" @click="saveDocEdit">保存</el-button>
+            </div>
+          </template>
           <div v-else-if="currentEditTask.reqDocName" class="req-doc-empty">点击上方「提取文字」解析文档内容</div>
           <div v-else class="req-doc-empty">暂无需求文档</div>
         </div>
@@ -396,6 +416,9 @@ const filters = reactive({
 const drawerOpen = ref(false);
 const saving = ref(false);
 const extractingPdf = ref(false);
+const docEditing = ref(false);
+const docEditText = ref('');
+const docSaving = ref(false);
 const currentEditTask = ref<Task | null>(null);
 const isBatchMode = ref(false);
 const batchProjectName = ref('');
@@ -507,6 +530,26 @@ async function handleExtractPdf() {
     ElMessage.error('PDF 文字提取失败')
   } finally {
     extractingPdf.value = false
+  }
+}
+
+function startDocEdit() {
+  docEditText.value = currentEditTask.value?.reqDocText || ''
+  docEditing.value = true
+}
+
+async function saveDocEdit() {
+  if (!currentEditTask.value) return
+  docSaving.value = true
+  try {
+    await taskStore.updateTask(currentEditTask.value.id, { reqDocText: docEditText.value })
+    currentEditTask.value = { ...currentEditTask.value, reqDocText: docEditText.value }
+    docEditing.value = false
+    ElMessage.success('保存成功')
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    docSaving.value = false
   }
 }
 
@@ -655,6 +698,7 @@ async function saveProjectSettings() {
       ElMessage.success('配置已保存');
     }
     drawerOpen.value = false;
+    docEditing.value = false;
   } catch {
     ElMessage.error('保存失败');
   } finally {

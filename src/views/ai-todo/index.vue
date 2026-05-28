@@ -78,6 +78,7 @@
                   <div class="sub-body">
                     <div class="sub-top">
                       <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+                      <el-tag v-if="isManualTask(task)" size="small" effect="plain" class="manual-tag">手动</el-tag>
                       <span class="sub-title">{{ task.title }}</span>
                     </div>
                     <!-- 任务补充说明 -->
@@ -118,6 +119,7 @@
                 <div class="card-head">
                   <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
                   <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
+                  <el-tag v-if="isManualTask(task)" size="small" effect="plain" class="manual-tag">手动发布</el-tag>
                   <span class="card-id">#{{ task.sourceId }}</span>
                 </div>
                 <h3 class="card-title">{{ task.title }}</h3>
@@ -166,25 +168,49 @@
               <div class="dev-status-bar">
                 <div class="dev-progress"></div>
               </div>
-              <div class="card-body">
-                <div class="card-head">
-                  <el-tag type="warning" size="small" effect="dark">开发中</el-tag>
-                  <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
-                  <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
-                  <span class="card-id">#{{ task.sourceId }}</span>
+              <div class="dev-card-inner">
+                <div class="card-body">
+                  <div class="card-head">
+                    <el-tag type="warning" size="small" effect="dark">开发中</el-tag>
+                    <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+                    <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
+                    <span class="card-id">#{{ task.sourceId }}</span>
+                  </div>
+                  <h3 class="card-title">{{ task.title }}</h3>
+                  <div class="card-meta">
+                    <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
+                    <span v-if="task.module">{{ task.module }}</span>
+                  </div>
+                  <div v-if="task.projectPath || task.gitBranch" class="card-config">
+                    <span v-if="task.projectPath" class="config-item">📁 {{ task.projectPath }}</span>
+                    <span v-if="task.gitBranch" class="config-item">🌿 {{ task.gitBranch }}</span>
+                  </div>
                 </div>
-                <h3 class="card-title">{{ task.title }}</h3>
-                <div class="card-meta">
-                  <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
-                  <span v-if="task.module">{{ task.module }}</span>
-                </div>
-                <div v-if="task.projectPath || task.gitBranch" class="card-config">
-                  <span v-if="task.projectPath" class="config-item">📁 {{ task.projectPath }}</span>
-                  <span v-if="task.gitBranch" class="config-item">🌿 {{ task.gitBranch }}</span>
+                <div class="card-actions">
+                  <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
                 </div>
               </div>
-              <div class="card-actions">
-                <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
+              <!-- 开发日志 -->
+              <div v-if="task.devLog && task.devLog.length > 0" class="dev-log-section">
+                <div class="dev-log-header">
+                  <span class="dev-log-title">开发记录</span>
+                  <span class="dev-log-count">{{ task.devLog.length }}</span>
+                </div>
+                <div class="dev-log-list">
+                  <div v-for="log in task.devLog.slice(0, 8)" :key="log.id" class="dev-log-item">
+                    <div class="log-indicator" :class="log.action"></div>
+                    <div class="log-body">
+                      <div class="log-top">
+                        <span class="log-action">{{ log.action }}</span>
+                        <span class="log-time">{{ formatLogTime(log.time) }}</span>
+                      </div>
+                      <div class="log-content">{{ log.content }}</div>
+                    </div>
+                  </div>
+                  <div v-if="task.devLog.length > 8" class="log-more">
+                    还有 {{ task.devLog.length - 8 }} 条记录...
+                  </div>
+                </div>
               </div>
             </div>
           </TransitionGroup>
@@ -597,6 +623,8 @@ function openUrl(url: string) { window.open(url) }
 
 function isOverdue(task: Task) { return task.status !== 'completed' && new Date(task.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
+function formatLogTime(t: string) { return dayjs(t).format('HH:mm') }
+function isManualTask(task: Task) { return task.sourceId?.startsWith('manual_') }
 function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as const)[p] || 'info' }
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
 
@@ -875,11 +903,14 @@ async function syncTodoFromBackend() {
 
 // Dev card
 .dev-card {
-  position: relative; display: flex; align-items: stretch;
+  position: relative; display: flex; flex-direction: column;
   background: rgba(10,16,31,0.15); border: 1px solid rgba(255,125,0,0.15);
   border-radius: 10px; overflow: hidden; transition: all 0.3s ease;
   backdrop-filter: blur(2px);
   &:hover { border-color: rgba(255,125,0,0.35); box-shadow: 0 0 24px rgba(255,125,0,0.1); transform: translateY(-1px); }
+}
+.dev-card-inner {
+  display: flex; align-items: stretch; flex: 1;
 }
 .dev-card-glow {
   position: absolute; inset: -1px; border-radius: 10px;
@@ -905,6 +936,63 @@ async function syncTodoFromBackend() {
 .card-enter-from { opacity: 0; transform: translateY(20px) scale(0.95); }
 .card-leave-to { opacity: 0; transform: translateX(-30px); }
 .card-move { transition: transform 0.35s ease; }
+
+// Dev log section
+.dev-log-section {
+  border-top: 1px solid rgba(255,125,0,0.12);
+  background: rgba(255,125,0,0.03);
+}
+.dev-log-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px 4px;
+}
+.dev-log-title {
+  font-size: 11px; font-weight: 600; color: rgba(255,125,0,0.7);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.dev-log-count {
+  font-size: 10px; color: rgba(255,125,0,0.5); background: rgba(255,125,0,0.1);
+  padding: 1px 6px; border-radius: 8px;
+}
+.dev-log-list { padding: 0 14px 10px; }
+.dev-log-item {
+  display: flex; gap: 8px; padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  &:last-child { border-bottom: none; }
+}
+.log-indicator {
+  width: 3px; border-radius: 2px; flex-shrink: 0; margin-top: 3px;
+  background: rgba(255,125,0,0.5); min-height: 20px;
+  &.开发 { background: rgba(0,229,255,0.5); }
+  &.调试 { background: rgba(229,162,27,0.5); }
+  &.重构 { background: rgba(157,92,255,0.5); }
+  &.自测 { background: rgba(46,184,92,0.5); }
+  &.异常 { background: rgba(245,108,108,0.5); }
+  &.暂停 { background: rgba(144,147,153,0.5); }
+}
+.log-body { flex: 1; min-width: 0; }
+.log-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.log-action {
+  font-size: 10px; font-weight: 600; color: rgba(255,125,0,0.8);
+  background: rgba(255,125,0,0.08); padding: 1px 5px; border-radius: 3px;
+}
+.log-time { font-size: 10px; color: rgba(140,140,161,0.5); font-family: 'Courier New', monospace; }
+.log-content {
+  font-size: 11px; color: rgba(207,211,220,0.8); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.log-more {
+  text-align: center; font-size: 10px; color: rgba(140,140,161,0.4);
+  padding: 4px 0 2px; font-style: italic;
+}
+
+// Manual task tag
+.manual-tag {
+  border-color: rgba(46,184,92,0.3) !important;
+  color: rgba(46,184,92,0.8) !important;
+  background: rgba(46,184,92,0.06) !important;
+}
 
 // Responsive
 @media (max-width: 900px) {

@@ -255,22 +255,25 @@ function getStoredCredentials(username?: string): { username: string; password: 
 
 /**
  * 获取有效 cookie，优先内存 → DB → 重新登录
+ * @param forceRelogin 强制重新登录（用于 302 等 session 失效场景，跳过缓存直接重登）
  */
-export async function getValidCookie(username?: string): Promise<string> {
-  // 1. 内存缓存有效？
-  if (cookieCache && cookieCache.expiryMs > Date.now()) {
-    return cookieCache.cookie
-  }
+export async function getValidCookie(username?: string, forceRelogin?: boolean): Promise<string> {
+  if (!forceRelogin) {
+    // 1. 内存缓存有效？
+    if (cookieCache && cookieCache.expiryMs > Date.now()) {
+      return cookieCache.cookie
+    }
 
-  // 2. DB 缓存有效？
-  const dbCache = restoreCookieFromDb(username)
-  if (dbCache) {
-    cookieCache = dbCache
-    return dbCache.cookie
+    // 2. DB 缓存有效？
+    const dbCache = restoreCookieFromDb(username)
+    if (dbCache) {
+      cookieCache = dbCache
+      return dbCache.cookie
+    }
   }
 
   // 3. 重新登录（用指定用户或当前用户的凭据）
-  console.log('[intranet] cookie 过期或不存在，重新登录...')
+  console.log(forceRelogin ? '[intranet] session 失效，强制重新登录...' : '[intranet] cookie 过期或不存在，重新登录...')
   const result = await loginIntranet(username)
   return result.cookie
 }
@@ -418,7 +421,7 @@ async function fetchTaskListViaNode(
  * 获取全量待办任务（Node fetch 直调，cookie 过期自动重新登录）
  */
 async function fetchAllTasks(): Promise<IntranetTask[]> {
-  const cookie = await getValidCookie()
+  let cookie = await getValidCookie()
 
   const allTasks: IntranetTask[] = []
   let pageIndex = 0
@@ -437,15 +440,12 @@ async function fetchAllTasks(): Promise<IntranetTask[]> {
         pageIndex++
       }
     } catch (err) {
-      // session 过期 → 重新登录一次再试
       const msg = (err as Error).message
       if (msg === 'SESSION_EXPIRED' && !retried) {
-        console.log('[intranet] session 过期，自动重新登录...')
-        const newCookie = await getValidCookie() // 会触发 loginIntranet
-        // 替换 cookie 重试当前页
-        cookieCache!.cookie = newCookie
+        console.log('[intranet] session 过期，强制重新登录...')
+        cookie = await getValidCookie(undefined, true)
         retried = true
-        continue // 重试当前 pageIndex
+        continue
       }
       throw err
     }
@@ -462,7 +462,7 @@ const YULAN_API = `${INTRANET_BASE}/demo/tasklist/YulanData.action`
  * 批量获取任务需求文档元数据（附件名 + URL），不下载 PDF
  */
 async function fetchReqDocs(): Promise<void> {
-  const cookie = await getValidCookie()
+  let cookie = await getValidCookie()
   const db = getDb()
   // 只查当前用户的任务
   const curRow = db.prepare("SELECT value FROM sync_config WHERE key = 'currentUser'").get() as { value: string } | undefined
@@ -471,6 +471,7 @@ async function fetchReqDocs(): Promise<void> {
 
   const updateStmt = db.prepare("UPDATE tasks SET req_doc_name = ?, req_doc_url = ? WHERE id = ?")
   let fetched = 0
+  let sessionExpired = false
 
   for (const task of tasks) {
     try {
@@ -484,6 +485,32 @@ async function fetchReqDocs(): Promise<void> {
         body: `pid=${task.intranet_id}`,
         redirect: 'manual',
       })
+
+      // 302 = session 过期，刷新一次 cookie
+      if ((resp.status === 302 || resp.status === 301) && !sessionExpired) {
+        console.log('[intranet] fetchReqDocs 302，强制重新登录...')
+        cookie = await getValidCookie(undefined, true)
+        sessionExpired = true
+        // 重试当前任务
+        const retryResp = await fetch(FUJIAN_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Cookie': cookie,
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: `pid=${task.intranet_id}`,
+          redirect: 'manual',
+        })
+        if (retryResp.status !== 200) continue
+        const retryData = await retryResp.json() as { list?: { fileName: string; id: string; sort: number }[]; success: boolean }
+        if (!retryData.success || !retryData.list?.length) continue
+        const doc = retryData.list.find(f => f.sort === 1) || retryData.list[0]
+        updateStmt.run(doc.fileName || '', doc.id ? `${YULAN_API}?id=${doc.id}` : '', task.id)
+        fetched++
+        continue
+      }
+
       if (resp.status !== 200) continue
 
       const data = await resp.json() as { list?: { fileName: string; id: string; sort: number }[]; success: boolean }
@@ -502,24 +529,125 @@ async function fetchReqDocs(): Promise<void> {
 }
 
 /**
+ * 在 PDF 全文中查找任务标题位置（支持空白字符差异）
+ * PDF 换行会产生多余空格，如 "管理 端" vs DB "管理端"
+ */
+function findTitleInText(fullText: string, title: string): number {
+  if (!title || title.length < 2) return -1
+
+  // 1. 精确匹配
+  const exact = fullText.indexOf(title)
+  if (exact !== -1) return exact
+
+  // 2. 去掉所有空白字符后匹配（处理 PDF 换行导致的空格差异）
+  const cleanTitle = title.replace(/\s/g, '')
+  const cleanFull = fullText.replace(/\s/g, '')
+  const cleanIdx = cleanFull.indexOf(cleanTitle)
+  if (cleanIdx === -1) return -1
+
+  // 映射回原始位置
+  let origPos = 0
+  let pos = 0
+  for (let i = 0; i < fullText.length; i++) {
+    if (pos >= cleanIdx) { origPos = i; break }
+    if (!/\s/.test(fullText[i])) pos++
+  }
+  return origPos
+}
+
+/**
+ * 从 PDF 全文中提取与当前任务相关的段落
+ * 策略：
+ *   1. 用共享同一 PDF 的所有任务标题作为分界线
+ *   2. 找到当前任务标题的位置，提取到下一个任务标题之间
+ *   3. 如果 PDF 只属于一个任务（无兄弟任务），返回全文
+ *   4. 找不到锚点时 fallback 返回全文
+ */
+function extractTaskSection(fullText: string, currentTitle: string, siblingTitles: string[]): string {
+  if (!fullText) return ''
+
+  // 无兄弟任务（独立 PDF），直接返回全文
+  if (siblingTitles.length === 0) return fullText
+
+  // 找当前任务的锚点
+  const anchorIdx = findTitleInText(fullText, currentTitle)
+  if (anchorIdx === -1) {
+    console.log(`[intranet] PDF 未找到任务标题 "${currentTitle?.substring(0, 30)}"，返回全文`)
+    return fullText
+  }
+  console.log(`[intranet] PDF 锚点命中: title="${currentTitle.substring(0, 30)}" @${anchorIdx}`)
+
+  // 收集所有分界点（当前任务 + 兄弟任务标题的位置）
+  const boundaries: { idx: number; title: string }[] = []
+  const allTitles = [currentTitle, ...siblingTitles]
+  for (const title of allTitles) {
+    const idx = findTitleInText(fullText, title)
+    if (idx !== -1) {
+      boundaries.push({ idx, title })
+    }
+  }
+
+  // 按 PDF 中的位置排序，去重
+  boundaries.sort((a, b) => a.idx - b.idx)
+  const unique = boundaries.filter((b, i) => i === 0 || b.idx !== boundaries[i - 1].idx)
+
+  // 找当前任务在排序后的位置
+  const myPos = unique.findIndex(b => b.idx === anchorIdx)
+  if (myPos === -1) return fullText
+
+  // 起始：从当前标题的 【 符号开始
+  let start = anchorIdx
+  const before = fullText.substring(Math.max(0, anchorIdx - 30), anchorIdx)
+  const bracketPos = before.lastIndexOf('【')
+  if (bracketPos !== -1) {
+    start = Math.max(0, anchorIdx - 30) + bracketPos
+  }
+
+  // 结束：下一个兄弟任务标题的位置，或 PDF 末尾
+  let end = fullText.length
+  if (myPos + 1 < unique.length) {
+    end = unique[myPos + 1].idx
+  }
+
+  const section = fullText.substring(start, end).trim()
+  console.log(`[intranet] PDF 分段提取: 全文 ${fullText.length} → 段落 ${section.length} 字符`)
+  return section
+}
+
+/**
  * 提取单条任务的 PDF 文字内容（加入 AI 待办时调用）
  */
 export async function extractPdfText(taskId: string): Promise<string> {
   const db = getDb()
-  const row = db.prepare('SELECT req_doc_name, req_doc_url, req_doc_text FROM tasks WHERE id = ?').get(taskId) as
-    { req_doc_name: string; req_doc_url: string; req_doc_text: string } | undefined
+  const row = db.prepare(
+    'SELECT source_id, title, module, req_doc_name, req_doc_url, req_doc_text FROM tasks WHERE id = ?'
+  ).get(taskId) as {
+    source_id: string; title: string; module: string;
+    req_doc_name: string; req_doc_url: string; req_doc_text: string
+  } | undefined
   if (!row) throw new Error('任务不存在')
   if (row.req_doc_text) return row.req_doc_text
   if (!row.req_doc_url || !row.req_doc_name.toLowerCase().endsWith('.pdf')) return ''
 
-  const cookie = await getValidCookie()
   const match = row.req_doc_url.match(/[?&]id=([^&]+)/)
   if (!match) return ''
 
-  const pdfResp = await fetch(`${YULAN_API}?id=${match[1]}`, {
+  let cookie = await getValidCookie()
+  let pdfResp = await fetch(`${YULAN_API}?id=${match[1]}`, {
     headers: { Cookie: cookie },
     redirect: 'manual',
   })
+
+  // 302 = session 过期，强制重新登录再试一次
+  if (pdfResp.status === 302 || pdfResp.status === 301) {
+    console.log('[intranet] PDF 下载 302，强制重新登录...')
+    cookie = await getValidCookie(undefined, true)
+    pdfResp = await fetch(`${YULAN_API}?id=${match[1]}`, {
+      headers: { Cookie: cookie },
+      redirect: 'manual',
+    })
+  }
+
   if (pdfResp.status !== 200) throw new Error(`PDF 下载失败: ${pdfResp.status}`)
 
   const buf = Buffer.from(await pdfResp.arrayBuffer())
@@ -527,10 +655,18 @@ export async function extractPdfText(taskId: string): Promise<string> {
 
   const parser = new PDFParse({ data: buf })
   const result = await parser.getText()
-  const text = result.text.replace(/\s+/g, ' ').trim()
+  const fullText = result.text.replace(/\s+/g, ' ').trim()
+
+  // 查找共享同一 PDF 的其他任务标题，用作分界线
+  const siblings = db.prepare(
+    "SELECT title FROM tasks WHERE req_doc_name = ? AND id != ?"
+  ).all(row.req_doc_name, taskId) as { title: string }[]
+  const siblingTitles = siblings.map(s => s.title).filter(t => t && t.length >= 2)
+
+  const text = extractTaskSection(fullText, row.title, siblingTitles)
 
   db.prepare('UPDATE tasks SET req_doc_text = ? WHERE id = ?').run(text, taskId)
-  console.log(`[intranet] PDF 文字提取完成: ${taskId}, ${text.length} 字符`)
+  console.log(`[intranet] PDF 文字提取完成: ${taskId}, 全文 ${fullText.length} → 提取 ${text.length} 字符`)
   return text
 }
 
@@ -582,24 +718,21 @@ const REFRESH_INTERVAL_MS = 30 * 60 * 1000 // 30 分钟
  */
 export function startCookieRefresh(): void {
   if (refreshTimer) return
-  // 立即刷新一次
+  // 立即检查一次（使用缓存，不过期不重新登录）
   getValidCookie().then(() => {
     console.log('[intranet] 初始 cookie 已就绪')
   }).catch(err => {
     console.warn('[intranet] 初始 cookie 获取失败:', (err as Error).message)
   })
-  // 每 30 分钟刷新
+  // 每 30 分钟检查一次，仅在过期时才重新登录
   refreshTimer = setInterval(async () => {
     try {
-      // 强制重新登录（忽略缓存），使用当前用户凭据
-      cookieCache = null
-      await loginIntranet()
-      console.log('[intranet] cookie 定时刷新成功')
+      await getValidCookie()
     } catch (err) {
-      console.warn('[intranet] cookie 定时刷新失败:', (err as Error).message)
+      console.warn('[intranet] cookie 检查失败:', (err as Error).message)
     }
   }, REFRESH_INTERVAL_MS)
-  console.log(`[intranet] cookie 自动刷新已启动，间隔 ${REFRESH_INTERVAL_MS / 60000} 分钟`)
+  console.log(`[intranet] cookie 定时检查已启动，间隔 ${REFRESH_INTERVAL_MS / 60000} 分钟`)
 }
 
 /**

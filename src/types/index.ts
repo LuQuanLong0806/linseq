@@ -209,6 +209,7 @@ export interface TaskUpdateParams {
   reviewTime?: string
   reviewResult?: string
   completeTime?: string
+  reqDocText?: string
   reworkCount?: number
   aiOutput?: string
   aiQuestion?: string

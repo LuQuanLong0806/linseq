@@ -245,12 +245,22 @@ router.get('/req-doc', async (req, res) => {
     }
     const cookie = await getValidCookie()
     const intranetUrl = `http://10.0.12.119:8868/demo/tasklist/YulanData.action?id=${docId}`
-    const resp = await fetch(intranetUrl, {
+    let resp = await fetch(intranetUrl, {
       headers: { Cookie: cookie },
       redirect: 'manual',
     })
+
+    // 302 = session 过期，强制重新登录再试一次
     if (resp.status === 302 || resp.status === 301) {
-      res.status(401).json({ code: 401, message: '内网 session 已过期，请稍后重试', data: null })
+      const freshCookie = await getValidCookie(undefined, true)
+      resp = await fetch(intranetUrl, {
+        headers: { Cookie: freshCookie },
+        redirect: 'manual',
+      })
+    }
+
+    if (resp.status === 302 || resp.status === 301) {
+      res.status(502).json({ code: 502, message: '内网 session 已过期且重新登录失败', data: null })
       return
     }
     if (resp.status !== 200) {

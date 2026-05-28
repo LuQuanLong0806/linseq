@@ -106,7 +106,7 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | `requirement.customDescription` | 用户自己补充的描述。如果 `docText` 为空或模糊，以此为准 |
 | `requirement.acceptanceCriteria` | 验收标准。开发完成后对照这个自查 |
 | `project.path` | **目标项目的本地路径**。你要 `cd` 到这个目录去写代码 |
-| `project.gitBranch` | 目标分支。如果分支不存在就创建：`git checkout -b <branch>` |
+| `project.gitBranch` | **目标开发分支**。你必须在写任何代码之前切换到这个分支（见「分支切换规范」） |
 | `group` | 分组信息。如果非空，说明这个任务和其他任务有关联，见「分组任务」章节 |
 | `review.prevComment` | **仅返工时有值**。上轮审核意见，逐条修复，不要推翻重来 |
 | `review.prevOutput` | **仅返工时有值**。上轮做了什么，了解上下文 |
@@ -344,24 +344,66 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ### 开发铁律
 
-1. **最小变更** — 只写完成任务所需的最少代码
-2. **先读后写** — 改文件前先读完整文件理解逻辑
-3. **保持一致** — 跟项目已有的代码风格、命名走
-4. **自测通过** — 提交前跑 `tsc --noEmit` 和测试
-5. **日志详实** — 每个关键步骤都上报日志
-6. **逐任务完成** — 一个任务 start→complete 走完再做下一个，禁止合并
+1. **先拉后切再写码** — 必须先 `git pull` 拉最新代码，再切到 `project.gitBranch` 分支，严禁在 master/main 上直接改
+2. **最小变更** — 只写完成任务所需的最少代码
+3. **先读后写** — 改文件前先读完整文件理解逻辑
+4. **保持一致** — 跟项目已有的代码风格、命名走
+5. **自测通过** — 提交前跑 `tsc --noEmit` 和测试
+6. **日志详实** — 每个关键步骤都上报日志
+7. **逐任务完成** — 一个任务 start→complete 走完再做下一个，禁止合并
 
 ---
 
 ## 七、开发流程规范
 
-### 7.1 start 之后——准备工作
+### 核心原则：Agent 只管写代码，环境问题交给人类
 
-1. `cd` 到 `project.path`，确认目录存在
-2. 读 `package.json` 了解技术栈
-3. 浏览目录结构，理解分层
-4. 检查 `project.gitBranch`，需要就创建分支
-5. 上报日志：`"已进入项目 [path]，技术栈为 [xxx]"`
+**Agent 职责：** 拉代码 → 切分支 → 写代码 → 自测 → 提交
+**遇到问题：** 立即上报 → 跳过当前任务 → 取下一个 → 等人类处理完再重新拿到这个任务
+
+以下任何一步失败，**不要尝试自己解决**，直接上报 question 说明原因，立刻取下一个任务。
+
+---
+
+### 7.1 start 之后——环境准备（严格按顺序，任何一步失败就上报跳过）
+
+```
+① cd 到 project.path
+   - 目录不存在 → question: "项目路径不存在: xxx" → 取下一个任务
+
+② 检查工作区
+   git status
+   - 有未提交改动（别人或上次遗留）→ question: "当前分支有未提交代码，无法切换分支。请处理后重新入队"
+     → 取下一个任务，不要 stash 别人的代码
+   - 干净 → 继续
+
+③ 拉取最新主分支代码
+   git fetch origin
+   git checkout main（或 master）
+   git pull origin main
+   - pull 失败 → question: "主分支 git pull 失败: [错误信息]"
+     → 取下一个任务
+
+④ 切换到项目配置的开发分支（project.gitBranch）
+   git checkout <branch>       # 分支已存在
+   git checkout -b <branch>    # 分支不存在，从 main 创建
+
+   如果分支已存在，合入最新主分支代码：
+   git merge main
+   - merge 有冲突 → git merge --abort
+     → question: "分支 <branch> 合并 main 时有冲突，文件: [冲突文件列表]。请处理后重新入队"
+     → 取下一个任务
+   - merge 成功 → 继续
+
+⑤ 最终确认
+   git branch --show-current
+   - 输出 != project.gitBranch → question: "分支切换失败，当前在 xxx，期望 xxx"
+     → 取下一个任务
+   - 输出 == project.gitBranch → 环境就绪，可以开发
+
+⑥ 上报日志
+   "已就绪，项目 [path]，分支 [branch]，技术栈 [xxx]"
+```
 
 ### 7.2 开发中
 
@@ -449,31 +491,65 @@ GET  /api/versions/{versionId}/report         — 下载自测报告（Word）
 ```bash
 # 1. 取任务
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
-# → 拿到 taskId，例如 "a1b2c3d4-xxxx-yyyy-zzzz"
+# → 拿到 taskId、project.path、project.gitBranch 等
 
 # 2. 标记开始（URL 中填入上一步拿到的 taskId）
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/start -H "x-agent-key: qcl_xxx"
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/start \
+  -H "x-agent-key: qcl_xxx"
 
-# 3. 上报日志（开发过程中多次调用，taskId 同上）
+# 3. 环境准备（严格按 7.1 节顺序，任何一步失败 → 上报 question → 取下一个任务）
+cd /path/to/project                # ① 目录不存在 → 上报跳过
+git status                         # ② 有未提交代码 → 上报跳过，不要 stash 别人的代码
+git fetch origin                   # ③ 拉取最新
+git checkout main && git pull origin main
+git checkout feature/login         # ④ 切到开发分支（不存在则 checkout -b）
+git merge main                     #   已存在的分支需合入最新 main（有冲突 → 上报跳过）
+git branch --show-current          # ⑤ 确认分支正确
+
+# 4. 上报就绪日志
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json" \
-  -d '{"action":"开发","content":"已进入项目，技术栈为 Vue3+TypeScript"}'
+  -d '{"action":"开发","content":"已就绪，项目 /path/to/project，分支 feature/login，技术栈 Vue3+TypeScript"}'
 
-# 4. 提交产出（taskId 同上）
+# 5. 写代码 + 每完成一步上报日志
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
+  -H "x-agent-key: qcl_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"开发","content":"完成登录页面组件开发"}'
+
+# 6. 自测通过后提交产出
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/complete \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json" \
   -d '{"aiOutput":"新增login.vue","summary":"完成登录页","filesChanged":[{"path":"src/login.vue","action":"created"}],"testResult":{"passed":true,"typeCheck":true,"details":"all clean"}}'
 
-# 5. 取下一个
+# 7. 取下一个
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
+```
+
+### 环境异常（上报跳过，取下一个）
+
+```bash
+# 场景A：当前分支有未提交代码
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
+  -H "x-agent-key: qcl_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
+# → 立即取下一个任务
+
+# 场景B：分支合并冲突
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
+  -H "x-agent-key: qcl_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "分支 feature/login 合并 main 时有冲突，文件: src/auth.ts, src/router.ts。请处理后重新入队"}'
+# → 立即取下一个任务
 ```
 
 ### 需求不清楚
 
 ```bash
-# 提交疑问，任务移出队列（taskId 替换为实际值）
+# 提交疑问，任务移出队列
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json" \
@@ -490,9 +566,11 @@ curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 | 操作 | 允许 |
 |---|---|
 | `git status` / `git diff` / `git log` | 是，查看用 |
+| `git fetch` / `git pull` | 是，拉取最新代码（必须先做） |
 | `git add` / `git commit` | 是，提交代码 |
 | `git checkout -b` / `git branch` | 是，管理分支 |
-| `git stash` | 是，暂存改动 |
+| `git merge main` | 是，开发分支合并最新主分支代码 |
+| `git stash` / `git stash pop` | 是，暂存/恢复改动 |
 | **`git push`** | **禁止** |
 | **`git push --force`** | **禁止** |
 | **`git reset --hard`** | **禁止** |
