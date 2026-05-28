@@ -77,7 +77,7 @@ router.post('/detect-git', (req, res) => {
 router.get('/by-name/:name', (req, res) => {
   try {
     const db = getDb()
-    const row = db.prepare('SELECT * FROM project_configs WHERE name = ?').get(req.params.name) as Record<string, unknown> | undefined
+    const row = db.prepare('SELECT * FROM project_configs WHERE name = ? AND user_id = ?').get(req.params.name, req.userId) as Record<string, unknown> | undefined
     if (!row) return res.json({ code: 0, message: '未找到配置', data: null })
     res.json({ code: 0, message: 'success', data: mapRow(row) })
   } catch (err) {
@@ -86,10 +86,10 @@ router.get('/by-name/:name', (req, res) => {
 })
 
 // 列出所有项目配置
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   try {
     const db = getDb()
-    const rows = db.prepare('SELECT * FROM project_configs ORDER BY updated_at DESC').all() as Record<string, unknown>[]
+    const rows = db.prepare('SELECT * FROM project_configs WHERE user_id = ? ORDER BY updated_at DESC').all(req.userId) as Record<string, unknown>[]
     res.json({ code: 0, message: 'success', data: rows.map(mapRow) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -105,9 +105,9 @@ router.post('/', (req, res) => {
 
     const id = uuidv4()
     db.prepare(`
-      INSERT INTO project_configs (id, name, local_path, git_url, default_branch, branches, tags, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, localPath || '', gitUrl || '', defaultBranch || '', JSON.stringify(branches || []), JSON.stringify(tags || []), note || '')
+      INSERT INTO project_configs (id, name, local_path, git_url, default_branch, branches, tags, note, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, localPath || '', gitUrl || '', defaultBranch || '', JSON.stringify(branches || []), JSON.stringify(tags || []), note || '', req.userId)
 
     const row = db.prepare('SELECT * FROM project_configs WHERE id = ?').get(id) as Record<string, unknown>
     res.json({ code: 0, message: 'success', data: mapRow(row) })
@@ -126,16 +126,16 @@ router.put('/:id', (req, res) => {
     const { name, localPath, gitUrl, defaultBranch, branches, tags, note } = req.body
     const id = req.params.id
 
-    const existing = db.prepare('SELECT id FROM project_configs WHERE id = ?').get(id)
+    const existing = db.prepare('SELECT id FROM project_configs WHERE id = ? AND user_id = ?').get(id, req.userId)
     if (!existing) return res.status(404).json({ code: 404, message: '项目不存在', data: null })
 
     db.prepare(`
       UPDATE project_configs SET name = ?, local_path = ?, git_url = ?, default_branch = ?,
         branches = ?, tags = ?, note = ?, updated_at = datetime('now', 'localtime')
-      WHERE id = ?
+      WHERE id = ? AND user_id = ?
     `).run(
       name, localPath || '', gitUrl || '', defaultBranch || '',
-      JSON.stringify(branches || []), JSON.stringify(tags || []), note || '', id
+      JSON.stringify(branches || []), JSON.stringify(tags || []), note || '', id, req.userId
     )
 
     const row = db.prepare('SELECT * FROM project_configs WHERE id = ?').get(id) as Record<string, unknown>
@@ -152,7 +152,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getDb()
-    db.prepare('DELETE FROM project_configs WHERE id = ?').run(req.params.id)
+    db.prepare('DELETE FROM project_configs WHERE id = ? AND user_id = ?').run(req.params.id, req.userId)
     res.json({ code: 0, message: 'success', data: null })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -163,7 +163,7 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/fetch-branches', (req, res) => {
   try {
     const db = getDb()
-    const row = db.prepare('SELECT * FROM project_configs WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
+    const row = db.prepare('SELECT * FROM project_configs WHERE id = ? AND user_id = ?').get(req.params.id, req.userId) as Record<string, unknown> | undefined
     if (!row) return res.status(404).json({ code: 404, message: '项目不存在', data: null })
 
     const gitUrl = (row.git_url as string) || ''

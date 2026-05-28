@@ -45,33 +45,34 @@ const router = Router()
 // ========== 待办队列持久化 ==========
 
 /** 读取 todoList */
-function getTodoList(): string[] {
+function getTodoList(userId: string): string[] {
   const db = getDb()
-  const row = db.prepare("SELECT value FROM sync_config WHERE key = 'todoList'").get() as { value: string } | undefined
+  const row = db.prepare("SELECT value FROM sync_config WHERE key = ?").get(`todoList_${userId}`) as { value: string } | undefined
   if (!row) return []
   try { return JSON.parse(row.value) } catch { return [] }
 }
 
 /** 保存 todoList */
-function saveTodoList(list: string[]): void {
+function saveTodoList(list: string[], userId: string): void {
   const db = getDb()
   db.prepare(`
-    INSERT INTO sync_config (key, value) VALUES ('todoList', ?)
+    INSERT INTO sync_config (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).run(JSON.stringify(list))
+  `).run(`todoList_${userId}`, JSON.stringify(list))
 }
 
 /** 从 todoList 移除指定任务 */
-function removeFromTodoList(taskId: string): void {
-  const list = getTodoList().filter(id => id !== taskId)
-  saveTodoList(list)
+function removeFromTodoList(taskId: string, userId: string): void {
+  const list = getTodoList(userId).filter(id => id !== taskId)
+  saveTodoList(list, userId)
 }
 
 // ========== 待办队列排序接口 ==========
 
-router.get('/todo-order', (_req, res) => {
+router.get('/todo-order', (req, res) => {
   try {
-    res.json({ code: 0, message: 'success', data: { todoList: getTodoList() } })
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    res.json({ code: 0, message: 'success', data: { todoList: getTodoList(req.userId) } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -79,11 +80,12 @@ router.get('/todo-order', (_req, res) => {
 
 router.post('/todo-order', (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const { todoList } = req.body as { todoList: string[] }
     if (!Array.isArray(todoList)) {
       return res.status(400).json({ code: 400, message: 'todoList 必须是数组', data: null })
     }
-    saveTodoList(todoList)
+    saveTodoList(todoList, req.userId)
     res.json({ code: 0, message: 'success', data: null })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -96,10 +98,11 @@ router.post('/todo-order', (req, res) => {
  * GET /api/agent/next-task
  * 从待办队列取下一个任务，返回完整开发上下文
  */
-router.get('/next-task', (_req, res) => {
+router.get('/next-task', (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
-    const todoList = getTodoList()
+    const todoList = getTodoList(req.userId)
 
     if (todoList.length === 0) {
       return res.json({ code: 0, message: '待办队列为空', data: null })
@@ -108,13 +111,13 @@ router.get('/next-task', (_req, res) => {
     // 优先取 ai_rework 状态的
     let taskId: string | undefined
     for (const id of todoList) {
-      const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ?").get(id) as { ai_status: string } | undefined
+      const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ? AND user_id = ?").get(id, req.userId) as { ai_status: string } | undefined
       if (r?.ai_status === 'ai_rework') { taskId = id; break }
     }
     // 没有返工任务，取第一个非 ai_question 的
     if (!taskId) {
       for (const id of todoList) {
-        const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ?").get(id) as { ai_status: string } | undefined
+        const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ? AND user_id = ?").get(id, req.userId) as { ai_status: string } | undefined
         if (r?.ai_status !== 'ai_question') { taskId = id; break }
       }
     }
@@ -123,9 +126,9 @@ router.get('/next-task', (_req, res) => {
       return res.json({ code: 0, message: '所有任务都在等待人工回复', data: null })
     }
 
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(taskId, req.userId) as Record<string, unknown> | undefined
     if (!row) {
-      removeFromTodoList(taskId)
+      removeFromTodoList(taskId, req.userId)
       return res.json({ code: 0, message: '任务不存在，已从队列移除', data: null })
     }
 
@@ -159,7 +162,7 @@ router.get('/next-task', (_req, res) => {
     let groupData: { id: string; name: string; description: string; taskCount: number; completedInGroup: number; siblingTasks: { taskId: string; title: string; aiStatus: string }[] } | null = null
     const groupId = (row.group_id as string) || ''
     if (groupId) {
-      const groupRow = db.prepare('SELECT id, name, task_ids, description FROM task_groups WHERE id = ?').get(groupId) as { id: string; name: string; task_ids: string; description: string } | undefined
+      const groupRow = db.prepare('SELECT id, name, task_ids, description FROM task_groups WHERE id = ? AND user_id = ?').get(groupId, req.userId) as { id: string; name: string; task_ids: string; description: string } | undefined
       if (groupRow) {
         const groupTaskIds: string[] = JSON.parse(groupRow.task_ids || '[]')
         const siblings = groupTaskIds
@@ -222,9 +225,10 @@ router.get('/next-task', (_req, res) => {
  */
 router.post('/task/:id/start', (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
     const id = req.params.id
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId) as Record<string, unknown> | undefined
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
@@ -244,13 +248,14 @@ router.post('/task/:id/start', (req, res) => {
  */
 router.post('/task/:id/log', (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
     const id = req.params.id
     const { action = '开发', content = '' } = req.body as { action?: string; content?: string }
     if (!content) {
       return res.status(400).json({ code: 400, message: '请输入记录内容', data: null })
     }
-    const row = db.prepare('SELECT id FROM tasks WHERE id = ?').get(id)
+    const row = db.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
@@ -269,6 +274,7 @@ router.post('/task/:id/log', (req, res) => {
  */
 router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
     const id = req.params.id
 
@@ -295,7 +301,7 @@ router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, r
       testResult = (body.testResult as { passed: boolean; typeCheck: boolean; details: string }) || { passed: false, typeCheck: false, details: '' }
     }
 
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId) as Record<string, unknown> | undefined
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
@@ -341,7 +347,7 @@ router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, r
     `).run(aiOutput, id)
 
     // 从 todoList 移除
-    removeFromTodoList(id)
+    removeFromTodoList(id, req.userId)
 
     addDevLog(db, id, '开发完成', summary || `完成开发，生成版本 ${versionNumber}`, 'agent', false)
 
@@ -382,6 +388,7 @@ router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, r
  */
 router.post('/task/:id/question', (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
     const id = req.params.id
     const { question } = req.body as { question?: string }
@@ -389,14 +396,14 @@ router.post('/task/:id/question', (req, res) => {
       return res.status(400).json({ code: 400, message: '请输入疑问内容', data: null })
     }
 
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId) as Record<string, unknown> | undefined
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
 
     db.prepare("UPDATE tasks SET ai_status = 'ai_question', ai_question = ?, update_time = datetime('now', 'localtime') WHERE id = ?").run(question, id)
     // 从 todoList 移出，让 AI 可以继续取下一个任务
-    removeFromTodoList(id)
+    removeFromTodoList(id, req.userId)
     addDevLog(db, id, '疑问', `AI 提出疑问: ${question}`, 'agent', false)
 
     res.json({ code: 0, message: '已提交疑问并移至待回复列表', data: { taskId: id, aiStatus: 'ai_question' } })
@@ -409,8 +416,9 @@ router.post('/task/:id/question', (req, res) => {
  * POST /api/agent/sync
  * 触发内网同步
  */
-router.post('/sync', async (_req, res) => {
+router.post('/sync', async (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const { scrapTasksFromIntranet } = await import('../scraper/intranet.js')
     const tasks = await scrapTasksFromIntranet()
     const db = getDb()
@@ -424,14 +432,14 @@ router.post('/sync', async (_req, res) => {
         project, customer, customer_manager, task_type, bug_or_req, work_hours, submit_time,
         developer, supervisor, supervisor_id, product_manager, dev_leader, handler,
         department, department_id, is_closed, intranet_node, intranet_node_name, node_index,
-        stale_days, flow_days, days_since_create, reject_flag, flow_id, work_id, version
+        stale_days, flow_days, days_since_create, reject_flag, flow_id, work_id, version, user_id
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?, 1,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(source_id) DO UPDATE SET
         intranet_id = excluded.intranet_id, title = excluded.title, description = excluded.description,
@@ -446,12 +454,13 @@ router.post('/sync', async (_req, res) => {
         is_closed = excluded.is_closed, intranet_node = excluded.intranet_node,
         intranet_node_name = excluded.intranet_node_name, stale_days = excluded.stale_days,
         flow_days = excluded.flow_days, days_since_create = excluded.days_since_create,
-        reject_flag = excluded.reject_flag, version = excluded.version
+        reject_flag = excluded.reject_flag, version = excluded.version,
+        user_id = excluded.user_id
     `)
 
     for (const task of tasks) {
       const taskid = uuidv4()
-      const exists = db.prepare('SELECT id, title, status FROM tasks WHERE source_id = ?').get(task.sourceId) as Record<string, unknown> | undefined
+      const exists = db.prepare('SELECT id, title, status FROM tasks WHERE source_id = ? AND user_id = ?').get(task.sourceId, req.userId) as Record<string, unknown> | undefined
 
       upsertStmt.run(
         taskid, task.sourceId, task.intranetId, task.title, task.description, task.module, task.moduleShort, task.product,
@@ -459,7 +468,8 @@ router.post('/sync', async (_req, res) => {
         task.project, task.customer, task.customerManager, task.taskType, task.bugOrReq, task.workHours, task.submitTime,
         task.developer, task.supervisor, task.supervisorId, task.productManager, task.devLeader, task.handler,
         task.department, task.departmentId, task.isClosed ? 1 : 0, task.intranetNode, task.intranetNodeName, task.nodeIndex,
-        task.staleDays, task.flowDays, task.daysSinceCreate, task.rejectFlag ? 1 : 0, task.flowId, task.workId, task.version
+        task.staleDays, task.flowDays, task.daysSinceCreate, task.rejectFlag ? 1 : 0, task.flowId, task.workId, task.version,
+        req.userId
       )
 
       if (!exists) newTasks++
@@ -468,18 +478,18 @@ router.post('/sync', async (_req, res) => {
     }
 
     // 同步后自动关联项目配置
-    const configs = db.prepare("SELECT name, local_path, default_branch FROM project_configs WHERE local_path != ''").all() as { name: string; local_path: string; default_branch: string }[]
+    const configs = db.prepare("SELECT name, local_path, default_branch FROM project_configs WHERE local_path != '' AND user_id = ?").all(req.userId) as { name: string; local_path: string; default_branch: string }[]
     if (configs.length > 0) {
-      const updateStmt = db.prepare("UPDATE tasks SET project_path = ?, git_branch = ? WHERE project = ? AND (project_path = '' OR project_path IS NULL)")
+      const updateStmt = db.prepare("UPDATE tasks SET project_path = ?, git_branch = ? WHERE project = ? AND user_id = ? AND (project_path = '' OR project_path IS NULL)")
       for (const cfg of configs) {
-        updateStmt.run(cfg.local_path, cfg.default_branch, cfg.name)
+        updateStmt.run(cfg.local_path, cfg.default_branch, cfg.name, req.userId)
       }
     }
 
     db.prepare(`
-      INSERT INTO sync_records (id, status, total_tasks, new_tasks, updated_tasks, unchanged_tasks)
-      VALUES (?, 'success', ?, ?, ?, ?)
-    `).run(uuidv4(), tasks.length, newTasks, updatedTasks, unchangedTasks)
+      INSERT INTO sync_records (id, status, total_tasks, new_tasks, updated_tasks, unchanged_tasks, user_id)
+      VALUES (?, 'success', ?, ?, ?, ?, ?)
+    `).run(uuidv4(), tasks.length, newTasks, updatedTasks, unchangedTasks, req.userId)
 
     res.json({ code: 0, message: '同步成功', data: { totalTasks: tasks.length, newTasks, updatedTasks, unchangedTasks } })
   } catch (err) {
@@ -491,18 +501,19 @@ router.post('/sync', async (_req, res) => {
  * GET /api/agent/stats
  * 队列统计
  */
-router.get('/stats', (_req, res) => {
+router.get('/stats', (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
-    const todoList = getTodoList()
+    const todoList = getTodoList(req.userId)
 
-    const total = (db.prepare('SELECT COUNT(*) as c FROM tasks WHERE is_closed = 0').get() as { c: number }).c
-    const inDev = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_dev'").get() as { c: number }).c
-    const inReview = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_review'").get() as { c: number }).c
-    const rework = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_rework'").get() as { c: number }).c
+    const total = (db.prepare('SELECT COUNT(*) as c FROM tasks WHERE is_closed = 0 AND user_id = ?').get(req.userId) as { c: number }).c
+    const inDev = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_dev' AND user_id = ?").get(req.userId) as { c: number }).c
+    const inReview = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_review' AND user_id = ?").get(req.userId) as { c: number }).c
+    const rework = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_rework' AND user_id = ?").get(req.userId) as { c: number }).c
 
     // 当前正在开发的任务
-    const currentTask = db.prepare("SELECT id, title, ai_status FROM tasks WHERE ai_status = 'ai_dev' LIMIT 1").get() as { id: string; title: string; ai_status: string } | undefined
+    const currentTask = db.prepare("SELECT id, title, ai_status FROM tasks WHERE ai_status = 'ai_dev' AND user_id = ? LIMIT 1").get(req.userId) as { id: string; title: string; ai_status: string } | undefined
 
     res.json({
       code: 0,

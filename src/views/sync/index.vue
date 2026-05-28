@@ -1,11 +1,61 @@
 <template>
   <div class="sync-page">
     <el-row :gutter="20">
-      <!-- 同步配置 -->
+      <!-- 用户管理 -->
       <el-col :span="12">
         <div class="cyber-panel config-card">
           <div class="panel-header">
-            <span class="card-title">🔗 内网同步配置</span>
+            <span class="card-title">用户管理</span>
+            <el-tag v-if="userStore.currentUser" type="success" effect="dark" size="small" style="margin-left: 8px;">
+              当前: {{ userStore.currentUser.displayName }}
+            </el-tag>
+          </div>
+
+          <!-- 登录表单 -->
+          <div class="login-form">
+            <el-form :model="loginForm" label-width="90px" label-position="left" @submit.prevent="handleLogin">
+              <el-form-item label="内网账号">
+                <el-input v-model="loginForm.username" placeholder="输入内网用户名" />
+              </el-form-item>
+              <el-form-item label="密码">
+                <el-input v-model="loginForm.password" type="password" placeholder="输入内网密码" show-password />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="handleLogin" :loading="userStore.loginLoading">
+                  登录内网
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+
+          <!-- 已有用户列表 -->
+          <div v-if="userStore.users.length > 0" class="user-list">
+            <div class="user-list-title">已登录用户</div>
+            <div
+              v-for="user in userStore.users" :key="user.username"
+              class="user-item"
+              :class="{ active: userStore.currentUser?.username === user.username, switching: switchingUser === user.username }"
+              @click="handleSwitchUser(user.username)"
+            >
+              <div class="user-info">
+                <span class="user-name">{{ user.displayName }}</span>
+                <el-tag v-if="userStore.currentUser?.username === user.username" type="success" size="small" effect="dark">当前</el-tag>
+                <el-tag v-if="user.cookieExpiry && !isExpired(user.cookieExpiry)" type="info" size="small">已登录</el-tag>
+                <el-tag v-else-if="user.cookieExpiry" type="warning" size="small">已过期</el-tag>
+                <el-tag v-else type="danger" size="small">未登录</el-tag>
+              </div>
+              <div class="user-actions" @click.stop>
+                <el-button link size="small" type="primary" @click="handleRefreshCookie(user.username)" :loading="refreshingUser === user.username">刷新登录</el-button>
+                <el-button link size="small" type="danger" @click="handleDeleteUser(user.username)">删除</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 同步配置 -->
+        <div class="cyber-panel config-card" style="margin-top: 20px;">
+          <div class="panel-header">
+            <span class="card-title">同步配置</span>
           </div>
           <el-form :model="syncStore.config" label-width="100px" label-position="top">
             <el-form-item label="内网地址">
@@ -18,35 +68,37 @@
               <el-input-number v-model="syncStore.config.syncInterval" :min="5" :max="1440" :step="5" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="handleSaveConfig">保存配置</el-button>
+              <el-button type="primary" @click="handleSaveConfig" :loading="savingConfig">保存配置</el-button>
             </el-form-item>
           </el-form>
         </div>
 
-        <!-- 登录状态 -->
-        <div class="cyber-panel config-card" style="margin-top: 20px;">
+        <!-- Agent Key 管理 -->
+        <div class="cyber-panel config-card" style="margin-top: 20px;" v-if="userStore.currentUser">
           <div class="panel-header">
-            <span class="card-title">🔐 登录状态</span>
+            <span class="card-title">Agent Key 管理</span>
+            <el-button type="primary" size="small" style="margin-left: auto;" @click="handleCreateKey" :loading="creatingKey">生成新 Key</el-button>
           </div>
-          <div class="login-status">
-            <el-descriptions :column="1" border size="small">
-              <el-descriptions-item label="登录状态">
-                <el-tag :type="loginStatus.isLoggedIn ? 'success' : 'danger'" effect="dark">
-                  {{ loginStatus.isLoggedIn ? '已登录' : '未登录' }}
-                </el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item label="Cookie过期时间">
-                {{ syncStore.config.cookieExpiry || '未登录' }}
-              </el-descriptions-item>
-              <el-descriptions-item label="上次同步时间">
-                {{ syncStore.config.lastSyncTime || '从未同步' }}
-              </el-descriptions-item>
-            </el-descriptions>
-            <div class="login-actions" style="margin-top: 16px;">
-              <el-button type="primary" @click="showLoginDialog = true">登录内网</el-button>
-              <el-button @click="checkLogin">检查登录状态</el-button>
+          <div class="agent-key-list" v-if="userStore.agentKeys.length > 0">
+            <div v-for="ak in userStore.agentKeys" :key="ak.id" class="agent-key-item">
+              <div class="key-info">
+                <span class="key-name">{{ ak.name || '未命名' }}</span>
+                <el-tag :type="ak.enabled ? 'success' : 'info'" size="small">{{ ak.enabled ? '启用' : '禁用' }}</el-tag>
+                <span class="key-time" v-if="ak.lastUsedAt">最后使用: {{ ak.lastUsedAt }}</span>
+              </div>
+              <div class="key-value">
+                <code>{{ ak.key }}</code>
+                <el-button link size="small" type="primary" @click="copyKey(ak.key)">复制</el-button>
+              </div>
+              <div class="key-actions">
+                <el-button link size="small" :type="ak.enabled ? 'warning' : 'success'" @click="handleToggleKey(ak.id)" :loading="togglingKey === ak.id">
+                  {{ ak.enabled ? '禁用' : '启用' }}
+                </el-button>
+                <el-button link size="small" type="danger" @click="handleDeleteKey(ak.id)">删除</el-button>
+              </div>
             </div>
           </div>
+          <div v-else class="empty-keys">暂无 Agent Key，点击上方按钮生成</div>
         </div>
       </el-col>
 
@@ -54,7 +106,7 @@
       <el-col :span="12">
         <div class="cyber-panel sync-action-card">
           <div class="panel-header">
-            <span class="card-title">🔄 同步操作</span>
+            <span class="card-title">同步操作</span>
           </div>
           <div class="sync-area">
             <el-button
@@ -62,18 +114,34 @@
               size="large"
               :icon="Refresh"
               :loading="syncStore.syncing"
+              :disabled="!userStore.currentUser"
               @click="handleSync"
               class="sync-btn"
             >
               {{ syncStore.syncing ? '同步中...' : '一键同步内网任务' }}
             </el-button>
-            <p class="sync-hint">将从内网系统抓取最新任务数据，自动去重更新</p>
+            <p class="sync-hint" v-if="!userStore.currentUser">请先登录内网账号</p>
+            <p class="sync-hint" v-else>将同步 {{ userStore.currentUser.displayName }} 的内网任务数据</p>
+          </div>
+
+          <!-- 登录状态 -->
+          <div v-if="userStore.currentUser" class="login-info">
+            <el-descriptions :column="1" border size="small">
+              <el-descriptions-item label="当前用户">{{ userStore.currentUser.displayName }}</el-descriptions-item>
+              <el-descriptions-item label="登录状态">
+                <el-tag :type="isExpired(userStore.currentUser.cookieExpiry) ? 'warning' : 'success'" effect="dark" size="small">
+                  {{ userStore.currentUser.cookieExpiry && !isExpired(userStore.currentUser.cookieExpiry) ? '已登录' : '需刷新' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="Cookie过期">{{ userStore.currentUser.cookieExpiry || '未登录' }}</el-descriptions-item>
+              <el-descriptions-item label="上次同步">{{ userStore.currentUser.lastSyncTime || '从未同步' }}</el-descriptions-item>
+            </el-descriptions>
           </div>
         </div>
 
         <div class="cyber-panel config-card" style="margin-top: 20px;">
           <div class="panel-header">
-            <span class="card-title">📋 同步记录</span>
+            <span class="card-title">同步记录</span>
           </div>
           <el-timeline v-if="syncStore.syncRecords.length">
             <el-timeline-item
@@ -100,38 +168,82 @@
         </div>
       </el-col>
     </el-row>
-
-    <!-- 登录弹窗 -->
-    <el-dialog v-model="showLoginDialog" title="登录内网系统" width="450px">
-      <el-form :model="loginForm" label-width="80px">
-        <el-form-item label="用户名">
-          <el-input v-model="loginForm.username" placeholder="请输入内网用户名" />
-        </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showLoginDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleLogin" :loading="loginLoading">登录</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useSyncStore } from '@/stores/sync'
+import { useUserStore } from '@/stores/user'
 import { Refresh } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const syncStore = useSyncStore()
-const showLoginDialog = ref(false)
-const loginLoading = ref(false)
+const userStore = useUserStore()
+
 const loginForm = reactive({ username: '', password: '' })
-const loginStatus = reactive({ isLoggedIn: false, expiry: '' })
+const switchingUser = ref('')
+const refreshingUser = ref('')
+const savingConfig = ref(false)
+const creatingKey = ref(false)
+const togglingKey = ref('')
+
+function isExpired(expiry: string) {
+  return !expiry || new Date(expiry).getTime() < Date.now()
+}
+
+async function handleLogin() {
+  if (!loginForm.username || !loginForm.password) {
+    ElMessage.warning('请输入用户名和密码')
+    return
+  }
+  try {
+    await userStore.login(loginForm.username, loginForm.password)
+    loginForm.username = ''
+    loginForm.password = ''
+    ElMessage.success(`已登录为 ${userStore.currentUser?.displayName}`)
+  } catch {
+    ElMessage.error('登录失败，请检查用户名密码')
+  }
+}
+
+async function handleSwitchUser(username: string) {
+  if (userStore.currentUser?.username === username) return
+  switchingUser.value = username
+  try {
+    await userStore.switchUser(username)
+    await syncStore.fetchConfig()
+    await syncStore.fetchSyncRecords()
+    ElMessage.success(`已切换到 ${userStore.currentUser?.displayName}`)
+  } catch {
+    ElMessage.error('切换失败')
+  } finally {
+    switchingUser.value = ''
+  }
+}
+
+async function handleDeleteUser(username: string) {
+  try {
+    await ElMessageBox.confirm(`确定删除用户「${username}」及其所有数据？`, '删除用户', { type: 'warning' })
+    await userStore.deleteUser(username)
+    ElMessage.success('已删除')
+  } catch { /* cancel */ }
+}
+
+async function handleRefreshCookie(username: string) {
+  refreshingUser.value = username
+  try {
+    await userStore.refreshCookie(username)
+    ElMessage.success('登录已刷新')
+  } catch {
+    ElMessage.error('刷新失败，请重新登录')
+  } finally {
+    refreshingUser.value = ''
+  }
+}
 
 async function handleSaveConfig() {
+  savingConfig.value = true
   try {
     await syncStore.updateConfig({
       intranetUrl: syncStore.config.intranetUrl,
@@ -141,6 +253,8 @@ async function handleSaveConfig() {
     ElMessage.success('配置已保存')
   } catch {
     ElMessage.error('保存失败')
+  } finally {
+    savingConfig.value = false
   }
 }
 
@@ -153,36 +267,52 @@ async function handleSync() {
   }
 }
 
-async function checkLogin() {
+async function handleCreateKey() {
+  if (!userStore.currentUser) return
+  creatingKey.value = true
   try {
-    const res = await syncStore.checkLoginStatus()
-    loginStatus.isLoggedIn = res.data.isLoggedIn
-    loginStatus.expiry = res.data.expiry
-    ElMessage.success(loginStatus.isLoggedIn ? '登录状态正常' : '未登录，请先登录')
+    const name = `Key-${userStore.agentKeys.length + 1}`
+    await userStore.createAgentKey(userStore.currentUser.username, name)
+    ElMessage.success('Agent Key 已生成')
   } catch {
-    ElMessage.error('检查失败')
+    ElMessage.error('生成失败')
+  } finally {
+    creatingKey.value = false
   }
 }
 
-async function handleLogin() {
-  if (!loginForm.username || !loginForm.password) {
-    ElMessage.warning('请输入用户名和密码')
-    return
-  }
-  loginLoading.value = true
+async function handleToggleKey(id: string) {
+  togglingKey.value = id
   try {
-    await syncStore.loginIntranet(loginForm.username, loginForm.password)
-    showLoginDialog.value = false
-    loginStatus.isLoggedIn = true
-    ElMessage.success('登录成功')
+    await userStore.toggleAgentKey(id)
+    ElMessage.success('状态已切换')
   } catch {
-    ElMessage.error('登录失败，请检查用户名密码')
+    ElMessage.error('操作失败')
   } finally {
-    loginLoading.value = false
+    togglingKey.value = ''
   }
+}
+
+async function handleDeleteKey(id: string) {
+  try {
+    await ElMessageBox.confirm('确定删除该 Agent Key？删除后使用该 Key 的 Agent 将无法访问。', '删除确认', { type: 'warning' })
+    await userStore.deleteAgentKey(id)
+    ElMessage.success('已删除')
+  } catch { /* cancel */ }
+}
+
+function copyKey(key: string) {
+  navigator.clipboard.writeText(key).then(() => {
+    ElMessage.success('已复制到剪贴板')
+  }).catch(() => {
+    ElMessage.error('复制失败')
+  })
 }
 
 onMounted(() => {
+  userStore.init().then(() => {
+    if (userStore.currentUser) userStore.fetchAgentKeys(userStore.currentUser.username)
+  })
   syncStore.fetchConfig()
   syncStore.fetchSyncRecords()
 })
@@ -199,11 +329,73 @@ onMounted(() => {
     padding: 14px 20px;
     border-bottom: 1px solid rgba(0,229,255,0.08);
     margin-bottom: 16px;
+    display: flex;
+    align-items: center;
   }
 
   .card-title {
     font-weight: 600;
     font-size: 15px;
+  }
+}
+
+.login-form {
+  padding: 0 20px 16px;
+}
+
+.user-list {
+  padding: 0 20px 16px;
+
+  .user-list-title {
+    font-size: 12px;
+    color: #8c8ca1;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,229,255,0.08);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: rgba(0,229,255,0.2);
+    background: rgba(0,229,255,0.04);
+  }
+
+  &.active {
+    border-color: rgba(0,229,255,0.3);
+    background: rgba(0,229,255,0.08);
+  }
+
+  &.switching {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .user-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e0e0ef;
+  }
+
+  .user-actions {
+    display: flex;
+    gap: 4px;
   }
 }
 
@@ -227,11 +419,8 @@ onMounted(() => {
   }
 }
 
-.login-status {
-  .login-actions {
-    display: flex;
-    gap: 10px;
-  }
+.login-info {
+  padding: 0 20px 20px;
 }
 
 .sync-record {
@@ -258,5 +447,67 @@ onMounted(() => {
   text-align: center;
   color: #c0c4cc;
   padding: 40px 0;
+}
+
+.agent-key-list {
+  padding: 0 20px 16px;
+}
+
+.agent-key-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,229,255,0.08);
+  margin-bottom: 8px;
+
+  .key-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+
+    .key-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #e0e0ef;
+    }
+
+    .key-time {
+      font-size: 11px;
+      color: #8c8ca1;
+      margin-left: auto;
+    }
+  }
+
+  .key-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+
+    code {
+      flex: 1;
+      font-size: 11px;
+      color: #00E5FF;
+      background: rgba(0,229,255,0.06);
+      padding: 4px 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .key-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+  }
+}
+
+.empty-keys {
+  text-align: center;
+  color: #c0c4cc;
+  padding: 20px 0;
+  font-size: 13px;
 }
 </style>

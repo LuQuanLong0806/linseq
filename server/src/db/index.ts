@@ -228,6 +228,61 @@ export function initDatabase(): void {
     )
   `)
 
+  // ========== 用户表 ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      username TEXT PRIMARY KEY,
+      password TEXT NOT NULL,
+      display_name TEXT DEFAULT '',
+      cookie TEXT DEFAULT '',
+      cookie_expiry TEXT DEFAULT '',
+      last_sync_time TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+
+  // 已有表加 user_id 列（安全 ALTER，兼容已有数据）
+  const userIdColumns: [string, string][] = [
+    ['tasks', 'TEXT DEFAULT ""'],
+    ['sync_config', 'TEXT DEFAULT ""'],
+    ['sync_records', 'TEXT DEFAULT ""'],
+    ['project_configs', 'TEXT DEFAULT ""'],
+    ['task_groups', 'TEXT DEFAULT ""'],
+  ]
+  for (const [table, type] of userIdColumns) {
+    try { db.exec(`ALTER TABLE ${table} ADD COLUMN user_id ${type}`) } catch { /* 已存在 */ }
+  }
+
+  // 迁移：首次启动时，读取旧 sync_config 中的 loginUser，创建默认用户并绑定所有数据
+  const userCount = (db.prepare('SELECT COUNT(*) as c FROM users').get() as { c: number }).c
+  if (userCount === 0) {
+    const loginRow = db.prepare("SELECT value FROM sync_config WHERE key = 'loginUser'").get() as { value: string } | undefined
+    const legacyUser = loginRow ? (loginRow.value.replace(/^"|"$/g, '')) : 'luql'
+    db.prepare('INSERT OR IGNORE INTO users (username, password, display_name) VALUES (?, ?, ?)').run(legacyUser, '123', legacyUser)
+    for (const [table] of userIdColumns) {
+      db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id = ''`).run(legacyUser)
+    }
+    // 设置默认当前用户
+    db.prepare("INSERT OR IGNORE INTO sync_config (key, value) VALUES ('currentUser', ?)").run(JSON.stringify(legacyUser))
+    console.log(`[DB] 迁移完成: 默认用户 ${legacyUser}`)
+  }
+
+  // ========== Agent Key 表 ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_keys (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      key TEXT UNIQUE NOT NULL,
+      name TEXT DEFAULT '',
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      last_used_at TEXT DEFAULT '',
+      FOREIGN KEY (user_id) REFERENCES users(username) ON DELETE CASCADE
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_keys_key ON agent_keys(key)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_keys_user ON agent_keys(user_id)')
+
   // ========== 索引 ==========
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -238,6 +293,7 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_is_closed ON tasks(is_closed);
     CREATE INDEX IF NOT EXISTS idx_tasks_project_path ON tasks(project_path);
     CREATE INDEX IF NOT EXISTS idx_tasks_ai_status ON tasks(ai_status);
+    CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
     CREATE INDEX IF NOT EXISTS idx_dev_logs_task_id ON dev_logs(task_id);
     CREATE INDEX IF NOT EXISTS idx_project_configs_name ON project_configs(name);
   `)

@@ -61,6 +61,9 @@ function mapRow(r: Record<string, unknown>): TaskVersion {
 router.get('/task/:taskId', (req, res) => {
   try {
     const db = getDb()
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(req.params.taskId) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { res.status(403).json({ code: 403, message: '无权访问', data: null }); return }
     const rows = db.prepare(
       'SELECT * FROM task_versions WHERE task_id = ? ORDER BY iteration ASC'
     ).all(req.params.taskId) as Record<string, unknown>[]
@@ -76,6 +79,10 @@ router.post('/task/:taskId', (req, res) => {
     const db = getDb()
     const { taskId } = req.params
     const { aiOutput, devLogs, aiDurationMs, prevReviewComment } = req.body
+
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(taskId) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { res.status(403).json({ code: 403, message: '无权访问', data: null }); return }
 
     // 查当前最大 iteration
     const row = db.prepare(
@@ -119,6 +126,10 @@ router.post('/:id/approve', (req, res) => {
     const version = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
     if (!version) { res.status(404).json({ code: 404, message: '版本不存在', data: null }); return }
 
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(version.task_id as string) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { res.status(403).json({ code: 403, message: '无权访问', data: null }); return }
+
     db.prepare(
       "UPDATE task_versions SET status = 'approved', is_final = 1 WHERE id = ?"
     ).run(req.params.id)
@@ -143,6 +154,10 @@ router.post('/:id/reject', (req, res) => {
     const version = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
     if (!version) { res.status(404).json({ code: 404, message: '版本不存在', data: null }); return }
 
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(version.task_id as string) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { res.status(403).json({ code: 403, message: '无权访问', data: null }); return }
+
     db.prepare(
       "UPDATE task_versions SET status = 'rejected' WHERE id = ?"
     ).run(req.params.id)
@@ -164,10 +179,13 @@ router.post('/:id/reject', (req, res) => {
 router.get('/:id/report', (req, res) => {
   try {
     const db = getDb()
-    const row = db.prepare('SELECT report_path FROM task_versions WHERE id = ?').get(req.params.id) as { report_path: string } | undefined
+    const row = db.prepare('SELECT report_path, task_id FROM task_versions WHERE id = ?').get(req.params.id) as { report_path: string; task_id: string } | undefined
     if (!row || !row.report_path) {
       return res.status(404).json({ code: 404, message: '报告文件不存在', data: null })
     }
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(row.task_id) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { return res.status(403).json({ code: 403, message: '无权访问', data: null }) }
     if (!fs.existsSync(row.report_path)) {
       return res.status(404).json({ code: 404, message: '报告文件已丢失', data: null })
     }
@@ -183,6 +201,9 @@ router.get('/:id', (req, res) => {
     const db = getDb()
     const row = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
     if (!row) { res.status(404).json({ code: 404, message: '版本不存在', data: null }); return }
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(row.task_id as string) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { res.status(403).json({ code: 403, message: '无权访问', data: null }); return }
     res.json({ code: 0, message: 'success', data: mapRow(row) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })

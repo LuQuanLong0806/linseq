@@ -26,10 +26,10 @@ function mapRow(r: Record<string, unknown>): TaskGroup {
 }
 
 // 获取所有分组
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   try {
     const db = getDb()
-    const rows = db.prepare('SELECT * FROM task_groups ORDER BY created_at DESC').all() as Record<string, unknown>[]
+    const rows = db.prepare('SELECT * FROM task_groups WHERE user_id = ? ORDER BY created_at DESC').all(req.userId) as Record<string, unknown>[]
     res.json({ code: 0, message: 'success', data: rows.map(mapRow) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -45,8 +45,8 @@ router.post('/', (req, res) => {
     const id = uuidv4()
     const ids = JSON.stringify(taskIds || [])
     db.prepare(
-      'INSERT INTO task_groups (id, name, task_ids, description) VALUES (?, ?, ?, ?)'
-    ).run(id, name, ids, description || '')
+      'INSERT INTO task_groups (id, name, task_ids, description, user_id) VALUES (?, ?, ?, ?, ?)'
+    ).run(id, name, ids, description || '', req.userId)
 
     // 更新任务的 group_id
     if (Array.isArray(taskIds) && taskIds.length > 0) {
@@ -70,7 +70,7 @@ router.put('/:id', (req, res) => {
     const { name, taskIds, description } = req.body
 
     // 获取旧分组数据
-    const old = db.prepare('SELECT task_ids FROM task_groups WHERE id = ?').get(req.params.id) as { task_ids: string } | undefined
+    const old = db.prepare('SELECT task_ids FROM task_groups WHERE id = ? AND user_id = ?').get(req.params.id, req.userId) as { task_ids: string } | undefined
     if (!old) { res.status(404).json({ code: 404, message: '分组不存在', data: null }); return }
 
     const oldIds: string[] = JSON.parse(old.task_ids || '[]')
@@ -110,7 +110,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getDb()
-    const old = db.prepare('SELECT task_ids FROM task_groups WHERE id = ?').get(req.params.id) as { task_ids: string } | undefined
+    const old = db.prepare('SELECT task_ids FROM task_groups WHERE id = ? AND user_id = ?').get(req.params.id, req.userId) as { task_ids: string } | undefined
     if (old) {
       const oldIds: string[] = JSON.parse(old.task_ids || '[]')
       const clearStmt = db.prepare("UPDATE tasks SET group_id = '' WHERE id = ?")

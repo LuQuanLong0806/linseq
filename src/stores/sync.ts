@@ -42,17 +42,6 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  async function loginIntranet(username: string, password: string) {
-    const res = await syncApi.login(username, password)
-    config.value.loginCookie = res.data.cookie
-    config.value.cookieExpiry = res.data.expiry
-    return res.data
-  }
-
-  async function checkLoginStatus() {
-    return await syncApi.checkLoginStatus()
-  }
-
   return {
     config,
     syncRecords,
@@ -61,7 +50,5 @@ export const useSyncStore = defineStore('sync', () => {
     updateConfig,
     fetchSyncRecords,
     triggerSync,
-    loginIntranet,
-    checkLoginStatus,
   }
 })

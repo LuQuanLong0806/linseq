@@ -13,8 +13,8 @@ router.get('/', (req, res) => {
     const db = getDb()
     const { keyword, action, taskId, page = '1', pageSize = '50' } = req.query
 
-    let whereClause = 'WHERE 1=1'
-    const params: unknown[] = []
+    let whereClause = 'WHERE t.user_id = ?'
+    const params: unknown[] = [req.userId]
 
     if (keyword) {
       whereClause += ' AND (dl.content LIKE ? OR dl.action LIKE ? OR t.title LIKE ?)'
@@ -65,6 +65,9 @@ router.get('/', (req, res) => {
 router.get('/task/:taskId', (req, res) => {
   try {
     const db = getDb()
+    // Verify task ownership
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(req.params.taskId) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) { res.status(403).json({ code: 403, message: '无权访问', data: null }); return }
     const stmt = db.prepare(`
       SELECT dl.*, t.title as task_title
       FROM dev_logs dl
@@ -85,6 +88,9 @@ router.get('/task/:taskId', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const db = getDb()
+    // Verify ownership via task JOIN
+    const log = db.prepare('SELECT dl.id FROM dev_logs dl LEFT JOIN tasks t ON dl.task_id = t.id WHERE dl.id = ? AND t.user_id = ?').get(req.params.id, req.userId) as { id: string } | undefined
+    if (!log) { return res.status(403).json({ code: 403, message: '无权删除', data: null }) }
     const stmt = db.prepare('DELETE FROM dev_logs WHERE id = ?')
     const result = stmt.run(req.params.id)
 

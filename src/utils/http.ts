@@ -7,9 +7,18 @@ const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// 请求拦截
+// 请求拦截：注入 x-user header
 http.interceptors.request.use(
-  (config) => config,
+  (config) => {
+    try {
+      const stored = localStorage.getItem('linesequence-currentUser')
+      if (stored) {
+        const username = JSON.parse(stored)
+        if (username) config.headers['x-user'] = username
+      }
+    } catch { /* ignore */ }
+    return config
+  },
   (error) => Promise.reject(error)
 )
 

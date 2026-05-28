@@ -147,6 +147,26 @@ export interface ApiResponse<T = unknown> {
   data: T
 }
 
+/** 用户（内网账号） */
+export interface User {
+  username: string
+  displayName: string
+  cookieExpiry: string
+  lastSyncTime: string
+  createdAt: string
+}
+
+/** Agent API Key */
+export interface AgentKey {
+  id: string
+  userId: string
+  key: string
+  name: string
+  enabled: boolean
+  createdAt: string
+  lastUsedAt: string
+}
+
 /** 分页参数 */
 export interface PaginationParams {
   page: number

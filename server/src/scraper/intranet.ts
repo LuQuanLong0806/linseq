@@ -125,8 +125,8 @@ const DEFAULT_PAGE_SIZE = 200
 /** Cookie 有效期：1 小时 */
 const COOKIE_TTL_MS = 60 * 60 * 1000
 
-const LOGIN_USER = 'luql'
-const LOGIN_PASS = '123'
+const LOGIN_USER = ''  // deprecated: read from users table
+const LOGIN_PASS = ''  // deprecated: read from users table
 
 // ========== 状态 ==========
 
@@ -210,17 +210,25 @@ function mapIntranetTask(task: IntranetTask): ScrapedTask {
 // ========== Cookie 管理 ==========
 
 /**
- * 从数据库恢复 cookie 缓存
+ * 从 users 表恢复指定用户的 cookie 缓存
  */
-function restoreCookieFromDb(): CookieCache | null {
+function restoreCookieFromDb(username?: string): CookieCache | null {
   try {
     const db = getDb()
-    const row = db.prepare("SELECT value FROM sync_config WHERE key = 'loginCookie'").get() as { value: string } | undefined
-    const expiryRow = db.prepare("SELECT value FROM sync_config WHERE key = 'cookieExpiry'").get() as { value: string } | undefined
-    if (row?.value && expiryRow?.value) {
-      const expiryMs = new Date(expiryRow.value).getTime()
+    let user: { cookie: string; cookie_expiry: string } | undefined
+    if (username) {
+      user = db.prepare('SELECT cookie, cookie_expiry FROM users WHERE username = ?').get(username) as { cookie: string; cookie_expiry: string } | undefined
+    } else {
+      const curRow = db.prepare("SELECT value FROM sync_config WHERE key = 'currentUser'").get() as { value: string } | undefined
+      const curUser = curRow ? JSON.parse(curRow.value) : ''
+      if (curUser) {
+        user = db.prepare('SELECT cookie, cookie_expiry FROM users WHERE username = ?').get(curUser) as { cookie: string; cookie_expiry: string } | undefined
+      }
+    }
+    if (user?.cookie && user?.cookie_expiry) {
+      const expiryMs = new Date(user.cookie_expiry).getTime()
       if (expiryMs > Date.now()) {
-        return { cookie: row.value, expiryMs }
+        return { cookie: user.cookie, expiryMs }
       }
     }
   } catch { /* db not ready yet */ }
@@ -228,42 +236,56 @@ function restoreCookieFromDb(): CookieCache | null {
 }
 
 /**
+ * 从 users 表读取指定用户的内网凭据
+ */
+function getStoredCredentials(username?: string): { username: string; password: string } {
+  const db = getDb()
+  let user: { username: string; password: string } | undefined
+  if (username) {
+    user = db.prepare('SELECT username, password FROM users WHERE username = ?').get(username) as { username: string; password: string } | undefined
+  } else {
+    const curRow = db.prepare("SELECT value FROM sync_config WHERE key = 'currentUser'").get() as { value: string } | undefined
+    const curUser = curRow ? JSON.parse(curRow.value) : ''
+    if (curUser) {
+      user = db.prepare('SELECT username, password FROM users WHERE username = ?').get(curUser) as { username: string; password: string } | undefined
+    }
+  }
+  return { username: user?.username || '', password: user?.password || '' }
+}
+
+/**
  * 获取有效 cookie，优先内存 → DB → 重新登录
  */
-export async function getValidCookie(): Promise<string> {
+export async function getValidCookie(username?: string): Promise<string> {
   // 1. 内存缓存有效？
   if (cookieCache && cookieCache.expiryMs > Date.now()) {
     return cookieCache.cookie
   }
 
   // 2. DB 缓存有效？
-  const dbCache = restoreCookieFromDb()
+  const dbCache = restoreCookieFromDb(username)
   if (dbCache) {
     cookieCache = dbCache
     return dbCache.cookie
   }
 
-  // 3. 重新登录
+  // 3. 重新登录（用指定用户或当前用户的凭据）
   console.log('[intranet] cookie 过期或不存在，重新登录...')
-  const result = await loginIntranet()
+  const result = await loginIntranet(username)
   return result.cookie
 }
 
 /**
- * 保存 cookie 到内存 + DB
+ * 保存 cookie 到内存 + users 表
  */
-function saveCookie(cookie: string): void {
+function saveCookie(cookie: string, username?: string): void {
   const expiryMs = Date.now() + COOKIE_TTL_MS
   cookieCache = { cookie, expiryMs }
 
   const db = getDb()
-  const upsert = db.prepare(`
-    INSERT INTO sync_config (key, value) VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `)
-  upsert.run('loginCookie', cookie)
-  upsert.run('cookieExpiry', new Date(expiryMs).toISOString())
-  upsert.run('loginUser', LOGIN_USER)
+  if (username) {
+    db.prepare('UPDATE users SET cookie = ?, cookie_expiry = ? WHERE username = ?').run(cookie, new Date(expiryMs).toISOString(), username)
+  }
 }
 
 // ========== 浏览器登录（仅在 cookie 过期时调用） ==========
@@ -285,12 +307,23 @@ async function getBrowser(): Promise<Browser> {
 }
 
 /**
- * Puppeteer 登录内网，获取 JSESSIONID cookie（仅在缓存过期时调用）
+ * Puppeteer 登录内网，获取 JSESSIONID cookie
+ * 传入用户名时读该用户凭据，无参时读当前用户
  */
 export async function loginIntranet(
-  username: string = LOGIN_USER,
-  password: string = LOGIN_PASS
+  username?: string,
+  password?: string
 ): Promise<{ cookie: string; expiry: string }> {
+  // 如果未传完整凭据，从 DB 读取
+  if (!username || !password) {
+    const stored = getStoredCredentials(username || undefined)
+    username = username || stored.username
+    password = password || stored.password
+  }
+  if (!username || !password) {
+    throw new Error('未配置内网登录凭据，请先在同步中心登录')
+  }
+
   const browser = await getBrowser()
   const page = await browser.newPage()
 
@@ -314,7 +347,7 @@ export async function loginIntranet(
     }
 
     const cookie = `JSESSIONID=${jsessionId.value}`
-    saveCookie(cookie)
+    saveCookie(cookie, username)
 
     // 登录完关掉浏览器节省资源
     await browser.close()
@@ -431,7 +464,10 @@ const YULAN_API = `${INTRANET_BASE}/demo/tasklist/YulanData.action`
 async function fetchReqDocs(): Promise<void> {
   const cookie = await getValidCookie()
   const db = getDb()
-  const tasks = db.prepare("SELECT id, intranet_id FROM tasks WHERE intranet_id != ''").all() as { id: string; intranet_id: string }[]
+  // 只查当前用户的任务
+  const curRow = db.prepare("SELECT value FROM sync_config WHERE key = 'currentUser'").get() as { value: string } | undefined
+  const curUser = curRow ? JSON.parse(curRow.value) : ''
+  const tasks = db.prepare("SELECT id, intranet_id FROM tasks WHERE intranet_id != '' AND user_id = ?").all(curUser) as { id: string; intranet_id: string }[]
 
   const updateStmt = db.prepare("UPDATE tasks SET req_doc_name = ?, req_doc_url = ? WHERE id = ?")
   let fetched = 0
@@ -555,7 +591,7 @@ export function startCookieRefresh(): void {
   // 每 30 分钟刷新
   refreshTimer = setInterval(async () => {
     try {
-      // 强制重新登录（忽略缓存）
+      // 强制重新登录（忽略缓存），使用当前用户凭据
       cookieCache = null
       await loginIntranet()
       console.log('[intranet] cookie 定时刷新成功')

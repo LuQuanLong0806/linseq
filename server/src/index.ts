@@ -7,6 +7,7 @@ import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { initDatabase } from './db/index.js'
+import { currentUser } from './middleware/auth.js'
 import taskRoutes from './routes/tasks.js'
 import syncRoutes from './routes/sync.js'
 import devlogRoutes from './routes/devlogs.js'
@@ -15,6 +16,7 @@ import groupRoutes from './routes/groups.js'
 import versionRoutes from './routes/versions.js'
 import projectRoutes from './routes/projects.js'
 import settingsRoutes from './routes/settings.js'
+import userRoutes from './routes/users.js'
 import { startCookieRefresh, stopCookieRefresh } from './scraper/intranet.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -25,6 +27,7 @@ const PORT = 3201
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true }))
+app.use(currentUser)
 
 // 请求日志
 app.use((req, _res, next) => {
@@ -36,6 +39,7 @@ app.use((req, _res, next) => {
 app.use('/api/screenshots', express.static(path.resolve(__dirname, '../data/screenshots')))
 
 // 路由
+app.use('/api/users', userRoutes)
 app.use('/api/tasks', taskRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/sync', syncRoutes)

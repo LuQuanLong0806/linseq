@@ -138,6 +138,7 @@ import { useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import type { Task, TaskVersion } from '@/types'
 import { versionApi } from '@/api/version'
+import { agentApi } from '@/api/agent'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
 import * as THREE from 'three'
@@ -213,6 +214,7 @@ async function handleReject() {
     // 2. 将任务重新加入待办队列（不改 aiStatus）
     if (!taskStore.isInTodoList(task.id)) {
       taskStore.todoList.push(task.id)
+      agentApi.saveTodoOrder(taskStore.todoList).catch(() => {})
     }
     // 3. 提升优先级
     const newPriority = PRIORITY_UPGRADE[task.priority] || 'urgent'

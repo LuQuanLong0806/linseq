@@ -21,13 +21,14 @@ router.post('/manual', (req, res) => {
     db.prepare(`
       INSERT INTO tasks (id, source_id, title, description, module, priority, status, deadline,
         project, project_path, git_branch, custom_description, acceptance_criteria, ai_status,
-        create_time, update_time)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, 'ai_todo',
+        user_id, create_time, update_time)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, 'ai_todo', ?,
         datetime('now','localtime'), datetime('now','localtime'))
     `).run(id, sourceId, title, description || '', module || '', priority || 'medium', deadline || '',
-      project || '', projectPath || '', gitBranch || '', customDescription || '', acceptanceCriteria || '')
+      project || '', projectPath || '', gitBranch || '', customDescription || '', acceptanceCriteria || '',
+      req.userId)
 
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, row) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -40,7 +41,7 @@ router.post('/:id/republish', (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     if (!row) return res.status(404).json({ code: 404, message: '任务不存在', data: null })
 
     const { customDescription, projectPath, gitBranch } = req.body
@@ -53,12 +54,12 @@ router.post('/:id/republish', (req, res) => {
     if (projectPath) { updates.push('project_path = ?'); values.push(projectPath) }
     if (gitBranch) { updates.push('git_branch = ?'); values.push(gitBranch) }
 
-    values.push(id)
-    db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+    values.push(id, req.userId)
+    db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).run(...values)
 
     addDevLog(db, id, '重新发布', `第 ${reworkCount} 次发布到 AI 待办`, 'user', false)
 
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const updated = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, updated) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -72,8 +73,8 @@ router.get('/', (req, res) => {
     const db = getDb()
     const { page = '1', pageSize = '20', keyword, status, priority, project, customer, module, projectPath, isClosed } = req.query
 
-    let whereClause = 'WHERE is_hidden = 0'
-    const params: unknown[] = []
+    let whereClause = 'WHERE is_hidden = 0 AND user_id = ?'
+    const params: unknown[] = [req.userId]
 
     if (keyword) {
       whereClause += ' AND (title LIKE ? OR source_id LIKE ? OR description LIKE ? OR project LIKE ? OR module LIKE ?)'
@@ -135,22 +136,22 @@ router.get('/', (req, res) => {
   }
 })
 
-router.get('/stats/overview', (_req, res) => {
+router.get('/stats/overview', (req, res) => {
   try {
     const db = getDb()
-    const totalStmt = db.prepare('SELECT COUNT(*) as count FROM tasks WHERE is_closed = 0')
-    const urgentStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE priority = 'urgent' AND is_closed = 0")
-    const inProgressStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'in_progress' AND is_closed = 0")
-    const selfTestStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'self_test' AND is_closed = 0")
-    const overdueStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE deadline < date('now', 'localtime') AND is_closed = 0 AND status NOT IN ('completed', 'rejected')")
-    const projectStmt = db.prepare('SELECT project, COUNT(*) as count FROM tasks WHERE is_closed = 0 GROUP BY project ORDER BY count DESC LIMIT 10')
+    const totalStmt = db.prepare('SELECT COUNT(*) as count FROM tasks WHERE is_closed = 0 AND user_id = ?')
+    const urgentStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE priority = 'urgent' AND is_closed = 0 AND user_id = ?")
+    const inProgressStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'in_progress' AND is_closed = 0 AND user_id = ?")
+    const selfTestStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'self_test' AND is_closed = 0 AND user_id = ?")
+    const overdueStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE deadline < date('now', 'localtime') AND is_closed = 0 AND status NOT IN ('completed', 'rejected') AND user_id = ?")
+    const projectStmt = db.prepare('SELECT project, COUNT(*) as count FROM tasks WHERE is_closed = 0 AND user_id = ? GROUP BY project ORDER BY count DESC LIMIT 10')
 
-    const total = (totalStmt.get() as { count: number }).count
-    const urgent = (urgentStmt.get() as { count: number }).count
-    const inProgress = (inProgressStmt.get() as { count: number }).count
-    const selfTest = (selfTestStmt.get() as { count: number }).count
-    const overdue = (overdueStmt.get() as { count: number }).count
-    const projects = projectStmt.all()
+    const total = (totalStmt.get(req.userId) as { count: number }).count
+    const urgent = (urgentStmt.get(req.userId) as { count: number }).count
+    const inProgress = (inProgressStmt.get(req.userId) as { count: number }).count
+    const selfTest = (selfTestStmt.get(req.userId) as { count: number }).count
+    const overdue = (overdueStmt.get(req.userId) as { count: number }).count
+    const projects = projectStmt.all(req.userId)
 
     res.json({ code: 0, message: 'success', data: { total, urgent, inProgress, selfTest, overdue, projects } })
   } catch (err) {
@@ -161,8 +162,8 @@ router.get('/stats/overview', (_req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const db = getDb()
-    const stmt = db.prepare('SELECT * FROM tasks WHERE id = ?')
-    const row = stmt.get(req.params.id)
+    const stmt = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
+    const row = stmt.get(req.params.id, req.userId)
     if (!row) {
       return res.status(404).json({ code: 404, message: '任务不存在', data: null })
     }
@@ -179,13 +180,13 @@ router.patch('/:id/status', (req, res) => {
     const db = getDb()
     const { status } = req.body
     const id = req.params.id
-    const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const existing = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     if (!existing) return res.status(404).json({ code: 404, message: '任务不存在', data: null })
 
-    db.prepare(`UPDATE tasks SET status = ?, update_time = datetime('now', 'localtime') WHERE id = ?`).run(status, id)
+    db.prepare(`UPDATE tasks SET status = ?, update_time = datetime('now', 'localtime') WHERE id = ? AND user_id = ?`).run(status, id, req.userId)
     addDevLog(db, id, '状态变更', `状态变更为 ${status}`, 'agent', false)
 
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const updated = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, updated) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -218,10 +219,10 @@ router.patch('/:id', (req, res) => {
 
     if (setParts.length === 0) return res.status(400).json({ code: 400, message: '没有允许更新的字段', data: null })
 
-    values.push(id)
-    db.prepare(`UPDATE tasks SET ${setParts.join(', ')}, update_time = datetime('now', 'localtime') WHERE id = ?`).run(...values)
+    values.push(id, req.userId)
+    db.prepare(`UPDATE tasks SET ${setParts.join(', ')}, update_time = datetime('now', 'localtime') WHERE id = ? AND user_id = ?`).run(...values)
 
-    const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
+    const updated = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId)
     res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, updated) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -234,7 +235,7 @@ router.post('/:id/devlog', (req, res) => {
     const { action, content, author = 'agent', autoFixed = false } = req.body
     const taskId = req.params.id
     addDevLog(db, taskId, action, content, author, autoFixed)
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId)
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(taskId, req.userId)
     res.json({ code: 0, message: 'success', data: mapDbRowToTask(db, task) })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -243,7 +244,7 @@ router.post('/:id/devlog', (req, res) => {
 
 // ========== 同步（从内网） ==========
 
-router.post('/sync', async (_req, res) => {
+router.post('/sync', async (req, res) => {
   try {
     const { scrapTasksFromIntranet } = await import('../scraper/intranet.js')
     const tasks = await scrapTasksFromIntranet()
@@ -260,14 +261,14 @@ router.post('/sync', async (_req, res) => {
         project, customer, customer_manager, task_type, bug_or_req, work_hours, submit_time,
         developer, supervisor, supervisor_id, product_manager, dev_leader, handler,
         department, department_id, is_closed, intranet_node, intranet_node_name, node_index,
-        stale_days, flow_days, days_since_create, reject_flag, flow_id, work_id, version
+        stale_days, flow_days, days_since_create, reject_flag, flow_id, work_id, version, user_id
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?, 1,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(source_id) DO UPDATE SET
         intranet_id = excluded.intranet_id,
@@ -306,7 +307,7 @@ router.post('/sync', async (_req, res) => {
 
     for (const task of tasks) {
       const id = uuidv4()
-      const exists = db.prepare('SELECT id, title, status FROM tasks WHERE source_id = ?').get(task.sourceId) as Record<string, unknown> | undefined
+      const exists = db.prepare('SELECT id, title, status FROM tasks WHERE source_id = ? AND user_id = ?').get(task.sourceId, req.userId) as Record<string, unknown> | undefined
 
       upsertStmt.run(
         id, task.sourceId, task.intranetId, task.title, task.description, task.module, task.moduleShort, task.product,
@@ -314,7 +315,7 @@ router.post('/sync', async (_req, res) => {
         task.project, task.customer, task.customerManager, task.taskType, task.bugOrReq, task.workHours, task.submitTime,
         task.developer, task.supervisor, task.supervisorId, task.productManager, task.devLeader, task.handler,
         task.department, task.departmentId, task.isClosed ? 1 : 0, task.intranetNode, task.intranetNodeName, task.nodeIndex,
-        task.staleDays, task.flowDays, task.daysSinceCreate, task.rejectFlag ? 1 : 0, task.flowId, task.workId, task.version
+        task.staleDays, task.flowDays, task.daysSinceCreate, task.rejectFlag ? 1 : 0, task.flowId, task.workId, task.version, req.userId
       )
 
       if (!exists) {
@@ -332,9 +333,9 @@ router.post('/sync', async (_req, res) => {
       const syncedIds = tasks.map(t => t.sourceId)
       const placeholders = syncedIds.map(() => '?').join(',')
       // 仅隐藏非手动创建、且不在本次同步中的任务
-      db.prepare(`UPDATE tasks SET is_hidden = 1, ai_status = '' WHERE source_id NOT IN (${placeholders}) AND is_hidden = 0 AND source_id NOT LIKE 'manual_%'`).run(...syncedIds)
+      db.prepare(`UPDATE tasks SET is_hidden = 1, ai_status = '' WHERE source_id NOT IN (${placeholders}) AND is_hidden = 0 AND source_id NOT LIKE 'manual_%' AND user_id = ?`).run(...syncedIds, req.userId)
       // 同步数据中存在的任务确保可见
-      db.prepare(`UPDATE tasks SET is_hidden = 0 WHERE source_id IN (${placeholders})`).run(...syncedIds)
+      db.prepare(`UPDATE tasks SET is_hidden = 0 WHERE source_id IN (${placeholders}) AND user_id = ?`).run(...syncedIds, req.userId)
     }
 
     // 同步后自动关联项目配置
