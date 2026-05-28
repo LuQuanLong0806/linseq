@@ -176,7 +176,7 @@
                     <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
                     <span class="card-id">#{{ task.sourceId }}</span>
                   </div>
-                  <h3 class="card-title">{{ task.title }}</h3>
+                  <h3 class="card-title" @click="toggleDevExpand(task)" style="cursor:pointer">{{ task.title }}</h3>
                   <div class="card-meta">
                     <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
                     <span v-if="task.module">{{ task.module }}</span>
@@ -187,31 +187,50 @@
                   </div>
                 </div>
                 <div class="card-actions">
+                  <el-button type="primary" link size="small" @click="toggleDevExpand(task)">
+                    {{ expandedDevTask === task.id ? '收起' : '对话' }}
+                  </el-button>
                   <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
                 </div>
               </div>
-              <!-- 开发日志 -->
-              <div v-if="task.devLog && task.devLog.length > 0" class="dev-log-section">
-                <div class="dev-log-header">
-                  <span class="dev-log-title">开发记录</span>
-                  <span class="dev-log-count">{{ task.devLog.length }}</span>
-                </div>
-                <div class="dev-log-list">
-                  <div v-for="log in task.devLog.slice(0, 8)" :key="log.id" class="dev-log-item">
-                    <div class="log-indicator" :class="log.action"></div>
-                    <div class="log-body">
-                      <div class="log-top">
-                        <span class="log-action">{{ log.action }}</span>
-                        <span class="log-time">{{ formatLogTime(log.time) }}</span>
+              <!-- 聊天式对话面板 -->
+              <Transition name="collapse">
+                <div v-if="expandedDevTask === task.id" class="supplement-panel">
+                  <div class="supplement-chat" :data-task="task.id">
+                    <!-- 时间线混排：开发日志 + 用户补充说明 -->
+                    <template v-if="supplementMap[task.id]?.length">
+                      <div v-for="msg in supplementMap[task.id]" :key="msg.id"
+                        class="chat-bubble"
+                        :class="msg.type === 'user' ? 'bubble-user' : (msg.action === '回复' ? 'bubble-reply' : 'bubble-agent')">
+                        <div class="bubble-header">
+                          <span class="bubble-role">
+                            {{ msg.type === 'user' ? '👤 指令' : (msg.action === '回复' ? '💬 回复' : `🤖 ${msg.action || '日志'}`) }}
+                          </span>
+                          <span class="bubble-time">{{ formatSupplementTime(msg.created_at) }}</span>
+                        </div>
+                        <div class="bubble-content">{{ msg.content }}</div>
+                        <span v-if="msg.type === 'user' && !msg.read_by_agent" class="bubble-unread">待读取</span>
                       </div>
-                      <div class="log-content">{{ log.content }}</div>
+                    </template>
+                    <div v-else class="chat-empty">暂无对话记录，发送补充说明给 Agent</div>
+                  </div>
+                  <!-- 输入区 -->
+                  <div class="supplement-input-area">
+                    <el-input
+                      v-model="supplementInput"
+                      type="textarea"
+                      :rows="2"
+                      placeholder="输入补充说明或新需求，Agent 下次检查时会读取..."
+                      resize="none"
+                      @keydown.enter.ctrl="sendSupplement(task)"
+                    />
+                    <div class="supplement-input-actions">
+                      <span class="input-hint">Ctrl+Enter 发送</span>
+                      <el-button type="primary" size="small" @click="sendSupplement(task)" :loading="supplementSending" :disabled="!supplementInput.trim()">发送</el-button>
                     </div>
                   </div>
-                  <div v-if="task.devLog.length > 8" class="log-more">
-                    还有 {{ task.devLog.length - 8 }} 条记录...
-                  </div>
                 </div>
-              </div>
+              </Transition>
             </div>
           </TransitionGroup>
         </div>
@@ -628,6 +647,70 @@ function isManualTask(task: Task) { return task.sourceId?.startsWith('manual_') 
 function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as const)[p] || 'info' }
 function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
 
+// ========== 补充说明（开发中追加指令，聊天式交互） ==========
+interface SupplementMsg {
+  id: string
+  content: string
+  created_at: string
+  read_by_agent: number
+  type: 'user' | 'agent'
+  action?: string
+}
+const supplementMap = reactive<Record<string, SupplementMsg[]>>({})
+const supplementInput = ref('')
+const supplementSending = ref(false)
+const expandedDevTask = ref<string | null>(null)
+
+async function toggleDevExpand(task: Task) {
+  if (expandedDevTask.value === task.id) {
+    expandedDevTask.value = null
+    return
+  }
+  expandedDevTask.value = task.id
+  await loadSupplementHistory(task.id)
+}
+
+async function loadSupplementHistory(taskId: string) {
+  try {
+    const res = await taskApi.getSupplements(taskId)
+    const task = taskStore.tasks.find(t => t.id === taskId)
+    const logs = (task?.devLog || []).map(l => ({
+      id: l.id, content: l.content, created_at: l.time, read_by_agent: 1, type: 'agent' as const, action: l.action
+    }))
+    const sups = (res.data || []).map(s => ({
+      ...s, type: 'user' as const
+    }))
+    // 合并按时间排序：补充说明 + 开发日志混排
+    const merged = [...logs, ...sups].sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+    supplementMap[taskId] = merged
+  } catch { /* ignore */ }
+}
+
+async function sendSupplement(task: Task) {
+  const text = supplementInput.value.trim()
+  if (!text) return
+  supplementSending.value = true
+  try {
+    await taskApi.addSupplement(task.id, text)
+    supplementInput.value = ''
+    await loadSupplementHistory(task.id)
+    // 同时刷新任务数据（因为 addSupplement 会添加 devLog）
+    await taskStore.fetchTasks()
+    // 滚动到底部
+    await nextTick()
+    const el = document.querySelector(`.supplement-chat[data-task="${task.id}"]`)
+    if (el) el.scrollTop = el.scrollHeight
+  } catch { ElMessage.error('发送失败') }
+  finally { supplementSending.value = false }
+}
+
+function formatSupplementTime(t: string) {
+  const d = dayjs(t)
+  return d.format('MM-DD HH:mm')
+}
+
 onMounted(async () => {
   await Promise.all([taskStore.fetchTasks(), taskStore.fetchGroups()])
   // Sync todoList from backend (Agent may have completed/removed tasks)
@@ -636,6 +719,10 @@ onMounted(async () => {
   pollTimer = setInterval(async () => {
     await taskStore.fetchTasks()
     syncTodoFromBackend()
+    // 刷新展开的开发卡片补充说明历史
+    if (expandedDevTask.value) {
+      await loadSupplementHistory(expandedDevTask.value)
+    }
   }, 15000)
   await nextTick()
 })
@@ -985,6 +1072,99 @@ async function syncTodoFromBackend() {
 .log-more {
   text-align: center; font-size: 10px; color: rgba(140,140,161,0.4);
   padding: 4px 0 2px; font-style: italic;
+}
+
+// ========== 补充说明 - 聊天式对话面板 ==========
+.supplement-panel {
+  border-top: 1px solid rgba(0,229,255,0.1);
+  background: rgba(0,10,20,0.4);
+}
+.supplement-chat {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  &::-webkit-scrollbar { width: 3px; }
+  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.15); border-radius: 3px; }
+}
+.chat-empty {
+  text-align: center; font-size: 11px; color: rgba(140,140,161,0.35);
+  padding: 20px 0; font-style: italic;
+}
+.chat-bubble {
+  max-width: 85%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  position: relative;
+  animation: bubble-in 0.2s ease-out;
+}
+.bubble-user {
+  align-self: flex-end;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.15);
+  border-bottom-right-radius: 2px;
+}
+.bubble-agent {
+  align-self: flex-start;
+  background: rgba(157,92,255,0.06);
+  border: 1px solid rgba(157,92,255,0.1);
+  border-bottom-left-radius: 2px;
+}
+.bubble-reply {
+  align-self: flex-start;
+  background: rgba(0,229,255,0.06);
+  border: 1px solid rgba(0,229,255,0.15);
+  border-bottom-left-radius: 2px;
+  .bubble-role { color: rgba(0,229,255,0.8) !important; }
+}
+.bubble-header {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+}
+.bubble-role {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+  .bubble-user & { color: rgba(0,229,255,0.7); }
+  .bubble-agent & { color: rgba(157,92,255,0.7); }
+}
+.bubble-time {
+  font-size: 9px; color: rgba(140,140,161,0.4); font-family: 'Courier New', monospace;
+}
+.bubble-content {
+  color: rgba(207,211,220,0.85);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.bubble-unread {
+  position: absolute; top: 6px; right: 8px;
+  font-size: 9px; color: rgba(245,108,108,0.7);
+  background: rgba(245,108,108,0.08); padding: 1px 5px;
+  border-radius: 6px;
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.supplement-input-area {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(0,229,255,0.06);
+  background: rgba(0,15,30,0.5);
+  :deep(.el-textarea__inner) {
+    background: rgba(0,20,40,0.6) !important;
+    border-color: rgba(0,229,255,0.12) !important;
+    color: #cfd3dc !important;
+    font-size: 12px;
+    &:focus { border-color: rgba(0,229,255,0.3) !important; }
+  }
+}
+.supplement-input-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 6px;
+}
+.input-hint {
+  font-size: 10px; color: rgba(140,140,161,0.3);
 }
 
 // Manual task tag

@@ -206,6 +206,18 @@ export function initDatabase(): void {
     )
   `)
 
+  // ========== 任务补充说明表（开发中追加指令） ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_supplements (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      read_by_agent INTEGER DEFAULT 0,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `)
+
   // ========== 同步记录表 ==========
   db.exec(`
     CREATE TABLE IF NOT EXISTS sync_records (

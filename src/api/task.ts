@@ -46,6 +46,16 @@ export const taskApi = {
   republishTask(id: string, data?: Partial<Task>): Promise<ApiResponse<Task>> {
     return http.post(`/tasks/${id}/republish`, data)
   },
+
+  /** 获取任务补充说明列表 */
+  getSupplements(taskId: string): Promise<ApiResponse<{ id: string; content: string; created_at: string; read_by_agent: number }[]>> {
+    return http.get(`/tasks/${taskId}/supplements`)
+  },
+
+  /** 添加补充说明 */
+  addSupplement(taskId: string, content: string): Promise<ApiResponse<{ id: string; content: string; created_at: string }>> {
+    return http.post(`/tasks/${taskId}/supplements`, { content })
+  },
 }
 
 interface SyncResult {

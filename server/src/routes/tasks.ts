@@ -250,6 +250,51 @@ router.post('/:id/devlog', (req, res) => {
   }
 })
 
+// ========== 任务补充说明（开发中追加指令） ==========
+
+// 获取任务的补充说明列表
+router.get('/:id/supplements', (req, res) => {
+  try {
+    const db = getDb()
+    const taskId = req.params.id
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(taskId) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) {
+      return res.status(403).json({ code: 403, message: '无权访问', data: null })
+    }
+    const rows = db.prepare(
+      'SELECT id, content, created_at, read_by_agent FROM task_supplements WHERE task_id = ? ORDER BY created_at ASC'
+    ).all(taskId)
+    res.json({ code: 0, message: 'success', data: rows })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// 添加补充说明
+router.post('/:id/supplements', (req, res) => {
+  try {
+    const db = getDb()
+    const taskId = req.params.id
+    const { content } = req.body as { content: string }
+    if (!content?.trim()) {
+      return res.status(400).json({ code: 400, message: '内容不能为空', data: null })
+    }
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(taskId) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) {
+      return res.status(403).json({ code: 403, message: '无权访问', data: null })
+    }
+    const id = uuidv4()
+    db.prepare(
+      'INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)'
+    ).run(id, taskId, content.trim())
+    addDevLog(db, taskId, '补充说明', `用户追加了补充说明: ${content.trim().substring(0, 50)}${content.trim().length > 50 ? '...' : ''}`, 'user', false)
+    const row = db.prepare('SELECT * FROM task_supplements WHERE id = ?').get(id)
+    res.json({ code: 0, message: 'success', data: row })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
 // ========== 同步（从内网） ==========
 
 router.post('/sync', async (req, res) => {

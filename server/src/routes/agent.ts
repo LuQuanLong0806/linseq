@@ -657,4 +657,28 @@ async function generateDocxReport(params: ReportParams): Promise<string | null> 
   return filePath
 }
 
+// ========== 补充说明接口 ==========
+
+// Agent 获取未读补充说明
+router.get('/task/:id/supplements', (req, res) => {
+  try {
+    const db = getDb()
+    const { id } = req.params
+    const task = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(id) as { user_id: string } | undefined
+    if (!task || task.user_id !== req.userId) {
+      return res.status(403).json({ code: 403, message: '无权访问', data: null })
+    }
+    const rows = db.prepare(
+      'SELECT id, content, created_at, read_by_agent FROM task_supplements WHERE task_id = ? ORDER BY created_at ASC'
+    ).all(id) as { id: string; content: string; created_at: string; read_by_agent: number }[]
+
+    // 标记为已读
+    db.prepare('UPDATE task_supplements SET read_by_agent = 1 WHERE task_id = ? AND read_by_agent = 0').run(id)
+
+    res.json({ code: 0, message: 'success', data: rows })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
 export default router

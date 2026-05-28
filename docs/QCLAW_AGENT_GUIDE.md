@@ -37,16 +37,21 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 循环开始:
   ① GET  /next-task                    → 取任务（无任务则结束）
-  ② POST /task/{taskId}/start          → 标记开始（必须调，否则系统不知道你在做这个任务）
-  ③ 写代码                              → 在目标项目中实现功能
-  ④ POST /task/{taskId}/log            → 上报开发过程（每完成一个关键步骤都调）
-  ⑤ POST /task/{taskId}/complete       → 提交产出（系统自动建版本、移入审核、从队列移除）
+  ② POST /task/{taskId}/start          → 标记开始
+  ③ GET  /task/{taskId}/supplements    → 先检查补充说明（每 5 秒轮询一次）
+  ④ 有补充 → 回复确认 → 重新分析上下文 → 调整计划 → 处理 → 回到 ③
+     无补充 → 写代码（约 5 秒）→ POST /log 上报 → 回到 ③
+     无补充 + 全部完成 + 自测通过 → 进入 1 分钟等待 → 无补充 → 继续
+  ⑤ POST /task/{taskId}/complete       → 提交产出
   ⑥ 回到 ①
 ```
 
 **绝对规则：**
 - 每个任务必须**独立**走完 ②→③→④→⑤ 全流程，严禁合并多个任务一起提交
 - `start` 和 `complete` 之间必须经过实际开发，不允许 start 后立即 complete
+- **每次循环先检查补充说明再动手**，人类可能随时发来纠偏指令
+- **补充说明 > 原始需求**，收到补充立即重新分析，不要沿用旧计划
+- **自测通过后必须等 1 分钟**，人类可能正在打字，不允许跳过等待直接提交
 - 队列空了就停下，不要自己造任务
 
 ---
@@ -306,6 +311,71 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ---
 
+### 8. GET /task/{taskId}/supplements —— 获取补充说明
+
+**你什么时候调：** **每完成一个阶段性开发任务后、调 log 上报进度之后**，必须调一次。人类可能在开发过程中追加了新指令。
+
+**你不需要传任何参数。**
+
+**返回值你怎么用：**
+
+```json
+{
+  "code": 0,
+  "data": [
+    { "id": "s1", "content": "顺便把登录页面的样式也调整一下", "created_at": "2026-05-28 15:30:00", "read_by_agent": 0 },
+    { "id": "s2", "content": "记得加上表单校验", "created_at": "2026-05-28 15:45:00", "read_by_agent": 0 }
+  ]
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `content` | 人类追加的指令，**必须处理** |
+| `created_at` | 发送时间 |
+| `read_by_agent` | 0=未读（这次新来的），1=已读 |
+
+**调用后自动标记为已读**，下次调用不会再返回。
+
+**补充说明的优先级：**
+
+> **补充说明 > 原始需求**。当补充说明与原始需求（`requirement.docText` / `requirement.customDescription`）冲突时，**以补充说明为准**。补充说明可能是对需求的修改、追加、或推翻，都要无条件执行。
+
+**你怎么处理（检查优先于执行）：**
+
+```
+每次循环的第一步：GET /supplements
+
+→ 有补充：
+  ① 立即回复确认（让人类知道你收到了）：
+     POST /log { action: "回复", content: "收到补充说明：[摘要]..." }
+  ② 停下当前工作，重新分析上下文 + 补充说明
+     - 补充说明可能意味着你当前方向错了，必须重新评估
+     - 结合原始需求 + 补充说明，确定新的开发计划
+  ③ 按新计划处理（优先级最高，打断当前工作）：
+     - 修改型："把按钮改成红色" → 立刻去改
+     - 追加型："顺便加上表单校验" → 加到待做列表
+     - 推翻型："不用做XX了" → 立刻停止，回滚相关代码
+  ④ 处理完毕后回复：
+     POST /log { action: "回复", content: "已处理完成：[逐条汇报]" }
+  ⑤ 继续下一轮循环（再次检查补充说明）
+
+→ 无补充：
+  继续当前开发工作（写代码 → 上报 log → 回到检查）
+```
+
+**核心原则：**
+- **检查优先于执行** — 每次循环先查补充说明，确认没有新指令再继续写代码
+- **补充说明 = 纠偏信号** — 收到补充说明意味着人类要修正你的方向，必须先重新分析
+- **补充说明 > 原始需求** — 冲突时以补充为准，不犹豫
+- **先回复再动手** — 收到后立刻 POST /log 回复确认，不要默默干活
+- **做完再回复一次** — 处理完后再 POST /log 汇报结果，形成有问有答
+- **只有轮询，不要重复调用** — 开发中每 5 秒轮询一次即可，不要在其他地方额外调用
+- **完成必须等 1 分钟** — 自测通过后进入等待，1 分钟无补充才提交，不允许跳过
+- **按顺序处理** — 补充说明按时间排序，先处理早的
+
+---
+
 ## 五、任务状态流转（理解即可，不需要你操作状态）
 
 ```
@@ -405,64 +475,133 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
    "已就绪，项目 [path]，分支 [branch]，技术栈 [xxx]"
 ```
 
-### 7.2 开始开发前——项目结构分析（必须执行）
+### 7.2 开始开发前——项目结构分析（记忆优先）
 
-环境就绪后、写代码前，**先花 1-2 分钟快速理解项目**，避免盲目改错文件。
+环境就绪后、写代码前，先检查你的记忆中是否已有该项目分析。
+
+**核心机制：首次分析后存入你的记忆系统，后续同类项目直接从记忆读取，跳过重复分析。**
 
 ```
-① 读项目根目录
-   ls / cat package.json / README.md / CLAUDE.md 等
-   → 确认技术栈（Vue3? React? Node?）、构建工具、主要依赖
+① 检查记忆
+   搜索记忆中是否已有该项目的分析记录（按 project.path 匹配）
 
-② 读目录结构
-   找到 src/ 下的分层方式：
-   - 前端：views/ components/ stores/ api/ router/ composables/ utils/ 的职责划分
-   - 后端：routes/ services/ models/ middleware/ db/ 的职责划分
+   → 记忆中存在：
+     直接使用，跳过步骤②③④
+     上报日志："读取项目记忆：[技术栈摘要]"
+
+   → 记忆中不存在：
+     执行步骤②③④，完成后存入记忆
+
+② 读项目根目录
+   cat package.json / README.md / CLAUDE.md
+   → 确认技术栈、构建工具、主要依赖
+
+③ 读目录结构
+   找到 src/ 下的分层方式
    → 知道代码该往哪里写
 
-③ 读相关已有代码
-   根据任务标题/需求，定位到具体文件：
-   - 任务提到某个页面 → 找 views/ 下对应的 .vue 文件
-   - 任务提到某个接口 → 找 routes/ 或 api/ 下对应文件
-   - 任务提到某个功能 → grep 关键词找到相关文件
-   → 完整阅读目标文件及周边引用，理解现有实现
-
 ④ 读项目配置信息
-   项目根目录通常有配置文件，**必须阅读**，遵守项目约定：
-   - `CLAUDE.md` / `.claude/` — AI 协作约定、代码规范、禁止事项
-   - `tsconfig.json` / `jsconfig.json` — TypeScript/JS 编译配置、路径别名
-   - `.eslintrc.*` / `eslint.config.*` — 代码风格规则
-   - `vite.config.*` / `webpack.config.*` — 构建配置、代理、插件
-   - `tailwind.config.*` — TailwindCSS 主题、自定义类名
-   - `.env*` — 环境变量（只读结构，不要泄露值）
-   → 确保新代码符合项目已有规范，不引入冲突的配置或依赖
+   - CLAUDE.md / .claude/ — AI 协作约定
+   - tsconfig.json — 路径别名
+   - vite.config.* / webpack.config.* — 构建配置
+   - tailwind.config.* — 主题配置
 
-⑤ 上报日志
-   "项目分析完成：技术栈 [xxx]，目录结构 [xxx]，相关文件 [列出 2-3 个关键文件]"
+⑤ 存入记忆
+   将分析结果写入你的记忆系统，格式：
+   ┌─────────────────────────────────────────────┐
+   │ 项目: [project.path]                        │
+   │ 技术栈: [Vue3 + TS + Vite + TailwindCSS]     │
+   │ 目录结构: views/→页面 stores/→状态 api/→请求  │
+   │ 关键路径: router=src/router, http=src/utils   │
+   │ 规范: <script setup>, Pinia, camelCase       │
+   │ 分析时间: 2026-05-28                         │
+   └─────────────────────────────────────────────┘
 ```
 
-**核心原则：**
-- **不读不写** — 改任何文件之前必须先读一遍
-- **理解上下文** — 看目标文件的 import 依赖、调用方、被调用方
-- **保持风格一致** — 观察现有代码的命名、格式、模式，新代码保持统一
-- **找相似参考** — 如果不确定怎么写，先看同目录下类似功能的文件怎么实现的
+**Token 节省：**
+- 首次分析：读 5-10 个文件 (~2000 tokens)
+- 后续任务：从记忆直接读取 (~100 tokens)
+- **节省 95% 的项目分析开销**
+
+**记忆更新时机：**
+- `package.json` 有变化（新依赖、版本升级）
+- 项目结构大改（目录重组）
+- 超过 7 天未更新时重新分析一次
+
+**注意：记忆只存项目结构和技术栈，不存具体业务代码。每次开发仍需阅读目标文件。**
 
 ### 7.3 开发中
 
-1. **先读后写** — 完整阅读目标文件再改
-2. **只改相关的** — 看到 bug 也不管
-3. **每完成一步上报日志** — 让人知道你在干什么
-4. **需求模糊就提交疑问** — 调 `/question`，别猜
+1. **先检查补充说明再动手** — 每次循环的第一步是 GET /supplements，不是写代码
+2. **先读后写** — 完整阅读目标文件再改
+3. **只改相关的** — 看到 bug 也不管
+4. **每完成一步上报日志** — 让人知道你在干什么
+5. **需求模糊就提交疑问** — 调 `/question`，别猜
 
-### 7.4 complete 之前——自测
+**整个开发过程只有一个检查机制——5 秒轮询，不要在其他地方重复调用：**
+
+```
+┌─────────────── 开发循环 ───────────────┐
+│                                         │
+│  ① GET /supplements 检查（先检查！）      │
+│                                         │
+│  → 有补充：                              │
+│    a. POST /log { action: "回复",        │
+│       content: "收到：[摘要]..." }        │
+│    b. 重新分析上下文 + 补充说明            │
+│    c. 调整当前开发计划                     │
+│    d. 处理补充（补充 > 原始需求）           │
+│    e. POST /log { action: "回复",        │
+│       content: "已处理：[结果]" }          │
+│    f. 回到 ①                            │
+│                                         │
+│  → 无补充：                              │
+│    写代码（约 5 秒的阶段性工作）           │
+│    → POST /log 上报进度                  │
+│    → 回到 ①                             │
+│                                         │
+│  → 无补充 + 全部需求完成：                │
+│    进入「7.4 完成等待」                   │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+**关键原则：**
+- **检查优先于执行** — 每次循环先查补充说明，确认没有新指令再继续写代码
+- **补充说明 = 纠偏信号** — 收到补充说明说明你当前方向可能错了，必须先重新分析再决定下一步
+- **补充 > 原始需求** — 冲突时以补充为准，立即调整方向
+- **先回复再处理** — 收到补充立刻回复确认，不要默默改代码
+
+### 7.4 完成等待——1 分钟缓冲期
+
+**为什么要等：** 你认为开发完了，但人类可能正在打字发补充说明。直接提交会导致补充说明被忽略。
+
+**流程：**
+```
+所有需求已完成 + 自测通过
+→ POST /log { action: "回复", content: "所有需求已完成，自测通过。等待补充说明...（1分钟后无消息将自动提交）" }
+→ 继续每 5 秒轮询 GET /supplements，持续 1 分钟（共 12 次）
+→ 有补充：
+   → 处理 → 继续开发 → 再走完成等待
+→ 1 分钟无消息：
+   → POST /complete 提交
+```
+
+**铁律：**
+- **不允许跳过等待直接提交** — 必须等满 1 分钟
+- **收到补充必须处理** — 哪怕只剩 10 秒就到时间了，也要处理完重新计时
+- **每次进入等待都要上报 log** — 让人类知道 Agent 在等，有话快说
+
+### 7.5 complete 之前——自测
 
 1. 运行 `npx tsc --noEmit`（TypeScript 项目）
 2. 运行测试 `npx vitest run`（有测试的项目）
 3. 有错先修，修不好上报日志说明
 4. `git add` 相关文件 + `git commit -m "feat: xxx"`
 5. **不要 push！**
+6. 自测通过 → 进入「7.4 完成等待」
 
-### 7.5 前端任务——截图和报告
+### 7.6 前端任务——截图和报告
 
 **涉及页面/UI 变更的任务必须：**
 
@@ -479,7 +618,7 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 进入任务列表页面，点击新增按钮弹出表单，填写标题和描述后提交，列表刷新显示新增记录，功能正常。
 ```
 
-### 7.6 返工任务——被打回怎么办
+### 7.7 返工任务——被打回怎么办
 
 当 `isRework=true` 时：
 
@@ -536,38 +675,55 @@ GET  /api/versions/{versionId}/report         — 下载自测报告（Word）
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 # → 拿到 taskId、project.path、project.gitBranch 等
 
-# 2. 标记开始（URL 中填入上一步拿到的 taskId）
+# 2. 标记开始
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/start \
   -H "x-agent-key: qcl_xxx"
 
 # 3. 环境准备（严格按 7.1 节顺序，任何一步失败 → 上报 question → 取下一个任务）
-cd /path/to/project                # ① 目录不存在 → 上报跳过
-git status                         # ② 有未提交代码 → 上报跳过，不要 stash 别人的代码
-git fetch origin                   # ③ 拉取最新
+cd /path/to/project
+git status && git fetch origin
 git checkout main && git pull origin main
-git checkout feature/login         # ④ 切到开发分支（不存在则 checkout -b）
-git merge main                     #   已存在的分支需合入最新 main（有冲突 → 上报跳过）
-git branch --show-current          # ⑤ 确认分支正确
+git checkout feature/login && git merge main
+git branch --show-current
 
 # 4. 上报就绪日志
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
-  -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"action":"开发","content":"已就绪，项目 /path/to/project，分支 feature/login，技术栈 Vue3+TypeScript"}'
+  -H "x-agent-key: qcl_xxx" -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"action":"开发","content":"已就绪，分支 feature/login，技术栈 Vue3+TypeScript"}'
 
-# 5. 写代码 + 每完成一步上报日志
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
-  -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"action":"开发","content":"完成登录页面组件开发"}'
+# ────── 开发循环（每 5 秒轮询补充说明） ──────
 
-# 6. 自测通过后提交产出
+# 5. 写代码 → 上报日志 → 检查补充说明（重复此循环）
+curl -X POST .../log --data-binary '{"action":"开发","content":"完成登录页面组件"}'
+
+# 6. 每 5 秒轮询补充说明
+curl http://localhost:3201/api/agent/task/a1b2c3d4/supplements -H "x-agent-key: qcl_xxx"
+# → 有补充：回复确认 → 处理 → 回到步骤 5
+# → 无补充：继续开发 或 进入完成等待
+
+# ────── 补充说明处理示例 ──────
+
+# Agent 收到补充后先回复确认
+curl -X POST .../log --data-binary '{"action":"回复","content":"收到补充：顺便加上表单校验。正在处理..."}'
+# 处理完毕后再回复
+curl -X POST .../log --data-binary '{"action":"回复","content":"表单校验已添加完成"}'
+
+# ────── 完成等待（7.4 节） ──────
+
+# 7. 所有需求完成 + 自测通过 → 通知人类 → 等待 1 分钟
+curl -X POST .../log --data-binary '{"action":"回复","content":"所有需求已完成，自测通过。等待补充说明...（1分钟后无消息将自动提交）"}'
+
+# 8. 继续轮询 1 分钟（6 次，每次间隔 10 秒）
+curl http://localhost:3201/api/agent/task/a1b2c3d4/supplements -H "x-agent-key: qcl_xxx"
+# → 有补充：处理 → 重新开发 → 重新等待
+# → 1 分钟无消息：提交
+
+# 9. 1 分钟无补充 → 提交产出
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/complete \
-  -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"aiOutput":"新增login.vue","summary":"完成登录页","filesChanged":[{"path":"src/login.vue","action":"created"}],"testResult":{"passed":true,"typeCheck":true,"details":"all clean"}}'
+  -H "x-agent-key: qcl_xxx" -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"aiOutput":"新增login.vue","summary":"完成登录页","filesChanged":[{"path":"src/login.vue","action":"created"}],"testResult":{"passed":true,"typeCheck":true,"details":"all clean"}}'
 
-# 7. 取下一个
+# 10. 取下一个
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 ```
 
@@ -577,15 +733,15 @@ curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 # 场景A：当前分支有未提交代码
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
   -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"question": "当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
 # → 立即取下一个任务
 
 # 场景B：分支合并冲突
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
   -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "分支 feature/login 合并 main 时有冲突，文件: src/auth.ts, src/router.ts。请处理后重新入队"}'
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"question": "分支 feature/login 合并 main 时有冲突，文件: src/auth.ts, src/router.ts。请处理后重新入队"}'
 # → 立即取下一个任务
 ```
 
@@ -595,8 +751,8 @@ curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/questi
 # 提交疑问，任务移出队列
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
   -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "需求中提到的「用户中心」找不到对应模块"}'
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"question": "需求中提到的「用户中心」找不到对应模块"}'
 
 # 立即取下一个，不要等
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
