@@ -668,12 +668,15 @@ router.get('/task/:id/supplements', (req, res) => {
     if (!task || task.user_id !== req.userId) {
       return res.status(403).json({ code: 403, message: '无权访问', data: null })
     }
+    // 只返回未读的补充说明
     const rows = db.prepare(
-      'SELECT id, content, created_at, read_by_agent FROM task_supplements WHERE task_id = ? ORDER BY created_at ASC'
-    ).all(id) as { id: string; content: string; created_at: string; read_by_agent: number }[]
+      'SELECT id, content, created_at FROM task_supplements WHERE task_id = ? AND read_by_agent = 0 ORDER BY created_at ASC'
+    ).all(id) as { id: string; content: string; created_at: string }[]
 
-    // 标记为已读
-    db.prepare('UPDATE task_supplements SET read_by_agent = 1 WHERE task_id = ? AND read_by_agent = 0').run(id)
+    // 自动标记为已读
+    if (rows.length > 0) {
+      db.prepare('UPDATE task_supplements SET read_by_agent = 1 WHERE task_id = ? AND read_by_agent = 0').run(id)
+    }
 
     res.json({ code: 0, message: 'success', data: rows })
   } catch (err) {

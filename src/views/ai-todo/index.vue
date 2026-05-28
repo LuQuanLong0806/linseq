@@ -723,7 +723,7 @@ onMounted(async () => {
     if (expandedDevTask.value) {
       await loadSupplementHistory(expandedDevTask.value)
     }
-  }, 15000)
+  }, 3000)
   await nextTick()
 })
 
