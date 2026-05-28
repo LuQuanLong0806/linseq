@@ -100,6 +100,18 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
+  async function fetchMoreTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: TaskStatus; aiStatus?: string; priority?: TaskPriority; module?: string; projectPath?: string }) {
+    loading.value = true
+    try {
+      const res = await taskApi.getTasks({ pageSize: 20, ...params })
+      tasks.value = [...tasks.value, ...res.data.list]
+      totalTasks.value = res.data.total
+      return res.data.list.length
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchTaskById(id: string) {
     loading.value = true
     try {
@@ -215,6 +227,7 @@ export const useTaskStore = defineStore('task', () => {
     stats,
     tasksByStatus,
     fetchTasks,
+    fetchMoreTasks,
     fetchTaskById,
     updateTaskStatus,
     updateTask,

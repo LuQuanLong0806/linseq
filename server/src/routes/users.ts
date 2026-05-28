@@ -10,7 +10,15 @@ import crypto from 'crypto'
 
 const router = Router()
 
-/** 登录即注册：用内网凭据登录，成功后自动创建用户 */
+const TOKEN_TTL_DAYS = 7
+
+function generateToken(): { token: string; tokenExpiry: string } {
+  const token = 'lseq_' + crypto.randomBytes(32).toString('hex')
+  const expiry = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  return { token, tokenExpiry: expiry }
+}
+
+/** 登录即注册：用内网凭据登录，成功后自动创建用户并签发 token */
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body as { username: string; password: string }
@@ -21,17 +29,22 @@ router.post('/login', async (req, res) => {
     // Puppeteer 登录内网
     const result = await loginIntranet(username, password)
 
+    // 生成 token
+    const { token, tokenExpiry } = generateToken()
+
     // 登录成功，创建或更新用户
     const db = getDb()
     const displayName = username
     db.prepare(`
-      INSERT INTO users (username, password, display_name, cookie, cookie_expiry)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, display_name, cookie, cookie_expiry, token, token_expiry)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(username) DO UPDATE SET
         password = excluded.password,
         cookie = excluded.cookie,
-        cookie_expiry = excluded.cookie_expiry
-    `).run(username, password, displayName, result.cookie, result.expiry)
+        cookie_expiry = excluded.cookie_expiry,
+        token = excluded.token,
+        token_expiry = excluded.token_expiry
+    `).run(username, password, displayName, result.cookie, result.expiry, token, tokenExpiry)
 
     // 设为当前用户
     db.prepare(`
@@ -40,7 +53,7 @@ router.post('/login', async (req, res) => {
     `).run(JSON.stringify(username))
 
     const user = db.prepare('SELECT username, display_name, cookie_expiry, last_sync_time, created_at FROM users WHERE username = ?').get(username)
-    res.json({ code: 0, message: 'success', data: mapUserRow(user) })
+    res.json({ code: 0, message: 'success', data: { ...mapUserRow(user), token } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -57,7 +70,7 @@ router.get('/', (_req, res) => {
   }
 })
 
-/** 获取当前用户 */
+/** 获取当前用户（附带 token） */
 router.get('/current', (_req, res) => {
   try {
     const db = getDb()
@@ -66,8 +79,17 @@ router.get('/current', (_req, res) => {
     if (!username) {
       return res.json({ code: 0, message: 'success', data: null })
     }
-    const user = db.prepare('SELECT username, display_name, cookie_expiry, last_sync_time, created_at FROM users WHERE username = ?').get(username)
-    res.json({ code: 0, message: 'success', data: user ? mapUserRow(user) : null })
+    const user = db.prepare('SELECT username, display_name, cookie_expiry, last_sync_time, created_at, token, token_expiry FROM users WHERE username = ?').get(username) as Record<string, unknown> | undefined
+    if (!user) return res.json({ code: 0, message: 'success', data: null })
+    // 如果没有 token 或 token 过期，自动生成
+    let token = (user.token as string) || ''
+    const tokenExpiry = (user.token_expiry as string) || ''
+    if (!token || (tokenExpiry && new Date(tokenExpiry).getTime() < Date.now())) {
+      const gen = generateToken()
+      token = gen.token
+      db.prepare('UPDATE users SET token = ?, token_expiry = ? WHERE username = ?').run(token, gen.tokenExpiry, username)
+    }
+    res.json({ code: 0, message: 'success', data: { ...mapUserRow(user), token } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -150,7 +172,16 @@ router.post('/switch', (req, res) => {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(JSON.stringify(username))
 
-    res.json({ code: 0, message: 'success', data: null })
+    // 返回切换后用户的 token
+    const row = db.prepare('SELECT token, token_expiry FROM users WHERE username = ?').get(username) as { token: string; token_expiry: string } | undefined
+    let token = row?.token || ''
+    const tokenExpiry = row?.token_expiry || ''
+    if (!token || (tokenExpiry && new Date(tokenExpiry).getTime() < Date.now())) {
+      const gen = generateToken()
+      token = gen.token
+      db.prepare('UPDATE users SET token = ?, token_expiry = ? WHERE username = ?').run(token, gen.tokenExpiry, username)
+    }
+    res.json({ code: 0, message: 'success', data: { token } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }
@@ -168,8 +199,15 @@ router.post('/:username/refresh', async (req, res) => {
 
     db.prepare('UPDATE users SET cookie = ?, cookie_expiry = ? WHERE username = ?').run(result.cookie, result.expiry, username)
 
-    const updated = db.prepare('SELECT username, display_name, cookie_expiry, last_sync_time, created_at FROM users WHERE username = ?').get(username)
-    res.json({ code: 0, message: 'success', data: mapUserRow(updated) })
+    const updated = db.prepare('SELECT username, display_name, cookie_expiry, last_sync_time, created_at, token, token_expiry FROM users WHERE username = ?').get(username) as Record<string, unknown> | undefined
+    let token = (updated?.token as string) || ''
+    const tokenExpiry = (updated?.token_expiry as string) || ''
+    if (!token || (tokenExpiry && new Date(tokenExpiry).getTime() < Date.now())) {
+      const gen = generateToken()
+      token = gen.token
+      db.prepare('UPDATE users SET token = ?, token_expiry = ? WHERE username = ?').run(token, gen.tokenExpiry, username)
+    }
+    res.json({ code: 0, message: 'success', data: { ...mapUserRow(updated), token } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }

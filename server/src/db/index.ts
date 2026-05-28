@@ -241,6 +241,10 @@ export function initDatabase(): void {
     )
   `)
 
+  // users 表加 token/token_expiry 列（安全 ALTER）
+  try { db.exec(`ALTER TABLE users ADD COLUMN token TEXT DEFAULT ''`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE users ADD COLUMN token_expiry TEXT DEFAULT ''`) } catch { /* 已存在 */ }
+
   // 已有表加 user_id 列（安全 ALTER，兼容已有数据）
   const userIdColumns: [string, string][] = [
     ['tasks', 'TEXT DEFAULT ""'],

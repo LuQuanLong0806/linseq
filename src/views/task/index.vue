@@ -2,22 +2,22 @@
   <div class="task-list-page">
     <!-- 筛选栏 -->
     <div class="cyber-panel filter-card">
-      <el-row :gutter="16" align="middle">
-        <el-col :span="6">
+      <div class="filter-row">
+        <div class="filter-fields">
           <el-input
             v-model="filters.keyword"
             placeholder="搜索任务标题/ID..."
             :prefix-icon="Search"
             clearable
+            style="width: 220px"
             @clear="handleSearch"
             @keyup.enter="handleSearch"
           />
-        </el-col>
-        <el-col :span="5">
           <el-select
             v-model="filters.aiStatus"
             placeholder="AI开发状态"
             clearable
+            style="width: 150px"
             @change="handleSearch"
           >
             <el-option label="AI待办" value="ai_todo" />
@@ -27,35 +27,13 @@
             <el-option label="已完成" value="ai_done" />
             <el-option label="未加入" value="none" />
           </el-select>
-        </el-col>
-        <!-- 隐藏筛选项：优先级 / 所属模块 -->
-        <!-- <el-col :span="4">
-          <el-select v-model="filters.priority" placeholder="优先级" clearable @change="handleSearch">
-            <el-option label="紧急" value="urgent" />
-            <el-option label="高" value="high" />
-            <el-option label="中" value="medium" />
-            <el-option label="低" value="low" />
-          </el-select>
-        </el-col>
-        <el-col :span="4">
-          <el-select v-model="filters.module" placeholder="所属模块" clearable @change="handleSearch">
-            <el-option v-for="m in modules" :key="m" :label="m" :value="m" />
-          </el-select>
-        </el-col> -->
-        <el-col :span="7" style="text-align: right">
-          <el-button type="primary" :icon="Search" @click="handleSearch"
-            >搜索</el-button
-          >
+        </div>
+        <div class="filter-actions">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
           <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
-          <el-button
-            type="success"
-            :icon="Download"
-            @click="handleSync"
-            :loading="taskStore.syncing"
-            >同步</el-button
-          >
-        </el-col>
-      </el-row>
+          <el-button type="success" :icon="Download" @click="handleSync" :loading="taskStore.syncing">同步</el-button>
+        </div>
+      </div>
     </div>
 
     <!-- 操作栏：左侧视图切换，右侧批量操作 -->
@@ -243,14 +221,18 @@
     <!-- 以下视图暂时隐藏，保留组件文件：card / planetary / datastream / constellation -->
 
     <!-- 全息HUD视图 -->
-    <HolographicHudView
-      v-show="taskStore.viewMode === 'holographic'"
-      :tasks="taskStore.tasks"
-      @config="openProjectSettings"
-      @toggle-todo="handleToggleTodo"
-      @status-change="handleStatusChangeWrapper"
-      @update-selected="handleHoloSelection"
-    />
+    <div v-show="taskStore.viewMode === 'holographic'" class="holo-scroll-wrapper" ref="holoScrollRef">
+      <HolographicHudView
+        :tasks="taskStore.tasks"
+        @config="openProjectSettings"
+        @toggle-todo="handleToggleTodo"
+        @status-change="handleStatusChangeWrapper"
+        @update-selected="handleHoloSelection"
+      />
+      <div ref="holoSentinel" class="holo-sentinel"></div>
+      <div v-if="holoLoading" class="holo-loading">加载中...</div>
+      <div v-if="!holoHasMore && taskStore.tasks.length > 0" class="holo-loading">已加载全部</div>
+    </div>
 
     <!-- 右侧抽屉配置面板 -->
     <Transition name="fade-mask">
@@ -385,6 +367,14 @@ const taskStore = useTaskStore();
 const currentPage = ref(1);
 const pageSize = ref(20);
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
+
+// 全息模式滚动加载
+const holoPage = ref(1)
+const holoHasMore = ref(true)
+const holoLoading = ref(false)
+const holoScrollRef = ref<HTMLElement | null>(null)
+const holoSentinel = ref<HTMLElement | null>(null)
+let holoObserver: IntersectionObserver | null = null
 const selectedTasks = ref<Task[]>([]);
 const holoSelectedIds = ref<string[]>([]);
 const activeSelected = computed<Task[]>(() => {
@@ -474,8 +464,12 @@ async function handleBatchStatusChange(status: string) {
 }
 
 function handleSearch() {
-  currentPage.value = 1;
-  loadData();
+  if (taskStore.viewMode === 'holographic') {
+    loadHoloFirst()
+  } else {
+    currentPage.value = 1;
+    loadData();
+  }
 }
 
 function handleReset() {
@@ -483,8 +477,12 @@ function handleReset() {
   filters.status = '';
   filters.priority = '';
   filters.module = '';
-  currentPage.value = 1;
-  loadData();
+  if (taskStore.viewMode === 'holographic') {
+    loadHoloFirst()
+  } else {
+    currentPage.value = 1;
+    loadData();
+  }
 }
 
 async function handleSync() {
@@ -765,9 +763,72 @@ function handlePageChange(page: number) {
   loadData()
 }
 
+// 全息模式：加载首页
+async function loadHoloFirst() {
+  holoPage.value = 1
+  holoHasMore.value = true
+  await taskStore.fetchTasks({
+    page: 1,
+    pageSize: 20,
+    keyword: filters.keyword || undefined,
+    aiStatus: (filters.aiStatus || undefined) as string | undefined,
+    priority: (filters.priority || undefined) as TaskPriority | undefined,
+    module: filters.module || undefined,
+  })
+  holoHasMore.value = taskStore.tasks.length < taskStore.totalTasks
+  setupHoloObserver()
+}
+
+// 全息模式：加载下一页
+async function loadHoloMore() {
+  if (holoLoading.value || !holoHasMore.value) return
+  holoLoading.value = true
+  holoPage.value++
+  try {
+    const count = await taskStore.fetchMoreTasks({
+      page: holoPage.value,
+      pageSize: 20,
+      keyword: filters.keyword || undefined,
+      aiStatus: (filters.aiStatus || undefined) as string | undefined,
+      priority: (filters.priority || undefined) as TaskPriority | undefined,
+      module: filters.module || undefined,
+    })
+    holoHasMore.value = count >= 20
+  } finally {
+    holoLoading.value = false
+  }
+}
+
+function setupHoloObserver() {
+  if (holoObserver) holoObserver.disconnect()
+  if (!holoSentinel.value) return
+  holoObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting) loadHoloMore()
+  }, { rootMargin: '200px' })
+  holoObserver.observe(holoSentinel.value)
+}
+
+// 视图切换时处理数据加载
+watch(() => taskStore.viewMode, (mode) => {
+  if (mode === 'holographic') {
+    loadHoloFirst()
+  } else {
+    if (holoObserver) holoObserver.disconnect()
+    loadData()
+  }
+})
+
 onMounted(() => {
-  loadData();
+  if (taskStore.viewMode === 'holographic') {
+    loadHoloFirst()
+  } else {
+    loadData()
+  }
 });
+
+onUnmounted(() => {
+  if (holoObserver) holoObserver.disconnect()
+})
 </script>
 
 <style lang="scss" scoped>
@@ -789,6 +850,26 @@ onMounted(() => {
 .filter-card {
   margin-bottom: 16px;
   padding: 16px 20px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.filter-fields {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .toolbar {
@@ -1100,4 +1181,20 @@ onMounted(() => {
 .drawer-slide-leave-to { transform: translateX(100%); }
 .fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.25s ease; }
 .fade-mask-enter-from, .fade-mask-leave-to { opacity: 0; }
+
+// ===== Holographic Scroll Loading =====
+.holo-scroll-wrapper {
+  position: relative; z-index: 1;
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.2); border-radius: 3px; }
+}
+
+.holo-sentinel { height: 1px; }
+
+.holo-loading {
+  text-align: center; padding: 20px 0; font-size: 13px;
+  color: rgba(0,229,255,0.5);
+}
 </style>
