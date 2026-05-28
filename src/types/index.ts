@@ -178,6 +178,7 @@ export interface PaginationParams {
   project?: string
   customer?: string
   projectPath?: string
+  aiStatus?: string
   isClosed?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'

@@ -7,7 +7,7 @@ import { agentApi } from '@/api/agent'
 import { createPersistedRef, loadPersisted, persist } from '@/utils/persistence'
 
 export type ViewMode = 'table' | 'card' | 'planetary' | 'holographic' | 'datastream' | 'constellation'
-const validModes: ViewMode[] = ['table', 'card', 'planetary', 'holographic', 'datastream', 'constellation']
+const validModes: ViewMode[] = ['table', 'holographic']
 
 export const useTaskStore = defineStore('task', () => {
   // State
@@ -89,7 +89,7 @@ export const useTaskStore = defineStore('task', () => {
   })
 
   // Actions
-  async function fetchTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: TaskStatus; priority?: TaskPriority; module?: string; projectPath?: string }) {
+  async function fetchTasks(params?: { page?: number; pageSize?: number; keyword?: string; status?: TaskStatus; aiStatus?: string; priority?: TaskPriority; module?: string; projectPath?: string }) {
     loading.value = true
     try {
       const res = await taskApi.getTasks({ pageSize: 9999, ...params })

@@ -71,7 +71,7 @@ router.post('/:id/republish', (req, res) => {
 router.get('/', (req, res) => {
   try {
     const db = getDb()
-    const { page = '1', pageSize = '20', keyword, status, priority, project, customer, module, projectPath, isClosed } = req.query
+    const { page = '1', pageSize = '20', keyword, status, aiStatus, priority, project, customer, module, projectPath, isClosed } = req.query
 
     let whereClause = 'WHERE is_hidden = 0 AND user_id = ?'
     const params: unknown[] = [req.userId]
@@ -84,6 +84,14 @@ router.get('/', (req, res) => {
     if (status) {
       whereClause += ' AND status = ?'
       params.push(status)
+    }
+    if (aiStatus) {
+      if (aiStatus === 'none') {
+        whereClause += ' AND (ai_status = "" OR ai_status IS NULL)'
+      } else {
+        whereClause += ' AND ai_status = ?'
+        params.push(aiStatus)
+      }
     }
     if (priority) {
       whereClause += ' AND priority = ?'

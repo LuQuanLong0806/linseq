@@ -13,28 +13,24 @@
             @keyup.enter="handleSearch"
           />
         </el-col>
-        <el-col :span="4">
+        <el-col :span="5">
           <el-select
-            v-model="filters.status"
-            placeholder="任务状态"
+            v-model="filters.aiStatus"
+            placeholder="AI开发状态"
             clearable
             @change="handleSearch"
           >
-            <el-option label="待开发" value="pending" />
-            <el-option label="开发中" value="in_progress" />
-            <el-option label="自测完成" value="self_test" />
-            <el-option label="已提测" value="submitted" />
-            <el-option label="已完结" value="completed" />
-            <el-option label="已驳回" value="rejected" />
+            <el-option label="AI待办" value="ai_todo" />
+            <el-option label="开发中" value="ai_dev" />
+            <el-option label="待审核" value="ai_review" />
+            <el-option label="待返工" value="ai_rework" />
+            <el-option label="已完成" value="ai_done" />
+            <el-option label="未加入" value="none" />
           </el-select>
         </el-col>
-        <el-col :span="4">
-          <el-select
-            v-model="filters.priority"
-            placeholder="优先级"
-            clearable
-            @change="handleSearch"
-          >
+        <!-- 隐藏筛选项：优先级 / 所属模块 -->
+        <!-- <el-col :span="4">
+          <el-select v-model="filters.priority" placeholder="优先级" clearable @change="handleSearch">
             <el-option label="紧急" value="urgent" />
             <el-option label="高" value="high" />
             <el-option label="中" value="medium" />
@@ -42,16 +38,11 @@
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-select
-            v-model="filters.module"
-            placeholder="所属模块"
-            clearable
-            @change="handleSearch"
-          >
+          <el-select v-model="filters.module" placeholder="所属模块" clearable @change="handleSearch">
             <el-option v-for="m in modules" :key="m" :label="m" :value="m" />
           </el-select>
-        </el-col>
-        <el-col :span="6" style="text-align: right">
+        </el-col> -->
+        <el-col :span="7" style="text-align: right">
           <el-button type="primary" :icon="Search" @click="handleSearch"
             >搜索</el-button
           >
@@ -73,29 +64,26 @@
         <ViewModeSelector :model-value="taskStore.viewMode" @update:model-value="taskStore.setViewMode" />
       </div>
       <div class="toolbar-right">
-        <span v-if="selectedTasks.length > 0" class="selected-count"
-          >已选 {{ selectedTasks.length }} 项</span
+        <span v-if="activeSelected.length > 0" class="selected-count"
+          >已选 {{ activeSelected.length }} 项</span
         >
         <el-button
           type="primary"
           size="small"
-          :disabled="selectedTasks.length === 0"
+          :disabled="activeSelected.length === 0"
           @click="handleBatchTodo"
           >批量入AI待办</el-button
         >
         <el-button
           type="success"
           size="small"
-          :disabled="selectedTasks.length === 0"
+          :disabled="activeSelected.length === 0"
           @click="handleBatchSettings"
           >批量设置</el-button
         >
-        <el-dropdown trigger="click" @command="handleBatchStatusChange">
-          <el-button
-            type="warning"
-            size="small"
-            :disabled="selectedTasks.length === 0"
-          >
+        <!-- 隐藏：批量修改状态 -->
+        <!-- <el-dropdown trigger="click" @command="handleBatchStatusChange">
+          <el-button type="warning" size="small" :disabled="activeSelected.length === 0">
             批量修改状态<el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
@@ -107,11 +95,11 @@
               <el-dropdown-item command="completed">已完结</el-dropdown-item>
             </el-dropdown-menu>
           </template>
-        </el-dropdown>
+        </el-dropdown> -->
         <el-button
           type="danger"
           size="small"
-          :disabled="selectedTasks.length === 0"
+          :disabled="activeSelected.length === 0"
           @click="handleBatchRemove"
           >批量移出待办</el-button
         >
@@ -252,74 +240,7 @@
       </div>
     </div>
 
-    <!-- 卡片视图 -->
-    <div v-show="taskStore.viewMode === 'card'" class="card-view">
-      <div
-        v-for="(task, idx) in taskStore.tasks"
-        :key="task.id"
-        class="cyber-card"
-        :class="{ 'in-todo': taskStore.isInTodoList(task.id) }"
-        @click="$router.push(`/tasks/${task.id}`)"
-      >
-        <div class="card-glow"></div>
-        <div class="card-rank">{{ idx + 1 + (currentPage - 1) * pageSize }}</div>
-        <div class="card-body">
-          <div class="card-head">
-            <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
-            <el-tag v-if="task.aiStatus" :type="getAiStatusType(task.aiStatus)" size="small" effect="dark">{{ getAiStatusLabel(task.aiStatus) }}</el-tag>
-            <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
-            <span class="card-id">#{{ task.sourceId }}</span>
-          </div>
-          <h3 class="card-title">{{ task.title }}</h3>
-          <div class="card-meta">
-            <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
-            <span v-if="task.module">{{ task.module }}</span>
-            <span>{{ task.workHours || 0 }}h</span>
-            <span :class="{ overdue: isOverdue(task) }">{{ formatDate(task.deadline) }}</span>
-          </div>
-          <div v-if="task.customDescription" class="card-desc-preview">
-            <span class="desc-label">说明</span>
-            <span class="desc-text">{{ task.customDescription }}</span>
-          </div>
-        </div>
-        <div class="card-ops" @click.stop>
-          <span class="op" @click="$router.push(`/tasks/${task.id}`)">
-            <el-icon><View /></el-icon>详情
-          </span>
-          <span class="op" @click="openProjectSettings(task)">
-            <el-icon><Setting /></el-icon>配置
-          </span>
-          <span
-            class="op"
-            :class="taskStore.isInTodoList(task.id) ? 'op-active' : 'op-todo'"
-            @click="handleToggleTodo(task)"
-          >
-            <el-icon><Promotion /></el-icon>{{ taskStore.isInTodoList(task.id) ? 'AI待办' : '入待办' }}
-          </span>
-          <el-dropdown trigger="click" @command="(cmd) => handleStatusChange(task, cmd)">
-            <span class="op" @click.stop><el-icon><Switch /></el-icon>状态</span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="pending">待开发</el-dropdown-item>
-                <el-dropdown-item command="in_progress">开发中</el-dropdown-item>
-                <el-dropdown-item command="self_test">自测完成</el-dropdown-item>
-                <el-dropdown-item command="submitted">已提测</el-dropdown-item>
-                <el-dropdown-item command="completed">已完结</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </div>
-    </div>
-
-    <!-- 行星轨道视图 (v-if for WebGL canvas dimensions) -->
-    <PlanetaryOrbitView
-      v-if="taskStore.viewMode === 'planetary'"
-      :tasks="taskStore.tasks"
-      @config="openProjectSettings"
-      @toggle-todo="handleToggleTodo"
-      @status-change="handleStatusChangeWrapper"
-    />
+    <!-- 以下视图暂时隐藏，保留组件文件：card / planetary / datastream / constellation -->
 
     <!-- 全息HUD视图 -->
     <HolographicHudView
@@ -328,24 +249,7 @@
       @config="openProjectSettings"
       @toggle-todo="handleToggleTodo"
       @status-change="handleStatusChangeWrapper"
-    />
-
-    <!-- 赛博数据流视图 -->
-    <CyberDataStreamView
-      v-show="taskStore.viewMode === 'datastream'"
-      :tasks="taskStore.tasks"
-      @config="openProjectSettings"
-      @toggle-todo="handleToggleTodo"
-      @status-change="handleStatusChangeWrapper"
-    />
-
-    <!-- 星座图谱视图 -->
-    <ConstellationMapView
-      v-show="taskStore.viewMode === 'constellation'"
-      :tasks="taskStore.tasks"
-      @config="openProjectSettings"
-      @toggle-todo="handleToggleTodo"
-      @status-change="handleStatusChangeWrapper"
+      @update-selected="handleHoloSelection"
     />
 
     <!-- 右侧抽屉配置面板 -->
@@ -357,7 +261,7 @@
         <div class="drawer-header">
           <div class="drawer-title-area">
             <template v-if="isBatchMode">
-              <el-tag type="info" size="small">已选 {{ selectedTasks.length }} 项</el-tag>
+              <el-tag type="info" size="small">已选 {{ activeSelected.length }} 项</el-tag>
               <span class="drawer-batch-name">{{ batchProjectName }}</span>
             </template>
             <template v-else-if="currentEditTask">
@@ -409,6 +313,37 @@
           </el-form-item>
         </el-form>
 
+        <!-- 需求文档 -->
+        <div v-if="currentEditTask && !isBatchMode" class="req-doc-section">
+          <div class="req-doc-header">
+            <span class="req-doc-title">需求文档</span>
+            <div class="req-doc-actions">
+              <a
+                v-if="currentEditTask.reqDocUrl"
+                :href="`/api/sync/req-doc?url=${encodeURIComponent(currentEditTask.reqDocUrl)}`"
+                target="_blank"
+                class="req-doc-link"
+              >查看原文</a>
+              <el-button
+                v-if="!currentEditTask.reqDocText && currentEditTask.reqDocName"
+                type="primary"
+                link
+                size="small"
+                :loading="extractingPdf"
+                @click="handleExtractPdf"
+              >{{ extractingPdf ? '提取中...' : '提取文字' }}</el-button>
+            </div>
+          </div>
+          <div v-if="currentEditTask.reqDocName" class="req-doc-name">
+            {{ currentEditTask.reqDocName }}
+          </div>
+          <div v-if="currentEditTask.reqDocText" class="req-doc-content">
+            <div v-for="(line, i) in currentEditTask.reqDocText.split('\n').filter(l => l.trim())" :key="i" class="req-doc-line">{{ line }}</div>
+          </div>
+          <div v-else-if="currentEditTask.reqDocName" class="req-doc-empty">点击上方「提取文字」解析文档内容</div>
+          <div v-else class="req-doc-empty">暂无需求文档</div>
+        </div>
+
         <div class="drawer-footer">
           <el-button @click="drawerOpen = false">取消</el-button>
           <el-button type="primary" @click="saveProjectSettings" :loading="saving">保存</el-button>
@@ -423,10 +358,10 @@ import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTaskStore } from '@/stores/task';
 import ViewModeSelector from './components/ViewModeSelector.vue'
-import PlanetaryOrbitView from './components/PlanetaryOrbitView.vue'
+// import PlanetaryOrbitView from './components/PlanetaryOrbitView.vue'
 import HolographicHudView from './components/HolographicHudView.vue'
-import CyberDataStreamView from './components/CyberDataStreamView.vue'
-import ConstellationMapView from './components/ConstellationMapView.vue'
+// import CyberDataStreamView from './components/CyberDataStreamView.vue'
+// import ConstellationMapView from './components/ConstellationMapView.vue'
 import {
   Search,
   RefreshRight,
@@ -439,6 +374,7 @@ import {
 } from '@element-plus/icons-vue';
 import type { TaskStatus, TaskPriority, Task } from '@/types';
 import { projectApi, type ProjectConfig } from '@/api/project';
+import { taskApi } from '@/api/task';
 import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { ElTable } from 'element-plus';
@@ -450,10 +386,18 @@ const currentPage = ref(1);
 const pageSize = ref(20);
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
 const selectedTasks = ref<Task[]>([]);
+const holoSelectedIds = ref<string[]>([]);
+const activeSelected = computed<Task[]>(() => {
+  if (taskStore.viewMode === 'holographic') {
+    return taskStore.tasks.filter((t: Task) => holoSelectedIds.value.includes(t.id))
+  }
+  return selectedTasks.value
+})
 
 const filters = reactive({
   keyword: '',
   status: '' as string,
+  aiStatus: '' as string,
   priority: '' as string,
   module: '' as string
 });
@@ -461,6 +405,7 @@ const filters = reactive({
 // Right drawer
 const drawerOpen = ref(false);
 const saving = ref(false);
+const extractingPdf = ref(false);
 const currentEditTask = ref<Task | null>(null);
 const isBatchMode = ref(false);
 const batchProjectName = ref('');
@@ -482,6 +427,7 @@ async function loadData() {
     pageSize: pageSize.value,
     keyword: filters.keyword || undefined,
     status: (filters.status || undefined) as TaskStatus | undefined,
+    aiStatus: (filters.aiStatus || undefined) as string | undefined,
     priority: (filters.priority || undefined) as TaskPriority | undefined,
     module: filters.module || undefined,
   });
@@ -493,17 +439,21 @@ function handleSelectionChange(rows: Task[]) {
   selectedTasks.value = rows;
 }
 
+function handleHoloSelection(ids: string[]) {
+  holoSelectedIds.value = ids;
+}
+
 async function handleBatchTodo() {
-  const count = selectedTasks.value.length;
-  for (const task of selectedTasks.value) {
+  const count = activeSelected.value.length;
+  for (const task of activeSelected.value) {
     if (!taskStore.isInTodoList(task.id)) taskStore.toggleTodo(task);
   }
   ElMessage.success(`已将 ${count} 个任务移入 AI 待办`);
 }
 
 async function handleBatchRemove() {
-  const count = selectedTasks.value.length;
-  for (const task of selectedTasks.value) {
+  const count = activeSelected.value.length;
+  for (const task of activeSelected.value) {
     if (taskStore.isInTodoList(task.id)) taskStore.toggleTodo(task);
   }
   ElMessage.success(`已将 ${count} 个任务移出 AI 待办`);
@@ -512,11 +462,11 @@ async function handleBatchRemove() {
 async function handleBatchStatusChange(status: string) {
   const label = getStatusLabel(status);
   try {
-    for (const task of selectedTasks.value) {
+    for (const task of activeSelected.value) {
       await taskStore.updateTaskStatus(task.id, status as TaskStatus);
     }
     ElMessage.success(
-      `已将 ${selectedTasks.value.length} 个任务状态修改为「${label}」`
+      `已将 ${activeSelected.value.length} 个任务状态修改为「${label}」`
     );
   } catch {
     ElMessage.error('批量修改状态失败');
@@ -544,6 +494,21 @@ async function handleSync() {
     await loadData();
   } catch {
     ElMessage.error('同步失败');
+  }
+}
+
+async function handleExtractPdf() {
+  if (!currentEditTask.value) return
+  extractingPdf.value = true
+  try {
+    const res = await taskApi.extractPdf(currentEditTask.value.id)
+    if (res.data?.reqDocText) {
+      currentEditTask.value = { ...currentEditTask.value, reqDocText: res.data.reqDocText }
+    }
+  } catch {
+    ElMessage.error('PDF 文字提取失败')
+  } finally {
+    extractingPdf.value = false
   }
 }
 
@@ -642,7 +607,7 @@ async function openProjectSettings(task: Task) {
 }
 
 async function handleBatchSettings() {
-  const selected = selectedTasks.value;
+  const selected = activeSelected.value;
   const projectName = selected[0]?.project || selected[0]?.customer || '';
   const sameProject = selected.every(
     (t) => (t.project || t.customer) === projectName
@@ -683,10 +648,10 @@ async function saveProjectSettings() {
     if (projectForm.customDescription) payload.customDescription = projectForm.customDescription;
 
     if (isBatchMode.value) {
-      for (const task of selectedTasks.value) {
+      for (const task of activeSelected.value) {
         await taskStore.updateTask(task.id, payload);
       }
-      ElMessage.success(`已批量配置 ${selectedTasks.value.length} 个任务`);
+      ElMessage.success(`已批量配置 ${activeSelected.value.length} 个任务`);
     } else if (currentEditTask.value) {
       await taskStore.updateTask(currentEditTask.value.id, payload);
       ElMessage.success('配置已保存');
@@ -1064,6 +1029,69 @@ onMounted(() => {
 .drawer-footer {
   padding-top: 16px; border-top: 1px solid rgba(0,229,255,0.1);
   display: flex; justify-content: flex-end; gap: 10px;
+}
+
+.req-doc-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0,229,255,0.08);
+}
+
+.req-doc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.req-doc-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #e0e0ef;
+}
+
+.req-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.req-doc-link {
+  font-size: 12px;
+  color: #00E5FF;
+  text-decoration: none;
+  &:hover { text-decoration: underline; }
+}
+
+.req-doc-name {
+  font-size: 12px;
+  color: #8c8ca1;
+  margin-bottom: 10px;
+}
+
+.req-doc-content {
+  max-height: 300px;
+  overflow-y: auto;
+  background: rgba(0,229,255,0.04);
+  border: 1px solid rgba(0,229,255,0.08);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #c0c4cc;
+}
+
+.req-doc-line {
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.req-doc-empty {
+  text-align: center;
+  color: #606266;
+  font-size: 12px;
+  padding: 20px 0;
 }
 
 .drawer-slide-enter-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
