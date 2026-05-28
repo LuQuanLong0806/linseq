@@ -4,7 +4,22 @@
     <!-- 侧边栏 -->
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="aside">
       <div class="logo-area">
-        <div class="logo-icon">⚡</div>
+        <div class="logo-icon">
+          <div class="logo-glow"></div>
+          <svg viewBox="0 0 40 40" fill="none" width="28" height="28" class="logo-svg">
+            <path class="hex-outer" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="#00E5FF" stroke-width="1.5" fill="rgba(0,229,255,0.06)" />
+            <path class="hex-inner" d="M20 10L30 15V25L20 30L10 25V15L20 10Z" stroke="#9D5CFF" stroke-width="1" fill="rgba(157,92,255,0.04)" />
+            <circle class="hex-core" cx="20" cy="20" r="3" fill="#00E5FF" />
+            <path class="hex-sweep" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#sweepGrad)" stroke-width="2" fill="none" stroke-dasharray="120" stroke-dashoffset="120" />
+            <defs>
+              <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="transparent" />
+                <stop offset="50%" stop-color="#00E5FF" />
+                <stop offset="100%" stop-color="transparent" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
         <transition name="fade">
           <span v-show="!isCollapsed" class="logo-text">灵序 LINSEQ</span>
         </transition>
@@ -168,9 +183,63 @@ onUnmounted(() => {
   border-bottom: 1px solid rgba(0, 229, 255, 0.08);
 
   .logo-icon {
-    font-size: 24px;
     flex-shrink: 0;
-    text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+    position: relative;
+  }
+
+  .logo-svg {
+    filter: drop-shadow(0 0 6px rgba(0,229,255,0.3));
+    animation: logoBreathe 3s ease-in-out infinite;
+  }
+
+  .hex-outer {
+    animation: hexGlow 3s ease-in-out infinite alternate;
+  }
+
+  .hex-inner {
+    animation: hexGlow 3s ease-in-out infinite alternate-reverse;
+  }
+
+  .hex-core {
+    animation: corePulse 2s ease-in-out infinite;
+  }
+
+  .hex-sweep {
+    animation: sweepStroke 4s linear infinite;
+  }
+
+  .logo-glow {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,229,255,0.12) 0%, transparent 70%);
+    animation: glowPulse 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes logoBreathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+
+  @keyframes hexGlow {
+    0% { stroke-opacity: 0.5; filter: drop-shadow(0 0 2px currentColor); }
+    100% { stroke-opacity: 1; filter: drop-shadow(0 0 8px currentColor); }
+  }
+
+  @keyframes corePulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; filter: drop-shadow(0 0 6px #00E5FF); }
+  }
+
+  @keyframes sweepStroke {
+    0% { stroke-dashoffset: 120; }
+    100% { stroke-dashoffset: -120; }
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.15); }
   }
 
   .logo-text {

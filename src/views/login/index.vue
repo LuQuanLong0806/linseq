@@ -6,10 +6,19 @@
         <div class="card-glow"></div>
         <div class="card-header">
           <div class="logo-icon">
-            <svg viewBox="0 0 40 40" fill="none">
-              <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="#00E5FF" stroke-width="1.5" fill="rgba(0,229,255,0.06)" />
-              <path d="M20 10L30 15V25L20 30L10 25V15L20 10Z" stroke="#9D5CFF" stroke-width="1" fill="rgba(157,92,255,0.04)" />
-              <circle cx="20" cy="20" r="3" fill="#00E5FF" />
+            <div class="logo-glow-ring"></div>
+            <svg viewBox="0 0 40 40" fill="none" class="login-logo-svg">
+              <path class="login-hex-outer" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="#00E5FF" stroke-width="1.5" fill="rgba(0,229,255,0.06)" />
+              <path class="login-hex-inner" d="M20 10L30 15V25L20 30L10 25V15L20 10Z" stroke="#9D5CFF" stroke-width="1" fill="rgba(157,92,255,0.04)" />
+              <circle class="login-hex-core" cx="20" cy="20" r="3" fill="#00E5FF" />
+              <path class="login-hex-sweep" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#loginSweepGrad)" stroke-width="2" fill="none" stroke-dasharray="120" stroke-dashoffset="120" />
+              <defs>
+                <linearGradient id="loginSweepGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="transparent" />
+                  <stop offset="50%" stop-color="#00E5FF" />
+                  <stop offset="100%" stop-color="transparent" />
+                </linearGradient>
+              </defs>
             </svg>
           </div>
           <h1 class="login-title">灵序 LineSequence</h1>
@@ -183,8 +192,49 @@ function initBgCanvas() {
   text-align: center; margin-bottom: 32px; position: relative;
 }
 .logo-icon {
-  width: 56px; height: 56px; margin: 0 auto 16px;
-  svg { width: 100%; height: 100%; filter: drop-shadow(0 0 12px rgba(0,229,255,0.3)); }
+  width: 56px; height: 56px; margin: 0 auto 16px; position: relative;
+}
+
+.logo-glow-ring {
+  position: absolute; inset: -12px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(0,229,255,0.15) 0%, rgba(157,92,255,0.05) 50%, transparent 70%);
+  animation: glowRing 3s ease-in-out infinite;
+}
+
+.login-logo-svg {
+  width: 100%; height: 100%;
+  filter: drop-shadow(0 0 12px rgba(0,229,255,0.3));
+  animation: loginLogoBreathe 3s ease-in-out infinite;
+}
+
+.login-hex-outer { animation: hexGlow 3s ease-in-out infinite alternate; }
+.login-hex-inner { animation: hexGlow 3s ease-in-out infinite alternate-reverse; }
+.login-hex-core { animation: corePulse 2s ease-in-out infinite; }
+.login-hex-sweep { animation: sweepStroke 4s linear infinite; }
+
+@keyframes loginLogoBreathe {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(0,229,255,0.3)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 20px rgba(0,229,255,0.5)); }
+}
+
+@keyframes glowRing {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.2); }
+}
+
+@keyframes hexGlow {
+  0% { stroke-opacity: 0.5; filter: drop-shadow(0 0 2px currentColor); }
+  100% { stroke-opacity: 1; filter: drop-shadow(0 0 8px currentColor); }
+}
+
+@keyframes corePulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; filter: drop-shadow(0 0 8px #00E5FF); }
+}
+
+@keyframes sweepStroke {
+  0% { stroke-dashoffset: 120; }
+  100% { stroke-dashoffset: -120; }
 }
 .login-title {
   font-size: 22px; font-weight: 700; color: #E8F0FF; margin: 0 0 6px;
