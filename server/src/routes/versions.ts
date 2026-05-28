@@ -168,6 +168,22 @@ router.post('/:id/reject', (req, res) => {
       WHERE id = ?
     `).run(comment || '', version.task_id as string)
 
+    // 自动重新入队：把任务放回 todoList 队首（rework 优先）
+    const taskRow = db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(version.task_id as string) as { user_id: string } | undefined
+    if (taskRow?.user_id) {
+      const todoKey = `todoList_${taskRow.user_id}`
+      const existing = db.prepare("SELECT value FROM sync_config WHERE key = ?").get(todoKey) as { value: string } | undefined
+      let list: string[] = []
+      try { list = existing ? JSON.parse(existing.value) : [] } catch { list = [] }
+      const taskId = version.task_id as string
+      list = list.filter(id => id !== taskId)
+      list.unshift(taskId)
+      db.prepare(`
+        INSERT INTO sync_config (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(todoKey, JSON.stringify(list))
+    }
+
     const result = db.prepare('SELECT * FROM task_versions WHERE id = ?').get(req.params.id) as Record<string, unknown>
     res.json({ code: 0, message: 'success', data: mapRow(result) })
   } catch (err) {

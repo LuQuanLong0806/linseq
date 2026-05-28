@@ -115,13 +115,16 @@
     </div>
 
     <!-- 打回原因弹窗 -->
-    <el-dialog v-model="rejectDialogVisible" title="打回修改" width="500px" @close="resetRejectForm">
+    <el-dialog v-model="rejectDialogVisible" title="打回修改" width="560px" @close="resetRejectForm">
       <el-form :model="rejectForm" label-width="90px">
         <el-form-item label="任务">
           <span>{{ rejectTask?.title }}</span>
         </el-form-item>
         <el-form-item label="不通过原因" required>
           <el-input v-model="rejectForm.comment" type="textarea" :rows="4" placeholder="请填写不通过原因和修改建议..." />
+        </el-form-item>
+        <el-form-item label="补充需求">
+          <el-input v-model="rejectForm.supplement" type="textarea" :rows="4" placeholder="补充/修改需求描述，Agent 返工时会看到这些内容（可选）" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -172,16 +175,18 @@ async function loadVersionData() {
 const rejectDialogVisible = ref(false)
 const rejecting = ref(false)
 const rejectTask = ref<Task | null>(null)
-const rejectForm = reactive({ comment: '' })
+const rejectForm = reactive({ comment: '', supplement: '' })
 
 function openRejectDialog(task: Task) {
   rejectTask.value = task
   rejectForm.comment = ''
+  rejectForm.supplement = task.customDescription || ''
   rejectDialogVisible.value = true
 }
 
 function resetRejectForm() {
   rejectForm.comment = ''
+  rejectForm.supplement = ''
   rejectTask.value = null
 }
 
@@ -211,12 +216,18 @@ async function handleReject() {
         reviewResult: 'rejected',
       })
     }
-    // 2. 将任务重新加入待办队列（不改 aiStatus）
-    if (!taskStore.isInTodoList(task.id)) {
-      taskStore.todoList.push(task.id)
-      agentApi.saveTodoOrder(taskStore.todoList).catch(() => {})
+    // 2. 后端已自动入队 todoList（unshift 到队首），前端同步刷新
+    try {
+      const todoRes = await agentApi.getTodoOrder()
+      if (todoRes.data?.todoList) {
+        taskStore.todoList.splice(0, taskStore.todoList.length, ...todoRes.data.todoList)
+      }
+    } catch {}
+    // 3. 补充需求（保存到 customDescription）
+    if (rejectForm.supplement.trim()) {
+      await taskStore.updateTask(task.id, { customDescription: rejectForm.supplement.trim() })
     }
-    // 3. 提升优先级
+    // 4. 提升优先级
     const newPriority = PRIORITY_UPGRADE[task.priority] || 'urgent'
     await taskStore.updateTask(task.id, { priority: newPriority })
     const newReworkCount = (task.reworkCount || 0) + 1

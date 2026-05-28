@@ -103,7 +103,7 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | `isRework` | **关键！** 为 `true` 说明这是审核打回的返工任务，优先处理。你要看 `review` 字段了解上次为什么被打回 |
 | `reworkCount` | 已被返工次数。数字越大说明这个任务越难搞，要更仔细 |
 | `requirement.docText` | 需求文档的纯文本。**这是你理解需求的最重要的依据**，仔细读 |
-| `requirement.customDescription` | 用户自己补充的描述。如果 `docText` 为空或模糊，以此为准 |
+| `requirement.customDescription` | 用户自己补充的描述。如果 `docText` 为空或模糊，以此为准。**返工时人类可能在这里补充新需求**，务必仔细阅读 |
 | `requirement.acceptanceCriteria` | 验收标准。开发完成后对照这个自查 |
 | `project.path` | **目标项目的本地路径**。你要 `cd` 到这个目录去写代码 |
 | `project.gitBranch` | **目标开发分支**。你必须在写任何代码之前切换到这个分支（见「分支切换规范」） |
@@ -405,14 +405,56 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
    "已就绪，项目 [path]，分支 [branch]，技术栈 [xxx]"
 ```
 
-### 7.2 开发中
+### 7.2 开始开发前——项目结构分析（必须执行）
+
+环境就绪后、写代码前，**先花 1-2 分钟快速理解项目**，避免盲目改错文件。
+
+```
+① 读项目根目录
+   ls / cat package.json / README.md / CLAUDE.md 等
+   → 确认技术栈（Vue3? React? Node?）、构建工具、主要依赖
+
+② 读目录结构
+   找到 src/ 下的分层方式：
+   - 前端：views/ components/ stores/ api/ router/ composables/ utils/ 的职责划分
+   - 后端：routes/ services/ models/ middleware/ db/ 的职责划分
+   → 知道代码该往哪里写
+
+③ 读相关已有代码
+   根据任务标题/需求，定位到具体文件：
+   - 任务提到某个页面 → 找 views/ 下对应的 .vue 文件
+   - 任务提到某个接口 → 找 routes/ 或 api/ 下对应文件
+   - 任务提到某个功能 → grep 关键词找到相关文件
+   → 完整阅读目标文件及周边引用，理解现有实现
+
+④ 读项目配置信息
+   项目根目录通常有配置文件，**必须阅读**，遵守项目约定：
+   - `CLAUDE.md` / `.claude/` — AI 协作约定、代码规范、禁止事项
+   - `tsconfig.json` / `jsconfig.json` — TypeScript/JS 编译配置、路径别名
+   - `.eslintrc.*` / `eslint.config.*` — 代码风格规则
+   - `vite.config.*` / `webpack.config.*` — 构建配置、代理、插件
+   - `tailwind.config.*` — TailwindCSS 主题、自定义类名
+   - `.env*` — 环境变量（只读结构，不要泄露值）
+   → 确保新代码符合项目已有规范，不引入冲突的配置或依赖
+
+⑤ 上报日志
+   "项目分析完成：技术栈 [xxx]，目录结构 [xxx]，相关文件 [列出 2-3 个关键文件]"
+```
+
+**核心原则：**
+- **不读不写** — 改任何文件之前必须先读一遍
+- **理解上下文** — 看目标文件的 import 依赖、调用方、被调用方
+- **保持风格一致** — 观察现有代码的命名、格式、模式，新代码保持统一
+- **找相似参考** — 如果不确定怎么写，先看同目录下类似功能的文件怎么实现的
+
+### 7.3 开发中
 
 1. **先读后写** — 完整阅读目标文件再改
 2. **只改相关的** — 看到 bug 也不管
 3. **每完成一步上报日志** — 让人知道你在干什么
 4. **需求模糊就提交疑问** — 调 `/question`，别猜
 
-### 7.3 complete 之前——自测
+### 7.4 complete 之前——自测
 
 1. 运行 `npx tsc --noEmit`（TypeScript 项目）
 2. 运行测试 `npx vitest run`（有测试的项目）
@@ -420,7 +462,7 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 4. `git add` 相关文件 + `git commit -m "feat: xxx"`
 5. **不要 push！**
 
-### 7.4 前端任务——截图和报告
+### 7.5 前端任务——截图和报告
 
 **涉及页面/UI 变更的任务必须：**
 
@@ -437,14 +479,15 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 进入任务列表页面，点击新增按钮弹出表单，填写标题和描述后提交，列表刷新显示新增记录，功能正常。
 ```
 
-### 7.5 返工任务——被打回怎么办
+### 7.6 返工任务——被打回怎么办
 
 当 `isRework=true` 时：
 
 1. **先看 `review.prevComment`** — 人类说哪里不满意，逐条改
-2. **看 `review.prevFilesChanged`** — 上次改了哪些文件，**直接去这些文件改**
-3. **不要推翻重来** — 只针对审核意见修改
-4. **commit 用 fix：** `git commit -m "fix: 根据审核意见修改XXX"`
+2. **看 `requirement.customDescription`** — 人类可能在审核时**补充了新需求**，这些内容会更新到此字段，务必仔细阅读
+3. **看 `review.prevFilesChanged`** — 上次改了哪些文件，**直接去这些文件改**
+4. **不要推翻重来** — 只针对审核意见修改
+5. **commit 用 fix：** `git commit -m "fix: 根据审核意见修改XXX"`
 
 ---
 

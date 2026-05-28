@@ -47,7 +47,10 @@
         </el-menu-item>
         <el-menu-item index="/review">
           <el-icon><Checked /></el-icon>
-          <template #title>待审核</template>
+          <template #title>
+            <span>待审核</span>
+            <el-badge v-if="reviewCount > 0" :value="reviewCount" :max="99" class="menu-badge" />
+          </template>
         </el-menu-item>
         <el-menu-item index="/sync">
           <el-icon><Refresh /></el-icon>
@@ -106,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened } from '@element-plus/icons-vue'
@@ -128,6 +131,26 @@ let timer: ReturnType<typeof setInterval> | null = null
 const currentRoute = computed(() => route.path)
 const currentTitle = computed(() => (route.meta.title as string) || '灵序')
 const syncBadge = computed(() => taskStore.stats.pending + taskStore.stats.overdue)
+const reviewCount = computed(() => taskStore.tasks.filter(t => t.aiStatus === 'ai_review').length)
+
+const BASE_TITLE = '灵序 LineSequence'
+let titleFlashTimer: ReturnType<typeof setInterval> | null = null
+let titleFlashOn = false
+
+watch(reviewCount, (count) => {
+  if (titleFlashTimer) { clearInterval(titleFlashTimer); titleFlashTimer = null }
+  if (count > 0) {
+    titleFlashOn = false
+    titleFlashTimer = setInterval(() => {
+      titleFlashOn = !titleFlashOn
+      document.title = titleFlashOn
+        ? `🔴 (${count}) 待审核 ${BASE_TITLE}`
+        : `　 (${count}) ${BASE_TITLE}`
+    }, 800)
+  } else {
+    document.title = BASE_TITLE
+  }
+}, { immediate: true })
 
 function handleSync() {
   taskStore.syncTasks()
@@ -138,11 +161,13 @@ onMounted(async () => {
   startBg()
   timer = setInterval(() => {
     currentTime.value = dayjs().format('HH:mm')
+    taskStore.fetchTasks()
   }, 30000)
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  if (titleFlashTimer) clearInterval(titleFlashTimer)
   stopBg()
 })
 </script>
@@ -264,6 +289,17 @@ onUnmounted(() => {
       color: var(--cyber-cyan);
     }
   }
+}
+
+.menu-badge {
+  :deep(.el-badge__content) {
+    animation: badge-pulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
 }
 
 .main-container {
