@@ -7,6 +7,19 @@ import { getDb } from '../db/index.js'
 import { broadcastToTask } from '../websocket.js'
 import type { Task, TaskStatus } from './types.js'
 
+/** Webhook 回调：通知 Agent 有新补充说明 */
+function triggerWebhook(db: ReturnType<typeof getDb>, userId: string, taskId: string, content: string) {
+  try {
+    const row = db.prepare("SELECT value FROM sync_config WHERE key = 'webhookUrl'").get() as { value: string } | undefined
+    if (!row?.value) return
+    fetch(row.value, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'supplement', userId, taskId, content }),
+    }).catch(() => {})
+  } catch { /* 非阻塞，失败不影响主流程 */ }
+}
+
 const router = Router()
 
 // ========== 手动创建任务 ==========
@@ -291,6 +304,8 @@ router.post('/:id/supplements', (req, res) => {
     addDevLog(db, taskId, '补充说明', `用户追加了补充说明: ${content.trim().substring(0, 50)}${content.trim().length > 50 ? '...' : ''}`, 'user', false)
     const row = db.prepare('SELECT * FROM task_supplements WHERE id = ?').get(id)
     broadcastToTask(taskId, 'supplement', { id, taskId, content: content.trim(), type: 'user' })
+    // Webhook 回调：通知 Agent 有新补充说明
+    triggerWebhook(db, req.userId!, taskId, content.trim())
     res.json({ code: 0, message: 'success', data: row })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })

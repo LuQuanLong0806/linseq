@@ -138,6 +138,7 @@ export interface SyncConfig {
   lastSyncTime: string
   loginCookie: string
   cookieExpiry: string
+  webhookUrl: string
 }
 
 /** API 响应结构 */

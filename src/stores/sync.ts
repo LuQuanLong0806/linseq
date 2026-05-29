@@ -11,6 +11,7 @@ export const useSyncStore = defineStore('sync', () => {
     lastSyncTime: '',
     loginCookie: '',
     cookieExpiry: '',
+    webhookUrl: '',
   })
   const syncRecords = ref<SyncRecord[]>([])
   const syncing = ref(false)

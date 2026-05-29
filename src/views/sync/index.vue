@@ -67,6 +67,10 @@
             <el-form-item label="同步间隔（分钟）" v-if="syncStore.config.autoSync">
               <el-input-number v-model="syncStore.config.syncInterval" :min="5" :max="1440" :step="5" />
             </el-form-item>
+            <el-form-item label="Webhook 回调 URL">
+              <el-input v-model="syncStore.config.webhookUrl" placeholder="https://your-agent-wake-endpoint.com/callback" clearable />
+              <div class="form-hint">Agent 收到补充说明时会 POST 到此 URL，用于唤醒 Agent 处理</div>
+            </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="handleSaveConfig" :loading="savingConfig">保存配置</el-button>
             </el-form-item>
@@ -509,5 +513,10 @@ onMounted(() => {
   color: #c0c4cc;
   padding: 20px 0;
   font-size: 13px;
+}
+.form-hint {
+  font-size: 11px;
+  color: var(--cyber-text-muted);
+  margin-top: 4px;
 }
 </style>

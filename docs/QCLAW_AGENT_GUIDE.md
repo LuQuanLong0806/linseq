@@ -1,7 +1,7 @@
 # QClaw Agent 开发指南 — 灵序 LineSequence
 
 > 本文档供 AI Agent（QClaw）存储到记忆中，用于自动化任务开发调度。
-> 最后更新：2026-05-28
+> 最后更新：2026-05-29
 
 ---
 
@@ -62,7 +62,7 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 |---|---|---|
 | "开始工作" / "取任务" / "干活了" | 取任务并开始 | `GET /next-task` → 有任务就 `POST /task/{taskId}/start` |
 | "搞定了" / "完成了" / "提交" | 提交当前任务产出 | `POST /task/{taskId}/complete` → `GET /next-task` |
-| "需求不清楚" / "看不懂" | 提交疑问，继续下一个 | `POST /task/{taskId}/question` → `GET /next-task` |
+| "需求不清楚" / "看不懂" | 先在聊天框提问，等 1 分钟无回复再正式提交疑问 | `POST /log { 回复, "❓ 疑问：..." }` → 等 1 分钟 → 无回复则 `POST /question` → `GET /next-task` |
 | "跳过" / "先做下一个" | 跳过当前，取下一个 | `POST /task/{taskId}/question`（写明原因） → `GET /next-task` |
 | "还有多少任务" | 查看队列 | `GET /stats` |
 | "同步一下" | 从内网拉最新任务 | `POST /sync` |
@@ -246,9 +246,26 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ### 5. POST /task/{taskId}/question —— 提交疑问
 
-**你什么时候调：** 需求看不懂、项目路径不存在、发现需求冲突等无法继续的情况。
+**你什么时候调：** 遇到疑问后，先在聊天框提问等待 1 分钟，人类没有回答时才调用此接口。
 
-**调完之后：** 任务自动从队列移出，**你立刻调 `GET /next-task` 继续做下一个，不要停下来等回复。**
+**疑问处理流程（必须按此顺序）：**
+
+```
+遇到疑问（需求看不懂、路径不存在、需求冲突等）
+  ↓
+① POST /log { action: "回复", content: "❓ 疑问：[具体问题]...请解答" }
+  → 这会在人类聊天框显示，人类可以直接回复补充说明
+  ↓
+② 等待 1 分钟，期间每 5 秒轮询 GET /supplements
+  ↓
+③ 检查补充说明：
+  → 有人类回复 → 重新分析上下文 + 回复内容 → 继续开发
+  → 1 分钟无回复 → 调用 POST /question 正式提交疑问
+    → 任务从队列移出
+    → 立刻 GET /next-task 取下一个任务
+```
+
+**为什么先聊天再提交：** 人类可能就在电脑前，看到你的疑问直接回复补充说明就能解决，不需要把任务挂起。
 
 **请求体：**
 
@@ -266,7 +283,7 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 { "code": 0, "data": { "taskId": "xxx", "aiStatus": "ai_question" } }
 ```
 
-- `aiStatus: "ai_question"` 确认任务已挂起。人类会回复，回复后任务会重新入队，你后续会再取到它。
+- `aiStatus: "ai_question"` 确认任务已挂起。人类回复后任务会重新入队，你后续会再取到它。
 
 ---
 
@@ -424,9 +441,9 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 ### 核心原则：Agent 只管写代码，环境问题交给人类
 
 **Agent 职责：** 拉代码 → 切分支 → 写代码 → 自测 → 提交
-**遇到问题：** 立即上报 → 跳过当前任务 → 取下一个 → 等人类处理完再重新拿到这个任务
+**遇到问题：** 先在聊天框提问等 1 分钟 → 无人回复 → 提交 question 跳过 → 取下一个 → 等人类处理完再重新拿到这个任务
 
-以下任何一步失败，**不要尝试自己解决**，直接上报 question 说明原因，立刻取下一个任务。
+以下任何一步失败，**不要尝试自己解决**，先在聊天框上报问题，等 1 分钟无回复再提交 question 跳过。
 
 ---
 
@@ -434,20 +451,18 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ```
 ① cd 到 project.path
-   - 目录不存在 → question: "项目路径不存在: xxx" → 取下一个任务
+   - 目录不存在 → POST /log { "回复", "❓ 疑问：项目路径不存在: xxx" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
 
 ② 检查工作区
    git status
-   - 有未提交改动（别人或上次遗留）→ question: "当前分支有未提交代码，无法切换分支。请处理后重新入队"
-     → 取下一个任务，不要 stash 别人的代码
+   - 有未提交改动（别人或上次遗留）→ POST /log { "回复", "❓ 疑问：当前分支有未提交代码，无法切换分支" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务，不要 stash 别人的代码
    - 干净 → 继续
 
 ③ 拉取最新主分支代码
    git fetch origin
    git checkout main（或 master）
    git pull origin main
-   - pull 失败 → question: "主分支 git pull 失败: [错误信息]"
-     → 取下一个任务
+   - pull 失败 → POST /log { "回复", "❓ 疑问：主分支 git pull 失败: [错误信息]" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
 
 ④ 切换到项目配置的开发分支（project.gitBranch）
    git checkout <branch>       # 分支已存在
@@ -456,14 +471,12 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
    如果分支已存在，合入最新主分支代码：
    git merge main
    - merge 有冲突 → git merge --abort
-     → question: "分支 <branch> 合并 main 时有冲突，文件: [冲突文件列表]。请处理后重新入队"
-     → 取下一个任务
+     → POST /log { "回复", "❓ 疑问：分支 <branch> 合并 main 时有冲突，文件: [冲突文件列表]" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
    - merge 成功 → 继续
 
 ⑤ 最终确认
    git branch --show-current
-   - 输出 != project.gitBranch → question: "分支切换失败，当前在 xxx，期望 xxx"
-     → 取下一个任务
+   - 输出 != project.gitBranch → POST /log { "回复", "❓ 疑问：分支切换失败，当前在 xxx，期望 xxx" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
    - 输出 == project.gitBranch → 环境就绪，可以开发
 
 ⑥ 上报日志
@@ -725,28 +738,34 @@ curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/comple
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 ```
 
-### 环境异常（上报跳过，取下一个）
+### 环境异常（先聊天，1 分钟无回复再跳过）
 
 ```bash
 # 场景A：当前分支有未提交代码
+# ① 先在聊天框提问
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
+  -H "x-agent-key: qcl_xxx" \
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"action":"回复","content":"❓ 疑问：当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
+# ② 等待 1 分钟，每 5 秒轮询 GET /supplements
+# ③ 无回复 → 正式提交疑问
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json; charset=utf-8" \
   --data-binary '{"question": "当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
-# → 立即取下一个任务
-
-# 场景B：分支合并冲突
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
-  -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"question": "分支 feature/login 合并 main 时有冲突，文件: src/auth.ts, src/router.ts。请处理后重新入队"}'
-# → 立即取下一个任务
+# → 取下一个任务
 ```
 
 ### 需求不清楚
 
 ```bash
-# 提交疑问，任务移出队列
+# ① 先在聊天框提问
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
+  -H "x-agent-key: qcl_xxx" \
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"action":"回复","content":"❓ 疑问：需求中提到的「用户中心」找不到对应模块"}'
+# ② 等 1 分钟看人类是否回复补充说明
+# ③ 无回复 → 正式提交疑问
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json; charset=utf-8" \
@@ -775,12 +794,36 @@ curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 
 ---
 
-## 十二、错误处理
+## 十二、与人类的通讯机制
+
+你和人类通过**补充说明 + 开发日志**双向通讯：
+
+```
+人类 → 你：在聊天框发补充说明
+  → 你通过 GET /supplements 收到（每 5 秒轮询一次）
+  → 收到后先回复确认，再处理
+
+你 → 人类：POST /log { action: "回复", content: "..." }
+  → 人类在聊天框实时看到你的消息
+  → 用于回复确认、汇报进度、提问等
+```
+
+**轮询规则：**
+- 开发过程中每 5 秒轮询一次 `GET /supplements`
+- 完成等待期（自测通过后）也保持每 5 秒轮询
+- 每次循环的第一步必须是检查补充说明，不是写代码
+- 不允许跳过轮询直接提交
+
+---
+
+## 十三、错误处理
+
+**所有错误先在聊天框提问，等 1 分钟无回复再提交 question 跳过。**
 
 | 场景 | 你做什么 |
 |---|---|
-| `project.path` 不存在 | 提交 question `"项目路径不存在: xxx"`，取下一个任务 |
-| `requirement` 全为空 | 提交 question `"缺少需求描述"`，取下一个任务 |
+| `project.path` 不存在 | POST /log { "❓ 疑问：项目路径不存在: xxx" } → 等 1 分钟 → 无回复则 POST /question → 取下一个 |
+| `requirement` 全为空 | POST /log { "❓ 疑问：缺少需求描述" } → 等 1 分钟 → 无回复则 POST /question → 取下一个 |
 | 编译错误修不好 | 上报日志说明已尝试的修复方式，继续尝试其他方案 |
 | 测试失败但不是你引入的 | 上报日志列出失败用例，继续完成你的任务 |
 | 需要改数据库 | 上报日志等人确认，不要自己改 |
