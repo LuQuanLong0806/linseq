@@ -4,6 +4,7 @@ import type { Server } from 'http'
 interface ClientInfo {
   ws: WebSocket
   taskIds: Set<string>
+  global: boolean
 }
 
 const clients = new Map<WebSocket, ClientInfo>()
@@ -14,14 +15,19 @@ export function initWebSocket(server: Server) {
   wss = new WebSocketServer({ server, path: '/ws' })
 
   wss.on('connection', (ws) => {
-    const info: ClientInfo = { ws, taskIds: new Set() }
+    const info: ClientInfo = { ws, taskIds: new Set(), global: false }
     clients.set(ws, info)
 
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString())
-        if (msg.type === 'subscribe' && Array.isArray(msg.taskIds)) {
-          info.taskIds = new Set(msg.taskIds as string[])
+        if (msg.type === 'subscribe') {
+          if (msg.global === true) {
+            info.global = true
+          }
+          if (Array.isArray(msg.taskIds)) {
+            info.taskIds = new Set(msg.taskIds as string[])
+          }
         }
       } catch { /* ignore malformed messages */ }
     })
@@ -38,7 +44,8 @@ export function initWebSocket(server: Server) {
 export function broadcastToTask(taskId: string, event: string, data: any) {
   const payload = JSON.stringify({ event, taskId, data, time: new Date().toISOString() })
   for (const [, info] of clients) {
-    if ((taskId === '*' || info.taskIds.has(taskId)) && info.ws.readyState === WebSocket.OPEN) {
+    const shouldSend = info.global || taskId === '*' || info.taskIds.has(taskId)
+    if (shouldSend && info.ws.readyState === WebSocket.OPEN) {
       info.ws.send(payload)
     }
   }

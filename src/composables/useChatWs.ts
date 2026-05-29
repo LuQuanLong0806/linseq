@@ -52,6 +52,12 @@ function subscribe(taskIds: string[]) {
   }
 }
 
+function subscribeGlobal() {
+  if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+    ws.value.send(JSON.stringify({ type: 'subscribe', global: true }))
+  }
+}
+
 function disconnect() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   if (ws.value) { ws.value.close(); ws.value = null }
@@ -78,5 +84,5 @@ export function useChatWs(handler: WsHandler) {
     disconnect()
   })
 
-  return { connected, startWs, updateSubscription, disconnect }
+  return { connected, startWs, updateSubscription, subscribeGlobal, disconnect }
 }

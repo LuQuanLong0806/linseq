@@ -32,15 +32,15 @@
             <el-button v-if="ungroupedTodoTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">+ 新建分组</el-button>
           </div>
         </div>
-        <!-- 模式切换 -->
-        <div class="mode-tabs">
-          <button class="mode-tab" :class="{ active: mode === 'task' }" @click="mode = 'task'">任务模式</button>
-          <button class="mode-tab" :class="{ active: mode === 'chat' }" @click="switchToChat">对话模式</button>
+        <!-- 唤醒 Agent -->
+        <div class="wake-bar" v-if="todoQueueTasks.length > 0 && devQueueTasks.length === 0">
+          <span class="wake-hint">队列中有 {{ todoQueueTasks.length }} 个待办任务</span>
+          <el-button type="primary" @click="handleWakeAgent" :loading="waking" class="wake-btn-sm">
+            唤醒 Agent 开始任务
+          </el-button>
         </div>
       </div>
 
-      <!-- 任务模式 -->
-      <div v-if="mode === 'task'">
       <!-- 双面板布局 -->
       <div class="dual-panel">
         <!-- 左面板：待办队列 -->
@@ -53,7 +53,7 @@
             <h3 class="panel-title">待办队列</h3>
             <el-tag size="small" effect="dark" type="info" round>{{ todoQueueTasks.length }}</el-tag>
           </div>
-
+          <div class="panel-scroll" @dragover.prevent>
           <div v-if="todoQueueTasks.length === 0" class="panel-empty">
             <div class="empty-pulse"></div>
             <p>队列为空</p>
@@ -113,8 +113,8 @@
           </div>
 
           <!-- 待办任务列表 -->
-          <TransitionGroup v-if="todoQueueTasks.length > 0" name="card" tag="div" class="card-list">
-            <div v-for="(task, index) in todoQueueTasks" :key="task.id"
+          <TransitionGroup v-if="ungroupedTodoTasks.length > 0" name="card" tag="div" class="card-list">
+            <div v-for="(task, index) in ungroupedTodoTasks" :key="task.id"
               class="todo-card"
               :class="{ dragging: dragFrom?.type === 'ungrouped' && dragFrom?.index === index, 'is-active': drawerTask?.id === task.id }"
               :draggable="!drawerTask || drawerTask.id !== task.id"
@@ -147,6 +147,7 @@
               </div>
             </div>
           </TransitionGroup>
+          </div>
         </div>
 
         <!-- 右面板：开发中 -->
@@ -163,6 +164,7 @@
               <span class="engine-text">RUNNING</span>
             </div>
           </div>
+          <div class="panel-scroll" @dragover.prevent>
 
           <div v-if="devQueueTasks.length === 0" class="panel-empty dev-empty">
             <div class="empty-engine"></div>
@@ -194,127 +196,15 @@
                   </div>
                 </div>
                 <div class="card-actions">
-                  <el-button type="primary" link size="small" @click="openChatDrawer(task)">对话</el-button>
+                  <el-button type="primary" link size="small" @click="openAgentChat(task)">对话</el-button>
                   <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
                 </div>
               </div>
             </div>
           </TransitionGroup>
+          </div>
         </div>
       </div>
-        <!-- 唤醒 Agent 按钮 -->
-        <div class="wake-action" v-if="todoQueueTasks.length > 0 && devQueueTasks.length === 0">
-          <el-button type="primary" size="large" @click="handleWakeAgent" :loading="waking" class="wake-btn">
-            唤醒 Agent 开始任务
-          </el-button>
-          <span class="wake-hint">队列中有 {{ todoQueueTasks.length }} 个待办任务</span>
-        </div>
-      </div>
-
-      <!-- 对话模式 -->
-      <div v-if="mode === 'chat'" class="chat-panel">
-        <div class="chat-messages" ref="chatMessagesEl">
-          <div v-if="chatMessages.length === 0" class="chat-empty-state">
-            <div class="chat-empty-icon">💬</div>
-            <p>和灵序 Agent 直接对话</p>
-            <span>输入任何需求，Agent 被唤醒后直接处理</span>
-          </div>
-          <div v-for="msg in chatMessages" :key="msg.id"
-            class="chat-bubble-item"
-            :class="msg.role === 'user' ? 'cb-user' : 'cb-agent'">
-            <div class="cb-role">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
-            <div class="cb-content">
-              <div class="cb-text">{{ msg.content }}</div>
-              <div class="cb-time">{{ formatChatTime(msg.created_at) }}</div>
-            </div>
-          </div>
-          <div v-if="waitingChatReply" class="chat-bubble-item cb-agent">
-            <div class="cb-role">🤖</div>
-            <div class="cb-content"><div class="cb-typing"><span></span><span></span><span></span></div></div>
-          </div>
-        </div>
-        <div class="chat-input-bar">
-          <el-input v-model="chatInput" placeholder="输入消息，唤醒 Agent 执行..." @keydown.enter.ctrl="handleChatSend" />
-          <el-button type="primary" @click="handleChatSend" :loading="chatSending" :disabled="!chatInput.trim()">发送</el-button>
-        </div>
-      </div>
-
-      <!-- 聊天终端 Modal -->
-      <Teleport to="body">
-        <Transition name="fade-mask">
-          <div v-if="chatTask" class="chat-modal-mask" @click.self="chatTask = null">
-            <div class="chat-terminal">
-              <canvas ref="rainCanvas" class="terminal-rain"></canvas>
-              <!-- 顶栏：任务信息 + 状态 -->
-              <div class="terminal-header">
-                <div class="terminal-title-area">
-                  <span class="terminal-status-dot"></span>
-                  <span class="terminal-task-name">{{ chatTask.title }}</span>
-                  <el-tag type="warning" size="small" effect="dark" class="terminal-tag">开发中</el-tag>
-                </div>
-                <div class="terminal-actions">
-                  <el-button link size="small" @click="$router.push(`/tasks/${chatTask.id}`)" class="terminal-link">详情</el-button>
-                  <el-button link size="small" @click="chatTask = null" class="terminal-close">✕</el-button>
-                </div>
-              </div>
-
-              <!-- 消息区 -->
-              <div class="terminal-messages" :data-task="chatTask.id">
-                <div v-if="!supplementMap[chatTask.id]?.length && !waitingAgentReply" class="chat-empty">
-                  <div class="empty-icon">💬</div>
-                  <p>暂无对话记录</p>
-                  <span>发送补充说明给 Agent，实时修正开发方向</span>
-                </div>
-                <template v-if="supplementMap[chatTask.id]?.length">
-                  <div v-for="msg in supplementMap[chatTask.id]" :key="msg.id"
-                    class="chat-bubble"
-                    :class="msg.type === 'user' ? 'bubble-user' : (msg.action === '回复' ? 'bubble-reply' : 'bubble-agent')">
-                    <div class="bubble-header">
-                      <span class="bubble-role">
-                        {{ msg.type === 'user' ? '👤 指令' : (msg.action === '回复' ? '💬 回复' : `🤖 ${msg.action || '日志'}`) }}
-                      </span>
-                      <span class="bubble-time">{{ formatSupplementTime(msg.created_at) }}</span>
-                    </div>
-                    <div class="bubble-content">{{ msg.content }}</div>
-                    <span v-if="msg.type === 'user' && !msg.read_by_agent" class="bubble-unread">待读取</span>
-                  </div>
-                </template>
-                <!-- Loading 占位：等待 Agent 回复 -->
-                <div v-if="waitingAgentReply" class="chat-bubble bubble-waiting">
-                  <div class="bubble-header">
-                    <span class="bubble-role">💬 Agent</span>
-                  </div>
-                  <div class="waiting-dots">
-                    <span class="dot"></span>
-                    <span class="dot"></span>
-                    <span class="dot"></span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 输入区 -->
-              <div class="terminal-input" :class="{ 'drag-over': chatDragOver }"
-                @dragover.prevent="onFileDragOver"
-                @dragleave="onFileDragLeave"
-                @drop.prevent="onFileDrop">
-                <div v-if="chatDragOver" class="drop-overlay">拖拽文件到此处获取路径</div>
-                <el-input
-                  v-model="supplementInput"
-                  type="textarea"
-                  :rows="2"
-                  placeholder="输入补充说明或新需求…"
-                  resize="none"
-                  @keydown.enter.ctrl="chatTask && sendSupplement(chatTask)"
-                />
-                <div class="terminal-input-actions">
-                  <span class="input-hint">Ctrl+Enter 发送 · 支持拖拽文件</span>
-                  <el-button type="primary" size="small" @click="chatTask && sendSupplement(chatTask)" :loading="supplementSending" :disabled="!supplementInput.trim()">发送</el-button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Transition>
-      </Teleport>
 
       <!-- 配置弹窗 -->
       <Teleport to="body">
@@ -477,6 +367,7 @@ import type { Task, TaskGroup } from '@/types'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useChatWs } from '@/composables/useChatWs'
+import { useAgentChat } from '@/composables/useAgentChat'
 
 const taskStore = useTaskStore()
 
@@ -636,19 +527,18 @@ async function handleDeleteGroup(group: TaskGroup) {
 }
 
 // Drag
-function onDragStart(index: number, e: DragEvent) { dragFrom.value = { type: 'ungrouped', index }; e.dataTransfer!.effectAllowed = 'move' }
 function onDragOver(_index: number) { /* unused */ }
 function onDrop(index: number) {
   if (dragFrom.value?.type === 'ungrouped' && dragFrom.value.index !== index) {
-    const ungrouped = ungroupedTodoTasks.value
-    const fromTask = ungrouped[dragFrom.value.index]
-    const toTask = ungrouped[index]
+    const tasks = ungroupedTodoTasks.value
+    const fromTask = tasks[dragFrom.value.index]
+    const toTask = tasks[index]
     if (fromTask && toTask) {
       const fromIdx = taskStore.todoList.indexOf(fromTask.id)
       const toIdx = taskStore.todoList.indexOf(toTask.id)
       if (fromIdx !== -1 && toIdx !== -1) {
         const item = taskStore.todoList.splice(fromIdx, 1)[0]
-        taskStore.todoList.splice(fromIdx < toIdx ? toIdx + 1 : toIdx, 0, item)
+        taskStore.todoList.splice(fromIdx < toIdx ? toIdx : toIdx, 0, item)
         saveOrder()
       }
     }
@@ -669,7 +559,34 @@ function onSubDrop(groupId: string, index: number) {
   dragFrom.value = null
 }
 
-function onDragEnd() { dragFrom.value = null }
+function onDragEnd() { dragFrom.value = null; stopAutoScroll(); document.removeEventListener('dragover', onDragMove) }
+
+// Auto-scroll during drag
+let scrollRAF = 0
+function stopAutoScroll() { cancelAnimationFrame(scrollRAF) }
+
+function onDragStart(index: number, e: DragEvent) {
+  dragFrom.value = { type: 'ungrouped', index }; e.dataTransfer!.effectAllowed = 'move'
+  document.addEventListener('dragover', onDragMove)
+}
+function onDragMove(e: DragEvent) {
+  if (!dragFrom.value) return
+  stopAutoScroll()
+  const tick = () => {
+    const panels = document.querySelectorAll('.panel-scroll')
+    for (const el of panels) {
+      const rect = (el as HTMLElement).getBoundingClientRect()
+      const y = e.clientY
+      const edge = 40
+      if (y >= rect.top && y <= rect.bottom) {
+        if (y < rect.top + edge) (el as HTMLElement).scrollTop -= 8
+        else if (y > rect.bottom - edge) (el as HTMLElement).scrollTop += 8
+      }
+    }
+    if (dragFrom.value) scrollRAF = requestAnimationFrame(tick)
+  }
+  scrollRAF = requestAnimationFrame(tick)
+}
 
 function saveOrder() {
   localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
@@ -685,7 +602,6 @@ const drawerSaving = ref(false)
 const drawerForm = reactive({ projectPath: '', gitBranch: '', customDescription: '' })
 
 function openDrawer(task: Task) {
-  chatTask.value = null
   drawerTask.value = task
   drawerForm.projectPath = task.projectPath || ''
   drawerForm.gitBranch = task.gitBranch || ''
@@ -746,126 +662,19 @@ interface SupplementMsg {
 const supplementMap = reactive<Record<string, SupplementMsg[]>>({})
 const supplementInput = ref('')
 const supplementSending = ref(false)
-const chatTask = ref<Task | null>(null)
-const chatDragOver = ref(false)
-const rainCanvas = ref<HTMLCanvasElement | null>(null)
-let rainAnimId = 0
-
-// ========== 双模式切换 ==========
-const mode = ref<'task' | 'chat'>('task')
-
-// ========== 对话模式 ==========
-const chatMessages = ref<{ id: string; role: string; content: string; created_at: string }[]>([])
-const chatInput = ref('')
-const chatSending = ref(false)
-const waitingChatReply = ref(false)
-const chatMessagesEl = ref<HTMLElement | null>(null)
-
-async function loadChatHistory() {
-  try {
-    const res = await agentApi.getChatHistory()
-    chatMessages.value = res.data || []
-  } catch { /* ignore */ }
-}
-
-async function handleChatSend() {
-  const text = chatInput.value.trim()
-  if (!text) return
-  chatSending.value = true
-  waitingChatReply.value = true
-  try {
-    await agentApi.sendChat(text)
-    chatInput.value = ''
-    await loadChatHistory()
-    await nextTick()
-    if (chatMessagesEl.value) chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
-  } catch { ElMessage.error('发送失败') }
-  finally { chatSending.value = false }
-}
-
-function formatChatTime(t: string) { return dayjs(t).format('HH:mm') }
-
-async function switchToChat() {
-  mode.value = 'chat'
-  await loadChatHistory()
-  await nextTick()
-  if (chatMessagesEl.value) chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
-}
-
-// ========== 唤醒 Agent ==========
-const waking = ref(false)
-async function handleWakeAgent() {
-  waking.value = true
-  try {
-    await agentApi.wake('开始工作')
-    ElMessage.success('已唤醒 Agent')
-  } catch { ElMessage.error('唤醒失败，请检查同步中心配置') }
-  finally { waking.value = false }
-}
-
-function startDigitalRain() {
-  const canvas = rainCanvas.value
-  if (!canvas) return
-  const parent = canvas.parentElement!
-  canvas.width = parent.clientWidth
-  canvas.height = parent.clientHeight
-  const ctx = canvas.getContext('2d')!
-  const chars = '01灵序LINSEQ.QCLAW开发代码调试'
-  const fontSize = 12
-  const cols = Math.floor(canvas.width / fontSize)
-  const drops = Array.from({ length: cols }, () => Math.random() * -50)
-
-  function draw() {
-    ctx.fillStyle = 'rgba(10,16,31,0.12)'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.font = `${fontSize}px monospace`
-    for (let i = 0; i < cols; i++) {
-      const ch = chars[Math.floor(Math.random() * chars.length)]
-      const alpha = 0.06 + Math.random() * 0.08
-      ctx.fillStyle = `rgba(0,229,255,${alpha})`
-      ctx.fillText(ch, i * fontSize, drops[i] * fontSize)
-      if (drops[i] * fontSize > canvas.height && Math.random() > 0.98) drops[i] = 0
-      drops[i] += 0.4 + Math.random() * 0.3
-    }
-    rainAnimId = requestAnimationFrame(draw)
-  }
-  draw()
-}
-
-function stopDigitalRain() {
-  if (rainAnimId) { cancelAnimationFrame(rainAnimId); rainAnimId = 0 }
-}
 const waitingAgentReply = ref(false)
 
-async function openChatDrawer(task: Task) {
-  if (chatTask.value?.id === task.id) { chatTask.value = null; waitingAgentReply.value = false; return }
-  drawerTask.value = null
-  chatTask.value = task
-  waitingAgentReply.value = false
-  await loadSupplementHistory(task.id)
-  await nextTick()
-  const el = document.querySelector(`.terminal-messages[data-task="${task.id}"]`)
-  if (el) el.scrollTop = el.scrollHeight
-}
+// ========== Agent Chat Panel ==========
+const agentChat = useAgentChat()
 
-function onFileDragOver() { chatDragOver.value = true }
-function onFileDragLeave() { chatDragOver.value = false }
-function onFileDrop(e: DragEvent) {
-  chatDragOver.value = false
-  const file = e.dataTransfer?.files[0]
-  if (file && (file as any).path) {
-    supplementInput.value += (supplementInput.value ? '\n' : '') + (file as any).path
-  } else {
-    const text = e.dataTransfer?.getData('text')
-    if (text) supplementInput.value += (supplementInput.value ? '\n' : '') + text
-  }
+function openAgentChat(task: Task) {
+  agentChat.openPanel()
 }
 
 async function loadSupplementHistory(taskId: string) {
   try {
     const res = await taskApi.getSupplements(taskId)
     const task = taskStore.tasks.find(t => t.id === taskId)
-    // 过滤掉 "补充说明" 类型的 devLog，因为 supplement 已经代表了同一条消息
     const logs = (task?.devLog || [])
       .filter(l => l.action !== '补充说明')
       .map(l => ({
@@ -878,13 +687,6 @@ async function loadSupplementHistory(taskId: string) {
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     )
     supplementMap[taskId] = merged
-    // 检测 Agent 回复：最后一条消息是 agent 且 action === '回复' → 取消 loading
-    if (chatTask.value?.id === taskId && waitingAgentReply.value) {
-      const lastAgentMsg = [...merged].reverse().find(m => m.type === 'agent')
-      if (lastAgentMsg && lastAgentMsg.action === '回复') {
-        waitingAgentReply.value = false
-      }
-    }
   } catch { /* ignore */ }
 }
 
@@ -898,8 +700,6 @@ async function sendSupplement(task: Task) {
     waitingAgentReply.value = true
     await loadSupplementHistory(task.id)
     await nextTick()
-    const el = document.querySelector(`.terminal-messages[data-task="${task.id}"]`)
-    if (el) el.scrollTop = el.scrollHeight
   } catch { ElMessage.error('发送失败') }
   finally { supplementSending.value = false }
 }
@@ -909,49 +709,38 @@ function formatSupplementTime(t: string) {
   return d.format('MM-DD HH:mm')
 }
 
+// ========== 唤醒 Agent ==========
+const waking = ref(false)
+async function handleWakeAgent() {
+  waking.value = true
+  try {
+    await agentChat.executeAction('wake', { message: '开始工作' })
+    agentChat.openPanel()
+    ElMessage.success('已唤醒 Agent')
+  } catch { ElMessage.error('唤醒失败，请检查同步中心配置') }
+  finally { waking.value = false }
+}
+
 // ========== WebSocket 实时消息 ==========
-const { connected: wsConnected, startWs, updateSubscription } = useChatWs((event, taskId, data) => {
-  if (event === 'devlog' && chatTask.value?.id === taskId) {
-    loadSupplementHistory(taskId)
-    waitingAgentReply.value = false
-    nextTick(() => {
-      const el = document.querySelector(`.terminal-messages[data-task="${taskId}"]`)
-      if (el) el.scrollTop = el.scrollHeight
-    })
-  }
+const { connected: wsConnected, startWs, updateSubscription, subscribeGlobal } = useChatWs((event, taskId, data) => {
   if (event === 'chat') {
-    // 对话模式收到 Agent 回复
-    loadChatHistory()
-    waitingChatReply.value = false
-    nextTick(() => {
-      if (chatMessagesEl.value) chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
-    })
+    agentChat.handleWsMessage(event, data)
   }
   if (event === 'supplement') {
     // 自己发的补充说明通过 HTTP 已处理
   }
 })
 
-// 聊天终端打开时订阅 WebSocket + 启动数字雨
-watch(chatTask, (task) => {
-  if (task) {
-    updateSubscription([task.id])
-    nextTick(() => startDigitalRain())
-  } else {
-    updateSubscription([])
-    stopDigitalRain()
-  }
-})
-
 onMounted(async () => {
+  await taskStore.fetchTasks()
   syncTodoFromBackend()
   startWs()
+  subscribeGlobal()
   await nextTick()
 })
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
-  stopDigitalRain()
 })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -976,7 +765,7 @@ async function syncTodoFromBackend() {
 // Stats bar
 .stats-bar {
   display: flex; align-items: center; justify-content: center; gap: 24px;
-  padding: 16px 0 8px;
+  padding: 8px 0 4px;
 }
 .stat-item {
   display: flex; align-items: center; gap: 8px;
@@ -995,8 +784,8 @@ async function syncTodoFromBackend() {
 @keyframes pulse-red { 0%,100%{ opacity:0.5; transform:scale(1); } 50%{ opacity:1; transform:scale(1.5); } }
 
 // Header
-.page-header { text-align: center; padding: 8px 0 20px; }
-.page-header-bar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 8px; }
+.page-header { text-align: center; padding: 4px 0 12px; }
+.page-header-bar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 4px; }
 .page-title { margin: 0; font-size: 28px; font-weight: 700; }
 .glow-text {
   background: linear-gradient(135deg, #00E5FF, #00E5FF, #FF7D00, #00E5FF);
@@ -1024,7 +813,9 @@ async function syncTodoFromBackend() {
   backdrop-filter: blur(2px);
   padding: 20px;
   position: relative;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 240px);
 }
 
 .todo-panel { border-color: var(--cyber-glass-border); }
@@ -1043,7 +834,14 @@ async function syncTodoFromBackend() {
 @keyframes scanLine { 0%{opacity:0.3} 50%{opacity:1} 100%{opacity:0.3} }
 
 .panel-header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-shrink: 0;
+}
+.panel-scroll {
+  flex: 1; overflow-y: auto; padding-right: 4px;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.15); border-radius: 4px; }
+  &::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.3); }
 }
 .panel-icon {
   width: 28px; height: 28px; position: relative;
@@ -1165,7 +963,7 @@ async function syncTodoFromBackend() {
 .card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: var(--cyber-cyan); opacity: 0.8;
   .config-item { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
-.card-actions { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 10px; }
+.card-actions { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; padding: 0 10px; border-left: 1px solid var(--cyber-glass-border); }
 
 // Card desc preview (read-only in card)
 .card-desc-preview {
@@ -1455,37 +1253,20 @@ async function syncTodoFromBackend() {
   .dual-panel { grid-template-columns: 1fr; }
 }
 
-// ===== Mode Tabs =====
-.mode-tabs {
-  display: flex; justify-content: center; gap: 4px;
-  margin-top: 14px; padding: 3px; border-radius: 10px;
-  background: rgba(255,255,255,0.03); border: 1px solid var(--cyber-glass-border);
-  width: fit-content; margin-left: auto; margin-right: auto;
+// ===== Wake Bar =====
+.wake-bar {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 8px; padding: 8px 16px; border-radius: 10px;
+  background: rgba(0,229,255,0.04); border: 1px solid rgba(0,229,255,0.12);
 }
-.mode-tab {
-  padding: 6px 24px; border-radius: 8px; border: none;
-  background: transparent; color: var(--cyber-text-secondary); font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: all 0.25s;
-  &:hover { color: var(--cyber-text-primary); background: rgba(0,229,255,0.05); }
-  &.active {
-    color: var(--cyber-cyan); background: var(--cyber-glass-border);
-    box-shadow: 0 0 12px rgba(0,229,255,0.15);
-  }
-}
-
-// ===== Wake Button =====
-.wake-action {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 10px; padding: 24px 0; max-width: var(--container-md); margin: 0 auto;
-}
-.wake-btn {
-  width: 280px; height: 48px; font-size: 16px; border-radius: 12px;
+.wake-btn-sm {
+  border-radius: 8px;
   background: linear-gradient(135deg, #00E5FF, #9D5CFF); border: none;
-  box-shadow: 0 0 24px rgba(0,229,255,0.25);
+  box-shadow: 0 0 16px rgba(0,229,255,0.2);
   transition: box-shadow 0.3s, transform 0.2s;
-  &:hover { box-shadow: 0 0 36px rgba(0,229,255,0.4); transform: translateY(-2px); }
+  &:hover { box-shadow: 0 0 24px rgba(0,229,255,0.35); transform: translateY(-1px); }
 }
-.wake-hint { font-size: 12px; color: var(--cyber-text-secondary); }
+.wake-hint { font-size: 13px; color: var(--cyber-text-secondary); }
 
 // ===== Chat Panel =====
 .chat-panel {

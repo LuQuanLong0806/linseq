@@ -1,21 +1,22 @@
 <template>
   <div class="projects-page">
     <!-- Header -->
-    <div class="page-header-bar">
-      <div>
-        <h1 class="page-title">项目配置</h1>
-        <p class="page-desc">
-          已配置 <strong>{{ projects.length }}</strong> 个项目 ·
-          已关联路径 <strong>{{ projects.filter(p => p.localPath).length }}</strong> ·
-          已获取分支 <strong>{{ projects.filter(p => p.branches?.length > 0).length }}</strong>
-        </p>
+    <div class="page-header">
+      <h2 class="page-title"><span class="glow-text">项目配置</span></h2>
+      <div class="page-header-bar">
+        <div class="stats-row">
+          <div class="stat-chip"><span class="stat-num">{{ projects.length }}</span>已配置</div>
+          <div class="stat-divider"></div>
+          <div class="stat-chip"><span class="stat-num">{{ projects.filter(p => p.localPath).length }}</span>已关联路径</div>
+          <div class="stat-divider"></div>
+          <div class="stat-chip"><span class="stat-num">{{ projects.filter(p => p.branches?.length > 0).length }}</span>已获取分支</div>
+        </div>
+        <el-button type="success" size="small" @click="openDialog()">+ 新建项目</el-button>
       </div>
-      <el-button type="primary" @click="openDialog()">+ 新建项目</el-button>
     </div>
 
     <!-- Table Card -->
-    <div class="table-card">
-      <div class="table-card-border"></div>
+    <div class="cyber-panel table-card">
       <el-table
         :data="paginatedProjects"
         v-loading="loading"
@@ -338,58 +339,70 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .projects-page {
-  min-height: calc(100vh - 96px);
+  max-width: var(--container-lg);
+  margin: 0 auto;
 }
 
 /* ===== Header ===== */
+.page-header {
+  text-align: center;
+  padding: 4px 0 12px;
+}
+.page-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+.glow-text {
+  background: linear-gradient(135deg, #00E5FF, #00E5FF, #FF7D00, #00E5FF);
+  background-size: 300% 300%;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  animation: gradientShift 6s ease infinite;
+}
+@keyframes gradientShift { 0%,100%{background-position:0% 50%} 33%{background-position:100% 50%} 66%{background-position:50% 100%} }
+
 .page-header-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
 }
-
-.page-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--cyber-text-primary);
+.stats-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-
-.page-desc {
-  margin: 4px 0 0;
+.stat-chip {
   font-size: 13px;
   color: var(--cyber-text-secondary);
-  strong { color: var(--cyber-text-primary); font-weight: 600; }
+  .stat-num {
+    color: var(--cyber-cyan);
+    font-weight: 700;
+    margin-right: 4px;
+    font-size: 15px;
+  }
+}
+.stat-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--cyber-glass-border);
 }
 
 /* ===== Table Card ===== */
 .table-card {
-  position: relative;
-  background: var(--cyber-glass-bg);
-  border-radius: 12px;
-  border: 1px solid var(--cyber-glass-border);
-  backdrop-filter: blur(6px);
-  padding: 4px;
+  backdrop-filter: none;
   overflow: hidden;
-}
-
-.table-card-border {
-  display: none;
-}
-
-.table-card :deep(.el-table) { --el-table-border-color: var(--cyber-glass-border); }
-
-.table-card :deep(.table-row) {
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.table-card :deep(.table-row:hover > td) {
-  background: var(--cyber-glass-border-hover) !important;
-}
-
-.name-text {
-  display: none;
+  :deep(.el-table) { --el-table-border-color: var(--cyber-glass-border); }
+  :deep(.table-row) {
+    cursor: pointer;
+    transition: background 0.2s;
+    td { text-align: center; }
+  }
+  :deep(.table-row:hover > td) {
+    background: var(--cyber-glass-border-hover) !important;
+  }
+  :deep(.el-table__cell) { text-align: center; }
 }
 
 .name-text {
@@ -423,7 +436,6 @@ onMounted(() => {
   color: var(--cyber-text-secondary);
 }
 
-/* Operation buttons */
 .ops-cell {
   display: flex;
   gap: 4px;

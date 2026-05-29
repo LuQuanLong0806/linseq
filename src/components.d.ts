@@ -11,6 +11,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentChatPanel: typeof import('./components/AgentChatPanel.vue')['default']
+    ChatMsgCompletion: typeof import('./components/chat/ChatMsgCompletion.vue')['default']
+    ChatMsgPlan: typeof import('./components/chat/ChatMsgPlan.vue')['default']
+    ChatMsgProgress: typeof import('./components/chat/ChatMsgProgress.vue')['default']
+    ChatMsgQuestion: typeof import('./components/chat/ChatMsgQuestion.vue')['default']
+    ChatMsgStatus: typeof import('./components/chat/ChatMsgStatus.vue')['default']
+    ChatMsgText: typeof import('./components/chat/ChatMsgText.vue')['default']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElBadge: typeof import('element-plus/es')['ElBadge']
     ElBreadcrumb: typeof import('element-plus/es')['ElBreadcrumb']

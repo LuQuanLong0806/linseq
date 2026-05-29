@@ -122,6 +122,12 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <el-tooltip content="Agent 聊天" placement="bottom">
+            <el-icon class="chat-toggle" @click="openChatPanel">
+              <ChatDotRound />
+              <span v-if="chatBadge > 0" class="chat-badge">{{ chatBadge }}</span>
+            </el-icon>
+          </el-tooltip>
           <el-tooltip :content="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" placement="bottom">
             <el-icon class="theme-toggle" @click="toggleTheme">
               <Sunny v-if="theme === 'dark'" />
@@ -142,6 +148,7 @@
         </router-view>
       </el-main>
     </el-container>
+    <AgentChatPanel />
   </el-container>
 </template>
 
@@ -149,12 +156,14 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
-import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened, Sunny, Moon } from '@element-plus/icons-vue'
+import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened, Sunny, Moon, ChatDotRound } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useCyberAnimations } from '@/composables/useCyberAnimations'
 import { useCyberBackground } from '@/composables/useCyberBackground'
 import { useDesktop } from '@/composables/useDesktop'
 import { useTheme } from '@/composables/useTheme'
+import AgentChatPanel from '@/components/AgentChatPanel.vue'
+import { useAgentChat } from '@/composables/useAgentChat'
 
 useCyberAnimations('.cyber-glass')
 const { isDesktop, sendNotification } = useDesktop()
@@ -162,6 +171,7 @@ const { theme, toggleTheme, initTheme } = useTheme()
 
 const route = useRoute()
 const taskStore = useTaskStore()
+const { openPanel: openChatPanel, inReview: chatBadge } = useAgentChat()
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 const { start: startBg, stop: stopBg } = useCyberBackground(bgCanvas)
 
@@ -387,6 +397,31 @@ onUnmounted(() => {
     color: var(--cyber-text-secondary);
     transition: color 0.2s, transform 0.3s;
     &:hover { color: var(--cyber-cyan); transform: rotate(30deg); }
+  }
+
+  .chat-toggle {
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--cyber-text-secondary);
+    transition: color 0.2s, transform 0.2s;
+    position: relative;
+    &:hover { color: var(--cyber-purple); transform: scale(1.1); }
+  }
+
+  .chat-badge {
+    position: absolute;
+    top: -4px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    background: #f56c6c;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    padding: 0 4px;
   }
 
   .time-tag {

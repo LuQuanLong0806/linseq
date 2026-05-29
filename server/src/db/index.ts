@@ -311,6 +311,33 @@ export function initDatabase(): void {
   `)
   db.exec('CREATE INDEX IF NOT EXISTS idx_agent_chat_user ON agent_chat_logs(user_id)')
 
+  // agent_chat_logs 新增列（安全 ALTER）
+  const chatLogColumns: [string, string][] = [
+    ['session_id', 'TEXT DEFAULT ""'],
+    ['type', "TEXT DEFAULT 'text'"],
+    ['task_id', 'TEXT DEFAULT ""'],
+    ['metadata', "TEXT DEFAULT '{}'"],
+  ]
+  for (const [col, type] of chatLogColumns) {
+    try { db.exec(`ALTER TABLE agent_chat_logs ADD COLUMN ${col} ${type}`) } catch { /* 已存在 */ }
+  }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_agent_chat_session ON agent_chat_logs(session_id)') } catch { /* 已存在 */ }
+
+  // ========== 聊天会话表（一次工作周期） ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      task_ids TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'active',
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_sessions_status ON chat_sessions(status)')
+
   // ========== 索引 ==========
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);

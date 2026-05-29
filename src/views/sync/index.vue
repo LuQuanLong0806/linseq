@@ -57,39 +57,41 @@
           <div class="panel-header">
             <span class="card-title">同步配置</span>
           </div>
-          <el-form :model="syncStore.config" label-width="100px" label-position="top">
-            <el-form-item label="内网地址">
-              <el-input v-model="syncStore.config.intranetUrl" placeholder="https://intranet.company.com" />
-            </el-form-item>
-            <el-form-item label="自动同步">
-              <el-switch v-model="syncStore.config.autoSync" active-text="开启" inactive-text="关闭" />
-            </el-form-item>
-            <el-form-item label="同步间隔（分钟）" v-if="syncStore.config.autoSync">
-              <el-input-number v-model="syncStore.config.syncInterval" :min="5" :max="1440" :step="5" />
-            </el-form-item>
-            <el-form-item label="Agent 唤醒地址">
-              <el-input v-model="syncStore.config.webhookUrl" placeholder="http://localhost:50439/v1/chat/completions" clearable />
-              <div class="form-hint">OpenClaw Gateway 的 Chat API 地址。发补充说明时自动 POST 唤醒 Agent 处理</div>
-            </el-form-item>
-            <el-form-item label="OpenClaw 认证 Token" v-if="syncStore.config.webhookUrl">
-              <el-input v-model="syncStore.config.openclawToken" placeholder="从 ~/.qclaw/openclaw.json 的 gateway.auth.token 复制" show-password clearable />
-              <div class="form-hint">在 ~/.qclaw/openclaw.json 文件的 gateway.auth.token 字段中获取</div>
-            </el-form-item>
-            <el-form-item label="唤醒目标 Agent" v-if="syncStore.config.webhookUrl">
-              <el-select v-model="syncStore.config.agentTarget" placeholder="选择 Agent" style="width: 100%">
-                <el-option label="灵序 LINSEQ (默认)" value="agent-209e563a" />
-                <el-option label="QClaw" value="main" />
-                <el-option label="AI工程师" value="ua58rsb93veqtxl7" />
-                <el-option label="Python全栈" value="tfxjjhfnjialcuju" />
-                <el-option label="Unity架构师" value="jwag9yx1mrcclqzo" />
-                <el-option label="游戏设计师" value="uafru5gofdt644lm" />
-                <el-option label="小说创作专家" value="ds4ygtfdv3z7mmxn" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="handleSaveConfig" :loading="savingConfig">保存配置</el-button>
-            </el-form-item>
-          </el-form>
+          <div class="config-form">
+            <el-form :model="syncStore.config" label-width="100px" label-position="top">
+              <el-form-item label="内网地址">
+                <el-input v-model="syncStore.config.intranetUrl" placeholder="https://intranet.company.com" />
+              </el-form-item>
+              <el-form-item label="自动同步">
+                <el-switch v-model="syncStore.config.autoSync" active-text="开启" inactive-text="关闭" />
+              </el-form-item>
+              <el-form-item label="同步间隔（分钟）" v-if="syncStore.config.autoSync">
+                <el-input-number v-model="syncStore.config.syncInterval" :min="5" :max="1440" :step="5" />
+              </el-form-item>
+              <el-form-item label="Agent 唤醒地址">
+                <el-input v-model="syncStore.config.webhookUrl" placeholder="http://localhost:50439/v1/chat/completions" clearable />
+                <div class="form-hint">OpenClaw Gateway 的 Chat API 地址。发补充说明时自动 POST 唤醒 Agent 处理</div>
+              </el-form-item>
+              <el-form-item label="OpenClaw 认证 Token" v-if="syncStore.config.webhookUrl">
+                <el-input v-model="syncStore.config.openclawToken" placeholder="从 ~/.qclaw/openclaw.json 的 gateway.auth.token 复制" show-password clearable />
+                <div class="form-hint">在 ~/.qclaw/openclaw.json 文件的 gateway.auth.token 字段中获取</div>
+              </el-form-item>
+              <el-form-item label="唤醒目标 Agent" v-if="syncStore.config.webhookUrl">
+                <el-select v-model="syncStore.config.agentTarget" placeholder="选择 Agent" style="width: 100%">
+                  <el-option label="灵序 LINSEQ (默认)" value="agent-209e563a" />
+                  <el-option label="QClaw" value="main" />
+                  <el-option label="AI工程师" value="ua58rsb93veqtxl7" />
+                  <el-option label="Python全栈" value="tfxjjhfnjialcuju" />
+                  <el-option label="Unity架构师" value="jwag9yx1mrcclqzo" />
+                  <el-option label="游戏设计师" value="uafru5gofdt644lm" />
+                  <el-option label="小说创作专家" value="ds4ygtfdv3z7mmxn" />
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="handleSaveConfig" :loading="savingConfig">保存配置</el-button>
+              </el-form-item>
+            </el-form>
+          </div>
         </div>
 
         <!-- Agent Key 管理 -->
@@ -536,5 +538,9 @@ onMounted(() => {
   font-size: 11px;
   color: var(--cyber-text-muted);
   margin-top: 4px;
+}
+
+.config-form {
+  padding: 0 20px 16px;
 }
 </style>

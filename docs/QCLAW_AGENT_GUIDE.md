@@ -1,7 +1,7 @@
 # QClaw Agent 开发指南 — 灵序 LineSequence
 
 > 本文档供 AI Agent（QClaw）存储到记忆中，用于自动化任务开发调度。
-> 最后更新：2026-05-29
+> 最后更新：2026-05-29（v2 — 新增聊天会话机制）
 
 ---
 
@@ -32,41 +32,304 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ---
 
-## 二、核心工作循环（严格按此顺序执行）
+## 二、核心工作循环（ATEP 同步阻塞模型）
+
+**核心理念：Agent 所有交互通过 `POST /report` 完成。调接口 → 等返回 → 根据返回结果做下一步。不轮询、不等唤醒。**
+
+### 循环流程（严格按此顺序执行）
+
+**`/report` 是唯一的交互接口。** 所有上报、状态变更全部通过它完成。Agent 调用 `/report` 后等返回，根据返回结果决定下一步。
 
 ```
 循环开始:
-  ① GET  /next-task                    → 取任务（无任务则结束）
-  ② POST /task/{taskId}/start          → 标记开始
-  ③ GET  /task/{taskId}/supplements    → 先检查补充说明（每 5 秒轮询一次）
-  ④ 有补充 → 回复确认 → 重新分析上下文 → 调整计划 → 处理 → 回到 ③
-     无补充 → 写代码（约 5 秒）→ POST /log 上报 → 回到 ③
-     无补充 + 全部完成 + 自测通过 → 进入 1 分钟等待 → 无补充 → 继续
-  ⑤ POST /task/{taskId}/complete       → 提交产出
+  ① GET  /next-task                         → 取任务（无任务则结束）
+
+  ② POST /report { action: "plan", aiStatus: "ai_dev", level: "L1-L4" }
+     → 等返回：
+       · continue → 开始写代码
+       · redirect → 按 instruction 调整 → 重新 POST /report
+       · abort → 跳过任务，回到 ①
+
+  ③ 开发循环（每个步骤之前都报）：
+     准备写一个文件 → POST /report { action: "plan", level: "L1-L4" }
+     → 等返回 → continue 才动手 → 写完 → 下一个步骤再报
+     （任何一次 /report 都可能返回 redirect → 调整后重新报 plan）
+
+  ④ 全部完成 + 自测通过：
+     POST /report { action: "completion", aiStatus: "ai_review", level: "L2" }
+     → 等返回：
+       · continue → 调 POST /complete 提交产出
+       · redirect → 按指令修改 → 重新上报 completion
+
+  ⑤ POST /task/{taskId}/complete            → 提交产出（文件、截图、版本）
+
   ⑥ 回到 ①
 ```
 
+**遇到疑问时（任何阶段都可以）：**
+
+```
+POST /report { action: "question", aiStatus: "ai_question", content: "疑问内容" }
+→ 返回 abort → 任务暂停 → GET /next-task 取下一个
+→ 人类回复后任务重新入队，你会再次取到
+```
+
 **绝对规则：**
-- 每个任务必须**独立**走完 ②→③→④→⑤ 全流程，严禁合并多个任务一起提交
-- `start` 和 `complete` 之间必须经过实际开发，不允许 start 后立即 complete
-- **每次循环先检查补充说明再动手**，人类可能随时发来纠偏指令
-- **补充说明 > 原始需求**，收到补充立即重新分析，不要沿用旧计划
-- **自测通过后必须等 1 分钟**，人类可能正在打字，不允许跳过等待直接提交
+
+- 每个任务必须**独立**走完全流程，严禁合并多个任务一起提交
+- **`/report` 是唯一的交互接口** — 不再单独调 `/start`、`/log`、`/question`，全部走 `/report` 的 action + aiStatus 字段
+- **调完 `/report` 就等返回，不要做任何事** — 返回什么就按什么做，不需要知道服务端等多久
+- **补充说明 > 原始需求**，收到 redirect 立即重新分析计划
 - 队列空了就停下，不要自己造任务
+
+### ATEP 复杂度分级
+
+| 等级          | 判断标准                                    | 服务端等待 | 超时行为                         | Agent 看到          |
+| ------------- | ------------------------------------------- | ---------- | -------------------------------- | ------------------- |
+| **L1 微操作** | 样式微调、文案修改、单行配置变更            | **不等待** | 立即返回                         | `continue` — 直接做 |
+| **L2 常规**   | 新增组件/页面、接口对接、单模块开发         | **10 秒**  | 超时返回 `continue`              | `continue` — 继续做 |
+| **L3 重要**   | 整体方案设计、跨模块联动、架构决策          | **30 秒**  | 超时返回 `continue`              | `continue` — 继续做 |
+| **L4 关键**   | 数据库变更、认证/权限、返工任务、破坏性操作 | **2 分钟** | 超时跳过任务，标记为 ai_question | 必须等人操作        |
+
+**等级判断原则：**
+
+- **拿不准时往高靠** — 不确定是 L2 还是 L3，就当 L3
+- **涉及数据库一定是 L4**
+- **返工任务（isRework=true）一定是 L4**
+- **纯前端小改动是 L1**
+
+### 什么时候调用 /report（速查表）
+
+**Agent 只需关注一件事：调 `/report`，等返回，根据返回结果做下一步。等待多久由服务端决定，Agent 不需要知道。**
+
+**4 个调用时机：**
+
+| 时机 | action | aiStatus | level | 任务状态 | 说明 |
+|---|---|---|---|---|---|
+| **① 新任务开始** | `plan` | `ai_dev` | 按复杂度 | → 开发中 | 分析完需求后，上报整体方案 |
+| **② 每个步骤之前** | `plan` | — | 按复杂度 | 不变 | 准备动手前，上报这一步的计划 |
+| **③ 用户重定向后** | `plan` | — | 同上 | 不变 | 按用户指令调整完方案，重新上报 |
+| **④ 任务完成** | `completion` | `ai_review` | L2 | → 待审核 | 上报 done，附上总结 |
+
+**2 个特殊情况：**
+
+| 时机 | action | aiStatus | 任务状态 | 说明 |
+|---|---|---|---|---|
+| 遇到疑问搞不清 | `question` | `ai_question` | → 疑问 | 任务暂停，取下一个 |
+| 项目路径不存在、需求为空 | `question` | `ai_question` | → 疑问 | 同上 |
+
+**步骤粒度（什么时候算"一个步骤"）：**
+- **合适：** 准备写一个文件 → 报；准备改一个配置 → 报；准备执行一个脚本 → 报
+- **太细：** 每写一个函数就报 → 打断节奏
+- **太粗：** 整个模块写完再报 → 人类来不及干预
+
+**不调用 /report 的时机：**
+- 取任务 → `GET /next-task`
+- 最终提交产出（截图、文件） → `POST /task/{taskId}/complete`
+
+**收到返回后的处理（固定逻辑）：**
+
+| 返回 action | 做什么 |
+|---|---|
+| `continue` | 继续执行下一步 |
+| `redirect` | 按 `instruction` 调整，重新 `POST /report` |
+| `abort` | `GET /next-task` 取下一个任务 |
+
+### /report 接口详情
+
+**一次调用完成三件事：上报内容 + 更新任务状态 + 阻塞等待人类响应。信息最大化，减少接口调用次数。**
+
+**请求体：**
+
+```json
+{
+  "action": "plan",
+  "content": "L2 常规：创建登录页面，用户名密码表单 + JWT 认证，预计新增 2 个文件",
+  "level": "L2",
+  "aiStatus": "ai_dev",
+  "metadata": { "filesChanged": [], "testResult": {} }
+}
+```
+
+| 字段       | 必填                          | 说明                                                                                         |
+| ---------- | ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `action`   | 是                            | `plan`（上报计划/步骤）、`completion`（开发完成）、`question`（提出疑问） |
+| `content`  | 是                            | 计划/进度/完成报告/疑问内容                                                                  |
+| `level`    | action=plan/completion 时必填 | `L1` / `L2` / `L3` / `L4`                                                                    |
+| `aiStatus` | 否                            | 同时更新任务状态：`ai_dev`（开发中）、`ai_review`（提交审核）、`ai_question`（提出疑问）     |
+| `metadata` | 否                            | 附加信息（filesChanged, testResult, screenshots 等前端展示用）                               |
+
+**action 与 aiStatus 组合示例：**
+
+| 场景               | action       | aiStatus      | level    | 说明                                 |
+| ------------------ | ------------ | ------------- | -------- | ------------------------------------ |
+| 新任务开始，上报整体方案 | `plan`       | `ai_dev`      | L2/L3/L4 | 标记开发中 + 上报计划               |
+| 每个步骤之前，上报这一步计划 | `plan`       | —             | 按复杂度 | 子步骤计划，人类可拦截              |
+| 微操作，快速执行   | `plan`       | —             | L1       | L1 直接返回 continue                |
+| 开发完成，提交审核 | `completion` | `ai_review`   | L2       | 标记待审核 + 上报完成报告           |
+| 遇到疑问           | `question`   | `ai_question` | —        | 标记疑问 + 跳过任务 + 返回 abort     |
+
+**响应体：**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "action": "continue",
+    "instruction": ""
+  }
+}
+```
+
+| 返回 action | 含义                       | Agent 下一步                                |
+| ----------- | -------------------------- | ------------------------------------------- |
+| `continue`  | 人类批准了，或超时自动继续 | 按计划执行                                  |
+| `redirect`  | 人类给了调整意见           | 按 `instruction` 调整计划，重新调用 /report |
+| `abort`     | 人类拒绝了这个任务         | `GET /next-task` 取下一个任务               |
+
+### 服务端处理逻辑（伪代码）
+
+```
+收到 Agent 上报:
+  读取 level
+
+  level 1:
+    推送给你："Agent 正在微调样式"（你只看，不用管）
+    立即返回 { action: "continue" }
+
+  level 2:
+    推送给你："Agent 打算新增注册页面，方案：xxx"
+    等待 10 秒:
+      你发了指令 → 返回 { action: "redirect", instruction: "你的指令" }
+      你点了批准 → 返回 { action: "continue" }
+      你没说话   → 返回 { action: "continue" }
+
+  level 3:
+    推送给你："Agent 打算重构用户模块，涉及 5 个文件"
+    等待 30 秒:
+      你点了批准 → 返回 { action: "continue" }
+      你发了指令 → 返回 { action: "redirect", instruction: "你的指令" }
+      你没说话   → 返回 { action: "continue" }
+
+  level 4:
+    推送给你："⚠️ Agent 打算删除旧数据库表重建，请确认"
+    等待 2 分钟:
+      你点了批准 → 返回 { action: "continue" }
+      你发了指令 → 返回 { action: "redirect", instruction: "你的指令" }
+      你点了拒绝 → 返回 { action: "abort" }
+      2 分钟超时   → 任务标记为 ai_question，Agent 收到 { action: "abort" }
+```
+
+### 交互场景示例
+
+**场景 1：L1 微操作 — 不打扰人类**
+
+```
+Agent: POST /report { action: "plan", content: "L1 微操作：登录按钮圆角改为 8px", level: "L1" }
+→ 服务端推送给你："Agent 正在微调样式"
+→ 服务端立即返回 { action: "continue" }
+→ Agent 直接执行（你看到了但不用操作）
+```
+
+**场景 2：L2 常规 — 10 秒超时**
+
+```
+Agent: POST /report { action: "plan", content: "L2 常规：创建登录页面，用户名密码表单 + JWT 认证", level: "L2" }
+→ 服务端推送给你："Agent 打算创建登录页面"
+→ 10 秒内你没说话
+→ 服务端返回 { action: "continue" }
+→ Agent 开始写代码
+```
+
+**场景 3：L3 重要 — 你批准了**
+
+```
+Agent: POST /report { action: "plan", content: "L3 重要：用户管理系统整体方案 — 分 3 个模块", level: "L3" }
+→ 服务端推送给你："Agent 打算做用户管理系统，分 3 个模块"
+→ 你在聊天面板看到计划卡片，点击「批准」
+→ 服务端立即返回 { action: "continue" }
+→ Agent 开始按模块开发
+```
+
+**场景 4：L4 关键 — 你给了调整意见**
+
+```
+Agent: POST /report { action: "plan", content: "L4 关键：创建 users 表，字段 id/name/email/password", level: "L4" }
+→ 服务端推送给你："⚠️ Agent 打算创建 users 表"
+→ 你在聊天面板看到计划，输入："password 改成 bcrypt 加密，加个 phone 字段"
+→ 服务端返回 { action: "redirect", instruction: "password 改成 bcrypt 加密，加个 phone 字段" }
+→ Agent 按你的意见调整，重新上报：
+Agent: POST /report { action: "plan", content: "L4 关键：创建 users 表，字段 id/name/email/password(bcrypt)/phone", level: "L4" }
+→ 你点「批准」
+→ 服务端返回 { action: "continue" }
+→ Agent 开始执行
+```
+
+**场景 5：L4 关键 — 你拒绝了**
+
+```
+Agent: POST /report { action: "plan", content: "L4 关键：删除旧表 users 重建", level: "L4" }
+→ 服务端推送给你："⚠️ Agent 打算删除旧表重建"
+→ 你点「拒绝」
+→ 服务端返回 { action: "abort" }
+→ Agent: GET /next-task → 取下一个任务
+```
+
+**场景 6：L4 关键 — 2 分钟超时**
+
+```
+Agent: POST /report { action: "plan", content: "L4 关键：创建 users 表", level: "L4" }
+→ 服务端推送给你："⚠️ Agent 打算创建 users 表"
+→ 2 分钟内你没有操作
+→ 服务端标记任务为 ai_question，返回 { action: "abort", instruction: "L4 超时，任务已暂停等待人工处理" }
+→ Agent: GET /next-task → 取下一个任务
+→ 你下次在待办页面看到该任务标记为"待回复"，可以回复后让 Agent 重新处理
+```
+
+### 开发过程中每个步骤的上报
+
+开发过程中，**每个步骤前都要上报**。Agent 不需要等整个模块写完，准备动手写一个文件/改一个配置时就报：
+
+```json
+{
+  "action": "plan",
+  "content": "准备创建 login.vue，实现用户名密码表单 + 验证逻辑",
+  "level": "L1"
+}
+```
+
+- 人类看到后如果想纠偏，在聊天面板发消息，`/report` 会返回 `redirect`
+- L1 级别直接返回 `continue`，不会打断开发节奏
+
+### 完成时的上报
+
+开发完成后上报，等待你确认或等 1 分钟超时自动提交：
+
+```json
+{
+  "action": "completion",
+  "content": "开发完成，共创建 3 个文件，自测通过",
+  "level": "L2"
+}
+```
+
+- 服务端推送给你完成报告
+- 等待 1 分钟：你批准 → Agent 提交 complete；你发指令 → Agent 修改后重新上报
+- 超时 → 返回 `continue` → Agent 自动 `POST /complete`
 
 ---
 
 ## 三、口语化命令对照表
 
-| 人说啥 | 你做啥 | 调用链 |
-|---|---|---|
-| "开始工作" / "取任务" / "干活了" | 取任务并开始 | `GET /next-task` → 有任务就 `POST /task/{taskId}/start` |
-| "搞定了" / "完成了" / "提交" | 提交当前任务产出 | `POST /task/{taskId}/complete` → `GET /next-task` |
-| "需求不清楚" / "看不懂" | 先在聊天框提问，等 1 分钟无回复再正式提交疑问 | `POST /log { 回复, "❓ 疑问：..." }` → 等 1 分钟 → 无回复则 `POST /question` → `GET /next-task` |
-| "跳过" / "先做下一个" | 跳过当前，取下一个 | `POST /task/{taskId}/question`（写明原因） → `GET /next-task` |
-| "还有多少任务" | 查看队列 | `GET /stats` |
-| "同步一下" | 从内网拉最新任务 | `POST /sync` |
-| "停" / "暂停" | 完成当前任务后停 | 完成当前 → 不再调 `/next-task` |
+| 人说啥                           | 你做啥             | 调用链                                                                            |
+| -------------------------------- | ------------------ | --------------------------------------------------------------------------------- |
+| "开始工作" / "取任务" / "干活了" | 取任务并开始       | `GET /next-task` → `POST /report { action: "plan", aiStatus: "ai_dev" }`          |
+| "搞定了" / "完成了" / "提交"     | 提交当前任务产出   | `POST /report { action: "completion", aiStatus: "ai_review" }` → `POST /complete` |
+| "需求不清楚" / "看不懂"          | 提出疑问           | `POST /report { action: "question", aiStatus: "ai_question" }` → `GET /next-task` |
+| "跳过" / "先做下一个"            | 跳过当前，取下一个 | `POST /report { action: "question", aiStatus: "ai_question" }` → `GET /next-task` |
+| "还有多少任务"                   | 查看队列           | `GET /stats`                                                                      |
+| "同步一下"                       | 从内网拉最新任务   | `POST /sync`                                                                      |
+| "停" / "暂停"                    | 完成当前任务后停   | 完成当前 → 不再调 `/next-task`                                                    |
 
 **听到"开始工作"类指令 = 进入循环，一直做到队列空为止。**
 
@@ -99,24 +362,24 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 }
 ```
 
-| 字段 | 你拿来干什么 |
-|---|---|
-| `taskId` | 后续所有接口的 `{taskId}` 参数都填这个值。例如 taskId 为 `abc-123`，则调用 `POST /task/abc-123/start` |
-| `sourceId` | 内网编号，仅记录用，不需要传给任何接口 |
-| `title` | 任务标题，理解任务要做什么的第一入口 |
-| `priority` | 优先级。你不需要排序——后端已经按优先级排好了，你只管按队列顺序做 |
-| `isRework` | **关键！** 为 `true` 说明这是审核打回的返工任务，优先处理。你要看 `review` 字段了解上次为什么被打回 |
-| `reworkCount` | 已被返工次数。数字越大说明这个任务越难搞，要更仔细 |
-| `requirement.docText` | 需求文档的纯文本。**这是你理解需求的最重要的依据**，仔细读 |
-| `requirement.customDescription` | 用户自己补充的描述。如果 `docText` 为空或模糊，以此为准。**返工时人类可能在这里补充新需求**，务必仔细阅读 |
-| `requirement.acceptanceCriteria` | 验收标准。开发完成后对照这个自查 |
-| `project.path` | **目标项目的本地路径**。你要 `cd` 到这个目录去写代码 |
-| `project.gitBranch` | **目标开发分支**。你必须在写任何代码之前切换到这个分支（见「分支切换规范」） |
-| `group` | 分组信息。如果非空，说明这个任务和其他任务有关联，见「分组任务」章节 |
-| `review.prevComment` | **仅返工时有值**。上轮审核意见，逐条修复，不要推翻重来 |
-| `review.prevOutput` | **仅返工时有值**。上轮做了什么，了解上下文 |
-| `review.prevFilesChanged` | **仅返工时有值**。上轮改了哪些文件。**直接去这些文件里改**，不要满项目找 |
-| `nextVersion` | 下一个版本号（如 V1.0）。你不需要传这个，系统自动用 |
+| 字段                             | 你拿来干什么                                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `taskId`                         | 后续所有接口的 `{taskId}` 参数都填这个值。例如 taskId 为 `abc-123`，则调用 `POST /task/abc-123/start`     |
+| `sourceId`                       | 内网编号，仅记录用，不需要传给任何接口                                                                    |
+| `title`                          | 任务标题，理解任务要做什么的第一入口                                                                      |
+| `priority`                       | 优先级。你不需要排序——后端已经按优先级排好了，你只管按队列顺序做                                          |
+| `isRework`                       | **关键！** 为 `true` 说明这是审核打回的返工任务，优先处理。你要看 `review` 字段了解上次为什么被打回       |
+| `reworkCount`                    | 已被返工次数。数字越大说明这个任务越难搞，要更仔细                                                        |
+| `requirement.docText`            | 需求文档的纯文本。**这是你理解需求的最重要的依据**，仔细读                                                |
+| `requirement.customDescription`  | 用户自己补充的描述。如果 `docText` 为空或模糊，以此为准。**返工时人类可能在这里补充新需求**，务必仔细阅读 |
+| `requirement.acceptanceCriteria` | 验收标准。开发完成后对照这个自查                                                                          |
+| `project.path`                   | **目标项目的本地路径**。你要 `cd` 到这个目录去写代码                                                      |
+| `project.gitBranch`              | **目标开发分支**。你必须在写任何代码之前切换到这个分支（见「分支切换规范」）                              |
+| `group`                          | 分组信息。如果非空，说明这个任务和其他任务有关联，见「分组任务」章节                                      |
+| `review.prevComment`             | **仅返工时有值**。上轮审核意见，逐条修复，不要推翻重来                                                    |
+| `review.prevOutput`              | **仅返工时有值**。上轮做了什么，了解上下文                                                                |
+| `review.prevFilesChanged`        | **仅返工时有值**。上轮改了哪些文件。**直接去这些文件里改**，不要满项目找                                  |
+| `nextVersion`                    | 下一个版本号（如 V1.0）。你不需要传这个，系统自动用                                                       |
 
 **如果 `data` 为 `null`：** 队列空了，停下，汇报 `"队列已空，无待开发任务"`。
 
@@ -124,44 +387,19 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 2. POST /task/{taskId}/start —— 标记开始开发
 
-**你什么时候调：** 拿到任务后，准备写代码之前。**必须调！** 不调的话系统不知道你在做这个任务。
-
-**你不需要传任何参数。**
-
-**返回值你怎么用：**
-
-```json
-{ "code": 0, "data": { "taskId": "xxx", "aiStatus": "ai_dev" } }
-```
-
-- `aiStatus: "ai_dev"` 确认已进入开发状态。调完这个就可以开始写代码了。
+> **已被 `/report` 替代。** Agent 不需要单独调用此接口，在 `POST /report { action: "plan", aiStatus: "ai_dev" }` 中自动完成。
 
 ---
 
 ### 3. POST /task/{taskId}/log —— 上报开发日志
 
-**你什么时候调：** 开发过程中的每一步关键操作。用途是让人类能看到你在干什么。
-
-**你至少要在这些时机上报一次：**
-- 进入项目目录后
-- 完成一个功能模块后
-- 遇到问题时
-- 自测通过/失败时
-- 准备提交前
-
-**请求体：**
-
-```json
-{
-  "action": "开发",
-  "content": "正在实现登录页面组件的表单验证逻辑"
-}
-```
-
-- `action`：`开发` | `调试` | `重构` | `自测` | `异常` | `暂停`，默认 `"开发"`
-- `content`：**必填**。写清楚你在做什么、为什么这么做
-
-**返回值：** `{ "code": 0, "data": { "logId": "xxx" } }` — 你不需要用这个 logId。
+> **已被 `/report` 替代。** Agent 不需要单独调用此接口，所有上报通过 `POST /report` 的 action 字段完成：
+>
+> - 上报计划 → `/report { action: "plan" }`
+> - 上报计划 → `/report { action: "plan" }`
+> - 回复消息 → `/report { action: "plan" }`
+> - 开发完成 → `/report { action: "completion" }`
+> - 提出疑问 → `/report { action: "question" }`
 
 ---
 
@@ -170,6 +408,7 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 **你什么时候调：** 开发完成、自测通过后。调用后任务自动从队列移除、进入待审核状态。
 
 **你提交前必须确认：**
+
 1. 代码已写完，功能已实现
 2. `npx tsc --noEmit` 编译无错误（有 TypeScript 的项目）
 3. 测试通过（有测试的项目）
@@ -177,20 +416,21 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 5. 前端任务必须截了图
 
 **请求方式：**
+
 - 有截图（前端/全栈任务）：`multipart/form-data`
 - 无截图（纯后端任务）：`application/json`
 
 **请求字段：**
 
-| 字段 | 必填 | 你填什么 |
-|---|---|---|
-| `aiOutput` | 是 | 你写了什么代码、改了什么文件、实现了什么功能。一段自然语言描述 |
-| `summary` | 是 | 一句话总结，如 "完成用户登录页面开发" |
-| `durationMs` | 否 | 开发耗时（毫秒）。大概估一个就行 |
-| `filesChanged` | 建议填 | 你改了/新增了哪些文件。格式：`[{"path":"src/login.vue","action":"created"}]`，action 可选 `created`/`modified`/`deleted` |
-| `testResult` | 建议填 | 自测结果。格式：`{"passed":true,"typeCheck":true,"details":"8 tests passed"}` |
-| `reportText` | 建议填 | 自测说明，会写入 Word 报告。**以人工测试口吻写**，包含：页面地址 + 操作步骤 + 预期结果 + 实际结果 |
-| `screenshots` | 前端必填 | 截图文件。前端/全栈任务至少 1 张，通过 multipart 上传 |
+| 字段           | 必填     | 你填什么                                                                                                                 |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `aiOutput`     | 是       | 你写了什么代码、改了什么文件、实现了什么功能。一段自然语言描述                                                           |
+| `summary`      | 是       | 一句话总结，如 "完成用户登录页面开发"                                                                                    |
+| `durationMs`   | 否       | 开发耗时（毫秒）。大概估一个就行                                                                                         |
+| `filesChanged` | 建议填   | 你改了/新增了哪些文件。格式：`[{"path":"src/login.vue","action":"created"}]`，action 可选 `created`/`modified`/`deleted` |
+| `testResult`   | 建议填   | 自测结果。格式：`{"passed":true,"typeCheck":true,"details":"8 tests passed"}`                                            |
+| `reportText`   | 建议填   | 自测说明，会写入 Word 报告。**以人工测试口吻写**，包含：页面地址 + 操作步骤 + 预期结果 + 实际结果                        |
+| `screenshots`  | 前端必填 | 截图文件。前端/全栈任务至少 1 张，通过 multipart 上传                                                                    |
 
 **JSON 模式示例：**
 
@@ -200,10 +440,14 @@ x-agent-key: qcl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   "summary": "完成登录页开发",
   "durationMs": 180000,
   "filesChanged": [
-    {"path": "src/views/login.vue", "action": "created"},
-    {"path": "src/router/index.ts", "action": "modified"}
+    { "path": "src/views/login.vue", "action": "created" },
+    { "path": "src/router/index.ts", "action": "modified" }
   ],
-  "testResult": {"passed": true, "typeCheck": true, "details": "tsc --noEmit clean, 8 tests passed"},
+  "testResult": {
+    "passed": true,
+    "typeCheck": true,
+    "details": "tsc --noEmit clean, 8 tests passed"
+  },
   "reportText": "页面地址：http://localhost:5173/login\n进入登录页面，输入用户名和密码点击登录按钮，接口返回成功后跳转到首页，验证通过。"
 }
 ```
@@ -246,44 +490,18 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ### 5. POST /task/{taskId}/question —— 提交疑问
 
-**你什么时候调：** 遇到疑问后，先在聊天框提问等待 1 分钟，人类没有回答时才调用此接口。
+> **已被 `/report` 替代。** Agent 不需要单独调用此接口，遇到疑问直接 `POST /report { action: "question", aiStatus: "ai_question" }`，任务自动暂停并移出队列。
 
-**疑问处理流程（必须按此顺序）：**
+**疑问处理流程（简化后）：**
 
 ```
 遇到疑问（需求看不懂、路径不存在、需求冲突等）
   ↓
-① POST /log { action: "回复", content: "❓ 疑问：[具体问题]...请解答" }
-  → 这会在人类聊天框显示，人类可以直接回复补充说明
-  ↓
-② 等待 1 分钟，期间每 5 秒轮询 GET /supplements
-  ↓
-③ 检查补充说明：
-  → 有人类回复 → 重新分析上下文 + 回复内容 → 继续开发
-  → 1 分钟无回复 → 调用 POST /question 正式提交疑问
-    → 任务从队列移出
-    → 立刻 GET /next-task 取下一个任务
+POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：[具体问题]" }
+→ 立即返回 abort → 任务暂停移出队列
+→ GET /next-task 取下一个任务
+→ 人类回复后任务重新入队，你会再次取到
 ```
-
-**为什么先聊天再提交：** 人类可能就在电脑前，看到你的疑问直接回复补充说明就能解决，不需要把任务挂起。
-
-**请求体：**
-
-```json
-{
-  "question": "需求中提到的「用户中心」在项目中找不到对应路由和组件，请确认具体位置或是否需要新建"
-}
-```
-
-- `question` **必填**，说清楚哪里不清楚
-
-**返回值你怎么用：**
-
-```json
-{ "code": 0, "data": { "taskId": "xxx", "aiStatus": "ai_question" } }
-```
-
-- `aiStatus: "ai_question"` 确认任务已挂起。人类回复后任务会重新入队，你后续会再取到它。
 
 ---
 
@@ -307,14 +525,14 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 }
 ```
 
-| 字段 | 含义 |
-|---|---|
-| `todoCount` | 待办队列里还剩几个任务等着你做 |
-| `inDev` | 当前正在开发中的任务数（正常情况最多 1 个） |
-| `inReview` | 等人类审核的任务数（你不用管，等人类处理） |
-| `rework` | 被打回返工的任务数（会自动排进队列优先处理） |
-| `totalTasks` | 系统里所有未关闭的任务总数 |
-| `currentTask` | 当前正在开发的任务详情（无则为 null） |
+| 字段          | 含义                                         |
+| ------------- | -------------------------------------------- |
+| `todoCount`   | 待办队列里还剩几个任务等着你做               |
+| `inDev`       | 当前正在开发中的任务数（正常情况最多 1 个）  |
+| `inReview`    | 等人类审核的任务数（你不用管，等人类处理）   |
+| `rework`      | 被打回返工的任务数（会自动排进队列优先处理） |
+| `totalTasks`  | 系统里所有未关闭的任务总数                   |
+| `currentTask` | 当前正在开发的任务详情（无则为 null）        |
 
 ---
 
@@ -330,7 +548,7 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ### 8. GET /task/{taskId}/supplements —— 获取补充说明
 
-**你什么时候调：** **每次循环的第一步**。开发过程中每 5 秒轮询一次，先检查补充说明再继续写代码。
+**你什么时候调：** `/report` 返回 `redirect` 后查看人类的调整指令。不需要轮询。
 
 **你不需要传任何参数。**
 
@@ -340,8 +558,16 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 {
   "code": 0,
   "data": [
-    { "id": "s1", "content": "顺便把登录页面的样式也调整一下", "created_at": "2026-05-28 15:30:00" },
-    { "id": "s2", "content": "记得加上表单校验", "created_at": "2026-05-28 15:45:00" }
+    {
+      "id": "s1",
+      "content": "顺便把登录页面的样式也调整一下",
+      "created_at": "2026-05-28 15:30:00"
+    },
+    {
+      "id": "s2",
+      "content": "记得加上表单校验",
+      "created_at": "2026-05-28 15:45:00"
+    }
   ]
 }
 ```
@@ -360,7 +586,7 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 → 有补充：
   ① 立即回复确认（让人类知道你收到了）：
-     POST /log { action: "回复", content: "收到补充说明：[摘要]..." }
+     POST /report { action: "plan", level: "L1", content: "收到补充说明：[摘要]..." }
   ② 停下当前工作，重新分析上下文 + 补充说明
      - 补充说明可能意味着你当前方向错了，必须重新评估
      - 结合原始需求 + 补充说明，确定新的开发计划
@@ -369,7 +595,7 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
      - 追加型："顺便加上表单校验" → 加到待做列表
      - 推翻型："不用做XX了" → 立刻停止，回滚相关代码
   ④ 处理完毕后回复：
-     POST /log { action: "回复", content: "已处理完成：[逐条汇报]" }
+     POST /report { action: "plan", level: "L1", content: "已处理完成：[逐条汇报]" }
   ⑤ 继续下一轮循环（再次检查补充说明）
 
 → 无补充：
@@ -377,13 +603,14 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 ```
 
 **核心原则：**
+
 - **检查优先于执行** — 每次循环先查补充说明，确认没有新指令再继续写代码
 - **补充说明 = 纠偏信号** — 收到补充说明意味着人类要修正你的方向，必须先重新分析
 - **补充说明 > 原始需求** — 冲突时以补充为准，不犹豫
-- **先回复再动手** — 收到后立刻 POST /log 回复确认，不要默默干活
-- **做完再回复一次** — 处理完后再 POST /log 汇报结果，形成有问有答
-- **只有轮询，不要重复调用** — 开发中每 5 秒轮询一次即可，不要在其他地方额外调用
-- **完成必须等 1 分钟** — 自测通过后进入等待，1 分钟无补充才提交，不允许跳过
+- **先回复再动手** — 收到 redirect 后先 POST /report 确认，再按意见处理
+- **做完再回复一次** — 处理完后再 POST /report 汇报结果
+- **不轮询** — 通过 POST /report 上报并等待响应，不需要主动轮询
+- **完成必须等 1 分钟** — 自测通过后 POST /report { action: "completion" }，等响应
 - **按顺序处理** — 补充说明按时间排序，先处理早的
 
 ---
@@ -404,14 +631,14 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
                                                       ai_done (结束)
 ```
 
-| 状态 | 含义 | 你需要做什么 |
-|---|---|---|
-| `ai_todo` | 待开发 | 等你从队列取到它 |
-| `ai_dev` | 开发中 | 你正在做的任务 |
-| `ai_review` | 待审核 | 你已提交，等人类审核 |
-| `ai_rework` | 返工 | 审核不通过，重新入队，你要看 `review` 字段针对性修改 |
-| `ai_question` | 疑问 | 你提交了疑问，等人回复后重新入队 |
-| `ai_done` | 已通过 | 任务完成，不用管了 |
+| 状态          | 含义   | 你需要做什么                                         |
+| ------------- | ------ | ---------------------------------------------------- |
+| `ai_todo`     | 待开发 | 等你从队列取到它                                     |
+| `ai_dev`      | 开发中 | 你正在做的任务                                       |
+| `ai_review`   | 待审核 | 你已提交，等人类审核                                 |
+| `ai_rework`   | 返工   | 审核不通过，重新入队，你要看 `review` 字段针对性修改 |
+| `ai_question` | 疑问   | 你提交了疑问，等人回复后重新入队                     |
+| `ai_done`     | 已通过 | 任务完成，不用管了                                   |
 
 ---
 
@@ -451,18 +678,18 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 ```
 ① cd 到 project.path
-   - 目录不存在 → POST /log { "回复", "❓ 疑问：项目路径不存在: xxx" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
+   - 目录不存在 → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：项目路径不存在: xxx" } → 取下一个任务
 
 ② 检查工作区
    git status
-   - 有未提交改动（别人或上次遗留）→ POST /log { "回复", "❓ 疑问：当前分支有未提交代码，无法切换分支" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务，不要 stash 别人的代码
+   - 有未提交改动（别人或上次遗留）→ POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：当前分支有未提交代码，无法切换分支" } → 取下一个任务，不要 stash 别人的代码
    - 干净 → 继续
 
 ③ 拉取最新主分支代码
    git fetch origin
    git checkout main（或 master）
    git pull origin main
-   - pull 失败 → POST /log { "回复", "❓ 疑问：主分支 git pull 失败: [错误信息]" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
+   - pull 失败 → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：主分支 git pull 失败: [错误信息]" } → 取下一个任务
 
 ④ 切换到项目配置的开发分支（project.gitBranch）
    git checkout <branch>       # 分支已存在
@@ -471,12 +698,12 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
    如果分支已存在，合入最新主分支代码：
    git merge main
    - merge 有冲突 → git merge --abort
-     → POST /log { "回复", "❓ 疑问：分支 <branch> 合并 main 时有冲突，文件: [冲突文件列表]" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
+     → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：分支 <branch> 合并 main 时有冲突，文件: [冲突文件列表]" } → 取下一个任务
    - merge 成功 → 继续
 
 ⑤ 最终确认
    git branch --show-current
-   - 输出 != project.gitBranch → POST /log { "回复", "❓ 疑问：分支切换失败，当前在 xxx，期望 xxx" } → 等 1 分钟 → 无回复则 POST /question → 取下一个任务
+   - 输出 != project.gitBranch → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：分支切换失败，当前在 xxx，期望 xxx" } → 取下一个任务
    - 输出 == project.gitBranch → 环境就绪，可以开发
 
 ⑥ 上报日志
@@ -527,92 +754,106 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 ```
 
 **Token 节省：**
+
 - 首次分析：读 5-10 个文件 (~2000 tokens)
 - 后续任务：从记忆直接读取 (~100 tokens)
 - **节省 95% 的项目分析开销**
 
 **记忆更新时机：**
+
 - `package.json` 有变化（新依赖、版本升级）
 - 项目结构大改（目录重组）
 - 超过 7 天未更新时重新分析一次
 
 **注意：记忆只存项目结构和技术栈，不存具体业务代码。每次开发仍需阅读目标文件。**
 
-### 7.3 开发中
+### 7.3 计划上报与审批
 
-1. **先检查补充说明再动手** — 每次循环的第一步是 GET /supplements，不是写代码
+环境就绪后、写代码前，**必须先通过 `/report` 上报执行计划等待审批**：
+
+```
+① 阅读需求文档（requirement.docText / customDescription）
+② 阅读验收标准（requirement.acceptanceCriteria）
+③ 阅读目标文件（先读后写）
+④ 制定执行计划，评估复杂度等级
+⑤ POST /report { action: "plan", aiStatus: "ai_dev", level: "L2", content: "执行计划..." }
+⑥ 按复杂度阻塞等待（见「二、ATEP 复杂度分级」）
+   → continue → 开始开发
+   → redirect → 按 instruction 修改计划 → 重新 POST /report
+   → abort → 跳过任务
+⑦ 进入 7.4 开发循环
+```
+
+**注意：** 如果是返工任务（`isRework=true`），必须按 L4 等级等待人类确认，不允许自动继续。
+
+### 7.4 开发中
+
+1. **通过 /report 上报步骤计划** — 每个步骤前 POST /report { action: "plan" }，等返回 continue 才动手
 2. **先读后写** — 完整阅读目标文件再改
 3. **只改相关的** — 看到 bug 也不管
-4. **每完成一步上报日志** — 让人知道你在干什么
-5. **需求模糊就提交疑问** — 调 `/question`，别猜
+4. **需求模糊就提问** — POST /report { action: "question", aiStatus: "ai_question" }
 
-**整个开发过程只有一个检查机制——5 秒轮询，不要在其他地方重复调用：**
+**整个开发过程通过 /report 接口驱动：**
 
 ```
 ┌─────────────── 开发循环 ───────────────┐
 │                                         │
-│  ① GET /supplements 检查（先检查！）      │
+│  ① 准备做下一步之前，POST /report        │
+│     { action: "plan", level: "L1-L4" }  │
 │                                         │
-│  → 有补充：                              │
-│    a. POST /log { action: "回复",        │
-│       content: "收到：[摘要]..." }        │
-│    b. 重新分析上下文 + 补充说明            │
-│    c. 调整当前开发计划                     │
-│    d. 处理补充（补充 > 原始需求）           │
-│    e. POST /log { action: "回复",        │
-│       content: "已处理：[结果]" }          │
-│    f. 回到 ①                            │
+│  → { action: "redirect" }:              │
+│    a. 按 instruction 调整计划             │
+│    b. 重新 POST /report 上报             │
+│    c. 回到 ①                            │
 │                                         │
-│  → 无补充：                              │
-│    写代码（约 5 秒的阶段性工作）           │
-│    → POST /log 上报进度                  │
-│    → 回到 ①                             │
+│  → { action: "continue" }:              │
+│    写代码（完成这一步）                   │
+│    → 下一步之前，回到 ①                  │
 │                                         │
-│  → 无补充 + 全部需求完成：                │
-│    进入「7.4 完成等待」                   │
+│  → 全部需求完成：                         │
+│    进入「7.6 完成等待」                   │
 │                                         │
 └─────────────────────────────────────────┘
 ```
 
 **关键原则：**
-- **检查优先于执行** — 每次循环先查补充说明，确认没有新指令再继续写代码
-- **空响应零思考** — supplements 返回空数组时，不要输出任何分析文字，直接继续写代码
-- **补充说明 = 纠偏信号** — 收到补充说明说明你当前方向可能错了，必须先重新分析再决定下一步
-- **补充 > 原始需求** — 冲突时以补充为准，立即调整方向
-- **先回复再处理** — 收到补充立刻回复确认，不要默默改代码
 
-### 7.4 完成等待——1 分钟缓冲期
+- **每步必报** — 准备写一个文件/改一个配置/执行一个脚本之前，先 POST /report
+- **redirect = 纠偏信号** — 收到 redirect 说明人类要调整你的方向，按 instruction 修改
+- **continue = 放行信号** — 可以继续执行这一步
+- **补充 > 原始需求** — redirect 中的指令与原始需求冲突时以 redirect 为准
 
-**为什么要等：** 你认为开发完了，但人类可能正在打字发补充说明。直接提交会导致补充说明被忽略。
+### 7.5 完成等待——通过 /report 等待确认
 
 **流程：**
+
 ```
 所有需求已完成 + 自测通过
-→ POST /log { action: "回复", content: "所有需求已完成，自测通过。等待补充说明...（1分钟后无消息将自动提交）" }
-→ 继续每 5 秒轮询 GET /supplements，持续 1 分钟（共 12 次）
-→ 有补充：
-   → 处理 → 继续开发 → 再走完成等待
-→ 1 分钟无消息：
-   → POST /complete 提交
+→ POST /report { action: "completion", content: "开发完成，共创建 N 个文件，自测通过", level: "L2" }
+→ 服务端推送完成报告卡片给你，等待 1 分钟
+→ 你批准 → 返回 continue → Agent POST /complete
+→ 你发指令 → 返回 redirect → Agent 修改后重新上报
+→ 1 分钟超时 → 返回 continue → Agent 自动 POST /complete
 ```
 
 **铁律：**
-- **不允许跳过等待直接提交** — 必须等满 1 分钟
-- **收到补充必须处理** — 哪怕只剩 10 秒就到时间了，也要处理完重新计时
-- **每次进入等待都要上报 log** — 让人类知道 Agent 在等，有话快说
 
-### 7.5 complete 之前——自测
+- **必须通过 /report 等待** — 不允许直接 POST /complete，必须先上报等确认
+- **redirect 必须处理** — 人类给了修改意见就要改，改完重新上报
+- **超时自动提交** — 1 分钟无响应自动继续
+
+### 7.6 complete 之前——自测
 
 1. 运行 `npx tsc --noEmit`（TypeScript 项目，没有 tsconfig.json 则跳过）
 2. 运行测试 `npx vitest run`（有测试的项目）
 3. 有错先修，修不好上报日志说明
 4. `git add` 相关文件 + `git commit -m "feat: xxx"`
 5. **不要 push！**
-6. 自测通过 → 提交前截图（前端任务）→ 进入「7.4 完成等待」→ 等满 1 分钟 → `POST /complete`
+6. 自测通过 → 提交前截图（前端任务）→ 进入「7.5 完成等待」→ POST /report 等确认 → `POST /complete`
 
-**整体流程串联：7.5 自测 → 7.6 截图（前端）→ 7.4 等待 1 分钟 → POST /complete**
+**整体流程串联：7.6 自测 → 7.7 截图（前端）→ 7.5 等待确认 → POST /complete**
 
-### 7.6 前端任务——截图和报告
+### 7.7 前端任务——截图和报告
 
 **涉及页面/UI 变更的任务必须：**
 
@@ -624,12 +865,13 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 6. 做完关掉 dev server
 
 **reportText 示例：**
+
 ```
 页面地址：http://localhost:5173/tasks
 进入任务列表页面，点击新增按钮弹出表单，填写标题和描述后提交，列表刷新显示新增记录，功能正常。
 ```
 
-### 7.7 返工任务——被打回怎么办
+### 7.8 返工任务——被打回怎么办
 
 当 `isRework=true` 时：
 
@@ -647,14 +889,15 @@ curl -X POST http://localhost:3201/api/agent/task/这里替换为实际taskId/co
 
 **你拿到 group 后必须做的事：**
 
-| group 里的字段 | 你干什么 |
-|---|---|
-| `group.description` | **必读！** 这是人类写的分组说明，告诉你任务间的关系、执行顺序、注意事项 |
-| `group.siblingTasks` | 看一眼同组其他任务的状态。有人做完了参考他的风格，有人在开发中别碰他的文件 |
-| `group.completedInGroup` | 已完成的数量。>0 说明前面有人做完了，先看看已完成任务的代码 |
-| `group.taskCount` | 总共几个任务。知道就行 |
+| group 里的字段           | 你干什么                                                                   |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `group.description`      | **必读！** 这是人类写的分组说明，告诉你任务间的关系、执行顺序、注意事项    |
+| `group.siblingTasks`     | 看一眼同组其他任务的状态。有人做完了参考他的风格，有人在开发中别碰他的文件 |
+| `group.completedInGroup` | 已完成的数量。>0 说明前面有人做完了，先看看已完成任务的代码                |
+| `group.taskCount`        | 总共几个任务。知道就行                                                     |
 
 **分组原则：**
+
 - 按队列顺序做，不要自己调整顺序（人类已经排好了）
 - 同组任务保持代码风格一致
 - 避免和正在开发中的同组任务改同一个文件
@@ -702,76 +945,66 @@ curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
   -H "x-agent-key: qcl_xxx" -H "Content-Type: application/json; charset=utf-8" \
   --data-binary '{"action":"开发","content":"已就绪，分支 feature/login，技术栈 Vue3+TypeScript"}'
 
-# ────── 开发循环（先检查再动手，每 5 秒一轮） ──────
+# ────── 上报计划，等待审批 ──────
 
-# 5. 先检查补充说明（每次循环第一步！）
-curl http://localhost:3201/api/agent/task/a1b2c3d4/supplements -H "x-agent-key: qcl_xxx"
-# → 有补充：回复确认 → 处理 → 回到步骤 5
-# → 无补充：继续步骤 6
+# 5. 上报执行计划，等待接口返回
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/report \
+  -H "x-agent-key: qcl_xxx" -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"action":"plan","content":"L2 常规：创建登录页面，表单验证 + JWT 认证","level":"L2"}'
+# → 接口阻塞等待人类响应
+# → 返回 { action: "continue" } → 开始写代码
+# → 返回 { action: "redirect", instruction: "加个验证码" } → 调整后重新上报
 
-# 6. 写代码 → 上报日志 → 回到步骤 5
-curl -X POST .../log --data-binary '{"action":"开发","content":"完成登录页面组件"}'
+# 6. 每个步骤前上报（准备写登录组件）
+curl -X POST .../report --data-binary '{"action":"plan","content":"准备创建 login.vue 组件，实现表单验证","level":"L1"}'
+# → 返回 continue → 开始写
 
-# ────── 补充说明处理示例 ──────
+# ────── redirect 处理示例 ──────
 
-# Agent 收到补充后先回复确认
-curl -X POST .../log --data-binary '{"action":"回复","content":"收到补充：顺便加上表单校验。正在处理..."}'
-# 处理完毕后再回复
-curl -X POST .../log --data-binary '{"action":"回复","content":"表单校验已添加完成"}'
+# 收到 redirect 后调整计划重新上报
+curl -X POST .../report --data-binary '{"action":"plan","content":"L2 常规：已按指令加上验证码功能","level":"L2"}'
+# → 等待 → 返回 continue → 继续开发
 
-# ────── 完成等待（7.4 节） ──────
+# ────── 完成等待 ──────
 
-# 7. 所有需求完成 + 自测通过 → 通知人类 → 等待 1 分钟
-curl -X POST .../log --data-binary '{"action":"回复","content":"所有需求已完成，自测通过。等待补充说明...（1分钟后无消息将自动提交）"}'
+# 7. 所有需求完成 + 自测通过 → 上报完成，等确认
+curl -X POST .../report --data-binary '{"action":"completion","content":"开发完成，共创建 2 个文件，自测通过","level":"L2"}'
+# → 接口阻塞 1 分钟
+# → 返回 continue → 提交
 
-# 8. 继续轮询 1 分钟（12 次，每次间隔 5 秒）
-curl http://localhost:3201/api/agent/task/a1b2c3d4/supplements -H "x-agent-key: qcl_xxx"
-# → 有补充：处理 → 重新开发 → 重新等待
-# → 1 分钟无消息：提交
-
-# 9. 1 分钟无补充 → 提交产出
+# 8. 提交产出
 curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/complete \
   -H "x-agent-key: qcl_xxx" -H "Content-Type: application/json; charset=utf-8" \
   --data-binary '{"aiOutput":"新增login.vue","summary":"完成登录页","filesChanged":[{"path":"src/login.vue","action":"created"}],"testResult":{"passed":true,"typeCheck":true,"details":"all clean"}}'
 
-# 10. 取下一个
+# 9. 取下一个
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 ```
 
-### 环境异常（先聊天，1 分钟无回复再跳过）
+### 环境异常（通过 /report 提问，等待人类响应）
 
 ```bash
 # 场景A：当前分支有未提交代码
-# ① 先在聊天框提问
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
+# ① 上报问题，等待人类响应
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/report \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"action":"回复","content":"❓ 疑问：当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
-# ② 等待 1 分钟，每 5 秒轮询 GET /supplements
-# ③ 无回复 → 正式提交疑问
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
-  -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"question": "当前分支有未提交代码，无法切换分支。请处理后重新入队"}'
-# → 取下一个任务
+  --data-binary '{"action":"plan","content":"❓ 疑问：当前分支有未提交代码，无法切换分支","level":"L3"}'
+# → 接口阻塞等待
+# → 返回 redirect（人类回复）→ 按回复处理
+# → 返回 continue（超时）→ 直接提交 question
 ```
 
 ### 需求不清楚
 
 ```bash
-# ① 先在聊天框提问
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/log \
+# 直接提交 question，任务暂停
+curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/report \
   -H "x-agent-key: qcl_xxx" \
   -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"action":"回复","content":"❓ 疑问：需求中提到的「用户中心」找不到对应模块"}'
-# ② 等 1 分钟看人类是否回复补充说明
-# ③ 无回复 → 正式提交疑问
-curl -X POST http://localhost:3201/api/agent/task/a1b2c3d4-xxxx-yyyy-zzzz/question \
-  -H "x-agent-key: qcl_xxx" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"question": "需求中提到的「用户中心」找不到对应模块"}'
+  --data-binary '{"action":"question","aiStatus":"ai_question","content":"❓ 疑问：需求中提到的「用户中心」找不到对应模块"}'
 
-# 立即取下一个，不要等
+# 立即取下一个
 curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 ```
 
@@ -779,47 +1012,103 @@ curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 
 ## 十一、Git 操作规范
 
-| 操作 | 允许 |
-|---|---|
-| `git status` / `git diff` / `git log` | 是，查看用 |
-| `git fetch` / `git pull` | 是，拉取最新代码（必须先做） |
-| `git add` / `git commit` | 是，提交代码 |
-| `git checkout -b` / `git branch` | 是，管理分支 |
-| `git merge main` | 是，开发分支合并最新主分支代码 |
-| `git stash` / `git stash pop` | 是，**仅用于暂存自己的改动**，禁止 stash 别人的代码 |
-| **`git push`** | **禁止** |
-| **`git push --force`** | **禁止** |
-| **`git reset --hard`** | **禁止** |
-| **`git clean`** | **禁止** |
+| 操作                                  | 允许                                                |
+| ------------------------------------- | --------------------------------------------------- |
+| `git status` / `git diff` / `git log` | 是，查看用                                          |
+| `git fetch` / `git pull`              | 是，拉取最新代码（必须先做）                        |
+| `git add` / `git commit`              | 是，提交代码                                        |
+| `git checkout -b` / `git branch`      | 是，管理分支                                        |
+| `git merge main`                      | 是，开发分支合并最新主分支代码                      |
+| `git stash` / `git stash pop`         | 是，**仅用于暂存自己的改动**，禁止 stash 别人的代码 |
+| **`git push`**                        | **禁止**                                            |
+| **`git push --force`**                | **禁止**                                            |
+| **`git reset --hard`**                | **禁止**                                            |
+| **`git clean`**                       | **禁止**                                            |
 
 ---
 
 ## 十二、与人类的实时通讯机制
 
-你和人类通过**补充说明 + 开发日志**双向通讯，同时系统提供 Webhook 唤醒机制实现实时通知。
+你和人类通过**聊天会话面板 + 补充说明 + 开发日志**三重通讯，同时系统提供 Webhook 唤醒机制实现实时通知。
+
+### 聊天会话（Session）机制
+
+**你不需要主动管理 Session，系统自动处理。** 但理解这个概念有助于你知道人类看到了什么。
+
+```
+人类点击「开始工作」
+  → 系统创建一个新 Session（如 "05-29 14:30"）
+  → 你被唤醒，开始执行任务
+
+你执行任务时：
+  → 你的 log（开始开发、进度、完成）自动同步到当前 Session 的消息流
+  → 人类在聊天面板实时看到你的进度
+  → 每个任务的消息按任务分组展示
+
+人类点击「停止工作」或你完成所有任务：
+  → Session 归档（status = archived）
+  → 人类可随时回看历史 Session 中的完整对话和任务进度
+```
+
+**Session 内的消息按任务分组：**
+
+```
+── Session "05-29 14:30" (进行中) ──
+
+── Task #1: 用户管理页面 ──
+  Agent: [开始] 开始开发任务
+  Agent: [进度] 实现表单组件...
+  Agent: [完成] 完成开发，V1.0
+  User: [批准]
+
+── Task #2: 权限配置 ──
+  Agent: [进度] 正在开发...
+```
+
+**核心要点：**
+
+- Session 是人类的工作周期概念，你不需要关心，继续按原来的方式调用 `/start`、`/log`、`/complete`
+- 你的每条 log（action 为 开始开发/开发/调试/回复/开发完成/疑问/plan）都会自动出现在聊天面板
+- 人类在聊天面板的操作（批准、拒绝、补充说明）会通过补充说明和唤醒机制传达给你
+- 人类可以看到历史 Session 中所有任务的完整对话记录
 
 ### 通讯通道
 
 ```
-人类 → 你：
-  人类在聊天框发补充说明
-  → LineSequence 保存到 task_supplements 表
-  → LineSequence 同时通过 WebSocket 推送到前端 + Webhook 唤醒你
-  → 你通过 GET /supplements 收到（每 5 秒轮询，或被唤醒后立即查询）
+人类 → 你（三种方式）：
+  ① 聊天面板发消息 → 系统保存为补充说明 + 唤醒你 → 你通过 GET /supplements 收到
+  ② 任务卡片点「补充说明」→ 保存到 task_supplements 表 → 唤醒你 → 你通过 GET /supplements 收到
+  ③ 聊天面板点「批准/拒绝」→ 更新任务状态 → 唤醒你继续下一个任务
 
 你 → 人类：
-  POST /log { action: "回复", content: "..." }
-  → 人类在聊天框实时看到你的消息
-  → 用于回复确认、汇报进度、提问等
+  POST /report { action: "plan", level: "L1", content: "..." }
+  → 自动同步到当前 Session 的聊天面板
+  → 人类实时看到你的消息（进度、回复、提问）
 ```
 
-### 实时唤醒机制
+### 人类的聊天面板操作
+
+人类在顶栏点击聊天图标，右侧滑出聊天面板，可以：
+
+| 操作     | 人类在面板做什么                     | 对你的影响                                                 |
+| -------- | ------------------------------------ | ---------------------------------------------------------- |
+| 开始工作 | 点击「开始工作」按钮                 | 创建新 Session → 唤醒你 → `GET /next-task`                 |
+| 停止工作 | 点击「停止工作」按钮                 | Session 归档 → 你完成当前任务后不再自动拉取下一个          |
+| 批准任务 | 任务完成报告卡片点击「批准」         | 任务状态变 ai_done → 唤醒你取下一个任务                    |
+| 拒绝任务 | 任务完成报告卡片点击「拒绝」+ 填原因 | 任务变 ai_rework → 重新入队 → 你后续会再取到               |
+| 补充说明 | 输入框发消息                         | 保存为 task_supplement → 作为 /report 的 redirect 返回给你 |
+| 回答问题 | Agent 提问卡片回复                   | 清除 ai_question → 任务重新入队 → 唤醒你                   |
+| 查看历史 | Session 下拉切换                     | 只读查看，不影响你                                         |
+
+**你的行为：** 所有交互通过 `POST /report` 完成，最终提交通过 `POST /complete`。系统自动把你的消息同步到聊天面板。
 
 人类在同步中心配置「Agent 唤醒地址」（OpenClaw Gateway 的 Chat API 地址，如 `http://localhost:50439/v1/chat/completions`）+ OpenClaw Token + 目标 Agent 后，系统会在以下场景自动唤醒你：
 
-1. 人类发补充说明时
-2. 人类点「唤醒 Agent 开始任务」按钮时
-3. 人类在对话模式发消息时
+1. 人类在聊天面板点「开始工作」时
+2. 人类在聊天面板发消息/补充说明时
+3. 人类在聊天面板批准/拒绝任务时
+4. 人类回答 Agent 提问时
+5. 人类在 AI 待办页点「唤醒 Agent 开始任务」按钮时
 
 **唤醒流程（你不需要主动调用任何唤醒接口）：**
 
@@ -843,19 +1132,22 @@ OpenClaw Gateway 唤醒目标 Agent
 
 **不同场景的唤醒消息和你的响应：**
 
-| 唤醒场景 | 消息内容 | 你做什么 |
-|---|---|---|
-| 补充说明 | `[系统通知] 任务 {taskId} 收到新的补充说明：{内容}。请立即 GET /task/{taskId}/supplements 检查。` | `GET /task/{taskId}/supplements` → 处理补充 |
-| 开始任务 | `开始工作。队列中有 N 个待办任务，请调用 GET /next-task 开始执行。` | `GET /next-task` → 进入开发循环 |
-| 对话消息 | `{用户原话}` | 理解意图，执行操作，`POST /log { action: "回复", content: "结果" }` 回复 |
+| 唤醒场景 | 消息内容                                                                                          | 你做什么                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 开始工作 | `开始工作。队列中有 N 个待办任务，请调用 GET /next-task 开始执行。`                               | `GET /next-task` → 进入开发循环                                                 |
+| 补充说明 | `[系统通知] 任务 {taskId} 收到新的补充说明：{内容}。请立即 GET /task/{taskId}/supplements 检查。` | `GET /task/{taskId}/supplements` → 处理补充                                     |
+| 批准任务 | `任务 {taskId} 已批准。请调用 GET /next-task 继续执行下一个任务。`                                | `GET /next-task` → 继续开发                                                     |
+| 拒绝任务 | `任务 {taskId} 被拒绝，原因: {comment}。请调用 GET /next-task 重新开发。`                         | `GET /next-task` → 取到返工任务重新开发                                         |
+| 回答问题 | `用户回答了问题: {answer}。请调用 GET /next-task 继续执行。`                                      | `GET /next-task` → 任务已重新入队                                               |
+| 聊天消息 | `{用户原话}`                                                                                      | 理解意图，执行操作，`POST /report { action: "plan", content: "结果" }` 回复 |
 
-### 补充说明完整处理步骤（收到唤醒或轮询到补充后）
+### 补充说明完整处理步骤（收到 /report 返回 redirect 后）
 
 ```
-收到补充说明（通过唤醒或 5 秒轮询）
+收到 /report 返回 { action: "redirect", instruction: "人类的指令" }
 
 ① 立即回复确认（让人类知道你收到了）
-   POST /log { action: "回复", content: "收到补充说明：[摘要]。正在处理..." }
+   POST /report { action: "plan", level: "L1", content: "收到补充说明：[摘要]。正在处理..." }
 
 ② 停下当前工作，重新分析上下文
    - 结合原始需求 + 补充说明，确定新方向
@@ -865,44 +1157,58 @@ OpenClaw Gateway 唤醒目标 Agent
    修改型："把按钮改成红色" → 立刻去改
    追加型："顺便加上表单校验" → 加到待做列表
    推翻型："不用做XX了" → 立刻停止，回滚相关代码
-   疑问型："XX参数是做什么的" → POST /log 回答
+   疑问型："XX参数是做什么的" → POST /report { plan, L1 } 回答
 
-④ 处理完毕后回复
-   POST /log { action: "回复", content: "已处理完成：[逐条汇报]" }
+④ 处理完毕后重新上报计划
+   POST /report { action: "plan", content: "调整后计划", level: "L2" }
 
-⑤ 继续下一轮循环（再次检查 GET /supplements）
+⑤ 收到 /report 返回 { action: "continue" } → 继续开发
 ```
 
-### 轮询规则（无论是否配置唤醒，轮询都是兜底机制）
+### 补充说明获取方式（ATEP 同步阻塞模型）
 
-- 开发过程中每 5 秒轮询一次 `GET /supplements`
-- 完成等待期（自测通过后）也保持每 5 秒轮询
-- 每次循环的第一步必须是检查补充说明，不是写代码
-- 不允许跳过轮询直接提交
-- 被唤醒后仍然走正常的轮询机制，唤醒只是加速你感知补充说明的速度
+Agent **不轮询**。所有交互通过 `POST /report` 同步阻塞完成：
+
+- Agent 上报计划/进度/完成 → `/report` 阻塞等待 → 人类在聊天面板操作 → 结果返回 Agent
+- 人类的补充说明作为 `/report` 的 `redirect` 返回
+- Agent 也可以主动调 `GET /task/{taskId}/supplements` 查看历史补充（如唤醒后首次检查）
 
 ### 补充说明通讯时序图
 
 ```
-时间线  人类                  LineSequence              Agent
+时间线  人类(聊天面板)          LineSequence              Agent
+  |      |                       |                       |
+  |   点「开始工作」────→ 创建 Session                  |
+  |      |                  唤醒 Agent ──────→ 收到 "开始工作" |
+  |      |                       |                  GET /next-task
+  |      |                  ←── 返回任务               |
+  |      |                       |                  POST /report { plan, ai_dev }
+  |      |                  推送到面板 ────→ 面板显示计划卡片    |
+  |      |                  阻塞等待...                    |
+  |   点「批准」────→ 更新任务状态                    |
+  |      |                  返回 continue ────→ Agent 收到  |
+  |      |                       |                  开始写代码
+  |      |                       |                  POST /report { plan } (下一步骤)
+  |      |                  推送到面板 ────→ 面板显示步骤计划    |
   |      |                       |                       |
   |   发补充说明 ──────→ 保存到数据库               |
-  |      |                  推送 WebSocket ──→ 前端显示     |
-  |      |                  调用 Gateway Chat API ──→ 收到唤醒 |
-  |      |                       |                  立即 GET /supplements
-  |      |                  ←── 返回补充内容          |
-  |      |                       |                  POST /log "收到..."
-  |      |                  推送 WebSocket ──→ 看到回复     |
-  |      |                       |                  处理补充...
-  |      |                       |                  POST /log "已处理完成"
-  |      |                  推送 WebSocket ──→ 看到汇报     |
-  |      |                       |                  继续开发循环
+  |      |                  作为 redirect 返回给阻塞中的 /report |
+  |      |                       |                  Agent 收到 redirect
+  |      |                       |                  调整方向 → POST /report { plan }
+  |      |                       |                       |
+  |      |                       |                  POST /report { completion, ai_review }
+  |      |                  推送到面板 ────→ 面板显示完成报告    |
+  |      |                  阻塞等待...                    |
+  |   点「批准」────→ 更新任务状态                    |
+  |      |                  返回 continue ────→ Agent 收到  |
+  |      |                       |                  POST /complete 提交产出
+  |      |                       |                  GET /next-task 取下一个
   v      v                       v                       v
 ```
 
 ### 未配置唤醒地址时
 
-如果人类没有配置唤醒地址，系统仅依赖你的 5 秒轮询来发现补充说明。最坏情况下人类发补充后你 5 秒内会查到，不影响功能，只是实时性略差。
+如果人类没有配置唤醒地址，ATEP 同步阻塞模型仍然正常工作——`/report` 接口本身不依赖唤醒，它直接阻塞 HTTP 请求等待人类响应。人类在聊天面板的操作会直接解析阻塞中的 `/report` 请求。
 
 ---
 
@@ -910,12 +1216,12 @@ OpenClaw Gateway 唤醒目标 Agent
 
 **所有错误先在聊天框提问，等 1 分钟无回复再提交 question 跳过。**
 
-| 场景 | 你做什么 |
-|---|---|
-| `project.path` 不存在 | POST /log { "❓ 疑问：项目路径不存在: xxx" } → 等 1 分钟 → 无回复则 POST /question → 取下一个 |
-| `requirement` 全为空 | POST /log { "❓ 疑问：缺少需求描述" } → 等 1 分钟 → 无回复则 POST /question → 取下一个 |
-| 编译错误修不好 | 上报日志说明已尝试的修复方式，继续尝试其他方案 |
-| 测试失败但不是你引入的 | 上报日志列出失败用例，继续完成你的任务 |
-| 需要改数据库 | 上报日志等人确认，不要自己改 |
-| 需求和已有功能冲突 | 提交 question 说明冲突点 |
-| `complete` 提交失败 | 上报日志记录错误信息，重试一次，仍失败则提交 question |
+| 场景                   | 你做什么                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `project.path` 不存在  | POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：项目路径不存在: xxx" } → 取下一个 |
+| `requirement` 全为空   | POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：缺少需求描述" } → 取下一个        |
+| 编译错误修不好         | 上报日志说明已尝试的修复方式，继续尝试其他方案                                                                   |
+| 测试失败但不是你引入的 | 上报日志列出失败用例，继续完成你的任务                                                                           |
+| 需要改数据库           | 上报日志等人确认，不要自己改                                                                                     |
+| 需求和已有功能冲突     | 提交 question 说明冲突点                                                                                         |
+| `complete` 提交失败    | 上报日志记录错误信息，重试一次，仍失败则提交 question                                                            |

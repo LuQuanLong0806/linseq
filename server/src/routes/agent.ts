@@ -19,7 +19,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { getDb } from '../db/index.js'
-import { mapDbRowToTask, addDevLog, wakeAgent } from './tasks.js'
+import { addDevLog, wakeAgent } from './tasks.js'
 import { broadcastToTask } from '../websocket.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -237,6 +237,18 @@ router.post('/task/:id/start', (req, res) => {
     db.prepare("UPDATE tasks SET ai_status = 'ai_dev', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
     addDevLog(db, id, '开始开发', `QClaw 开始开发任务: ${(row.title as string).substring(0, 50)}`, 'agent', false)
 
+    // 同步写入 chat_log
+    const activeSession = getActiveSession(db, req.userId)
+    if (activeSession) {
+      // 关联任务到 session
+      const taskIds = JSON.parse(activeSession.task_ids || '[]') as string[]
+      if (!taskIds.includes(id)) {
+        taskIds.push(id)
+        db.prepare('UPDATE chat_sessions SET task_ids = ?, updated_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(JSON.stringify(taskIds), activeSession.id)
+      }
+      insertChatLog(db, req.userId, activeSession.id, 'system', 'status_change', `Agent 开始开发任务: ${(row.title as string).substring(0, 50)}`, id)
+    }
+
     res.json({ code: 0, message: '已开始开发', data: { taskId: id, aiStatus: 'ai_dev' } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -263,11 +275,12 @@ router.post('/task/:id/log', (req, res) => {
 
     const logId = addDevLog(db, id, action, content, 'agent', false)
     broadcastToTask(id, 'devlog', { logId, action, content, author: 'agent' })
-    // Agent 回复同步到对话记录
-    if (action === '回复') {
-      const chatId = uuidv4()
-      db.prepare('INSERT INTO agent_chat_logs (id, user_id, role, content) VALUES (?, ?, ?, ?)').run(chatId, req.userId, 'agent', content)
-      broadcastToTask('*', 'chat', { id: chatId, role: 'agent', content, time: new Date().toISOString() })
+
+    // 同步写入 chat_log（关联 session）
+    const activeSession = getActiveSession(db, req.userId)
+    if (activeSession) {
+      const chatType = mapActionToType(action)
+      insertChatLog(db, req.userId, activeSession.id, 'agent', chatType, content, id)
     }
     res.json({ code: 0, message: 'success', data: { logId } })
   } catch (err) {
@@ -358,6 +371,14 @@ router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, r
     removeFromTodoList(id, req.userId)
 
     addDevLog(db, id, '开发完成', summary || `完成开发，生成版本 ${versionNumber}`, 'agent', false)
+
+    // 同步写入 chat_log（关联 session）
+    const completeSession = getActiveSession(db, req.userId)
+    if (completeSession) {
+      insertChatLog(db, req.userId, completeSession.id, 'agent', 'completion', summary || `完成开发，生成版本 ${versionNumber}`, id, {
+        versionNumber, screenshots: screenshotFiles, filesChanged,
+      })
+    }
 
     // 异步生成 Word 自测报告（不阻塞响应）
     generateDocxReport({
@@ -726,6 +747,583 @@ router.get('/chat', (req, res) => {
     res.json({ code: 0, message: 'success', data: rows })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// ========== 聊天会话接口 ==========
+
+/** 获取当前用户活跃 session，没有则返回 null */
+function getActiveSession(db: ReturnType<typeof getDb>, userId: string): { id: string; title: string; task_ids: string; status: string } | null {
+  return (db.prepare("SELECT id, title, task_ids, status FROM chat_sessions WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1").get(userId) as { id: string; title: string; task_ids: string; status: string } | undefined) ?? null
+}
+
+/** 将 dev_log action 映射为聊天消息 type */
+function mapActionToType(action: string): string {
+  if (action === '开始开发') return 'status_change'
+  if (action === 'plan') return 'plan'
+  if (['开发', '调试', '重构', '自测'].includes(action)) return 'progress'
+  if (action === '回复') return 'text'
+  if (action === '开发完成') return 'completion'
+  if (action === '疑问') return 'question'
+  return 'text'
+}
+
+/** 插入 chat_log 并广播 */
+function insertChatLog(db: ReturnType<typeof getDb>, userId: string, sessionId: string, role: string, type: string, content: string, taskId: string = '', metadata: Record<string, unknown> = {}) {
+  const chatId = uuidv4()
+  db.prepare(
+    'INSERT INTO agent_chat_logs (id, user_id, role, content, session_id, type, task_id, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(chatId, userId, role, content, sessionId, type, taskId, JSON.stringify(metadata))
+  broadcastToTask('*', 'chat', {
+    id: chatId, role, content, type, sessionId, taskId, metadata, time: new Date().toISOString(),
+  })
+  return chatId
+}
+
+/**
+ * GET /api/agent/chat/context
+ * 获取聊天上下文：当前 session + 统一消息流 + 统计 + 历史会话列表
+ */
+router.get('/chat/context', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const db = getDb()
+    const sessionId = req.query.session_id as string | undefined
+    const cursor = req.query.cursor as string | undefined
+    const limit = Math.min(Number(req.query.limit) || 50, 100)
+
+    // 获取或创建活跃 session
+    let session = getActiveSession(db, req.userId)
+    if (sessionId && sessionId !== session?.id) {
+      // 查指定 session（只读）
+      session = (db.prepare('SELECT id, title, task_ids, status FROM chat_sessions WHERE id = ? AND user_id = ?').get(sessionId, req.userId) as { id: string; title: string; task_ids: string; status: string } | undefined) ?? null
+    }
+
+    let messages: Record<string, unknown>[] = []
+    let nextCursor = ''
+    let hasMore = false
+
+    if (session) {
+      const taskIds: string[] = JSON.parse(session.task_ids || '[]')
+
+      // 统一消息流：agent_chat_logs + dev_logs（UNION ALL）
+      const cursorFilter = cursor ? " AND a.created_at < ?" : ''
+      const params = cursor
+        ? [session.id, ...taskIds, ...taskIds, cursor, String(limit + 1)]
+        : [session.id, ...taskIds, ...taskIds, String(limit + 1)]
+
+      // 构建 dev_logs 的 task_id 占位符
+      const taskPlaceholders = taskIds.length > 0 ? taskIds.map(() => '?').join(',') : "'__none__'"
+
+      messages = db.prepare(`
+        SELECT * FROM (
+          SELECT id, role, content, created_at AS time, session_id, type, task_id, metadata, 'chat' AS source
+          FROM agent_chat_logs
+          WHERE session_id = ?${cursorFilter}
+          UNION ALL
+          SELECT id,
+            CASE WHEN action IN ('补充说明') THEN 'user'
+                 WHEN action IN ('开始开发') THEN 'system'
+                 ELSE 'agent' END AS role,
+            content, time, '' AS session_id,
+            CASE WHEN action = '开始开发' THEN 'status_change'
+                 WHEN action = 'plan' THEN 'plan'
+                 WHEN action IN ('开发','调试','重构','自测') THEN 'progress'
+                 WHEN action = '回复' THEN 'text'
+                 WHEN action = '开发完成' THEN 'completion'
+                 WHEN action = '疑问' THEN 'question'
+                 WHEN action = '补充说明' THEN 'text'
+                 ELSE 'text' END AS type,
+            task_id, '{}' AS metadata, 'devlog' AS source
+          FROM dev_logs
+          WHERE task_id IN (${taskPlaceholders})
+            AND action IN ('开始开发','plan','开发','调试','重构','自测','回复','开发完成','疑问','补充说明')
+            ${cursorFilter.replace(/a\./g, 'dev_logs.')}
+        )
+        ORDER BY time ASC
+        LIMIT ?
+      `).all(...params) as Record<string, unknown>[]
+
+      if (messages.length > limit) {
+        hasMore = true
+        nextCursor = messages[messages.length - 1].time as string
+        messages = messages.slice(0, limit)
+      }
+    }
+
+    // 统计
+    const todoList = getTodoList(req.userId)
+    const inDev = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_dev' AND user_id = ?").get(req.userId) as { c: number }).c
+    const inReview = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE ai_status = 'ai_review' AND user_id = ?").get(req.userId) as { c: number }).c
+    const currentTask = db.prepare("SELECT id, title, ai_status FROM tasks WHERE ai_status = 'ai_dev' AND user_id = ? LIMIT 1").get(req.userId) as { id: string; title: string; ai_status: string } | undefined
+
+    // 历史会话列表
+    const sessions = db.prepare(
+      "SELECT id, title, task_ids, status, created_at, updated_at FROM chat_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20"
+    ).all(req.userId) as { id: string; title: string; task_ids: string; status: string; created_at: string; updated_at: string }[]
+
+    res.json({
+      code: 0,
+      message: 'success',
+      data: {
+        session: session ? { id: session.id, title: session.title, taskIds: JSON.parse(session.task_ids || '[]'), status: session.status } : null,
+        messages,
+        stats: { todoCount: todoList.length, inDev, inReview, currentTask: currentTask || null },
+        sessions: sessions.map(s => ({
+          id: s.id, title: s.title, status: s.status, createdAt: s.created_at, updatedAt: s.updated_at,
+          taskCount: (JSON.parse(s.task_ids || '[]') as string[]).length,
+        })),
+        cursor: nextCursor,
+        hasMore,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+/**
+ * POST /api/agent/chat/action
+ * 统一操作接口：wake / stop_session / send_message / approve / reject / redirect / answer_question / supplement
+ */
+router.post('/chat/action', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const db = getDb()
+    const { action, sessionId: reqSessionId, taskId, message, payload } = req.body as {
+      action: string; sessionId?: string; taskId?: string; message?: string; payload?: Record<string, unknown>
+    }
+
+    switch (action) {
+      case 'wake': {
+        // 结束之前的活跃 session
+        const activeSession = getActiveSession(db, req.userId)
+        if (activeSession) {
+          db.prepare("UPDATE chat_sessions SET status = 'archived', updated_at = datetime('now', 'localtime') WHERE id = ?").run(activeSession.id)
+        }
+        // 创建新 session
+        const sId = uuidv4()
+        const now = new Date()
+        const title = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+        db.prepare('INSERT INTO chat_sessions (id, user_id, title, task_ids, status) VALUES (?, ?, ?, ?, ?)').run(sId, req.userId, title, '[]', 'active')
+
+        // 存 user 消息
+        const wakeMsg = message || '开始工作'
+        insertChatLog(db, req.userId, sId, 'user', 'text', wakeMsg)
+
+        // 唤醒 Agent
+        const todoList = getTodoList(req.userId)
+        const agentMsg = todoList.length > 0
+          ? `开始工作。队列中有 ${todoList.length} 个待办任务，请调用 GET /next-task 开始执行。`
+          : '开始工作。当前队列为空，请调用 GET /next-task 确认。'
+        wakeAgent(db, agentMsg)
+
+        res.json({ code: 0, message: '已创建新会话并唤醒 Agent', data: { sessionId: sId, title } })
+        break
+      }
+
+      case 'stop_session': {
+        const sId = reqSessionId || getActiveSession(db, req.userId)?.id
+        if (!sId) return res.status(400).json({ code: 400, message: '无活跃会话', data: null })
+        db.prepare("UPDATE chat_sessions SET status = 'archived', updated_at = datetime('now', 'localtime') WHERE id = ? AND user_id = ?").run(sId, req.userId)
+        insertChatLog(db, req.userId, sId, 'system', 'status_change', '用户停止了工作会话')
+        res.json({ code: 0, message: '会话已结束', data: { sessionId: sId } })
+        break
+      }
+
+      case 'send_message': {
+        if (!message?.trim()) return res.status(400).json({ code: 400, message: '消息不能为空', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+        insertChatLog(db, req.userId, sId, 'user', 'text', message.trim(), taskId || '')
+
+        // 解析 pending /report（带 taskId 或找当前用户任意 pending 的）
+        if (taskId) {
+          resolvePendingReport(taskId, { action: 'redirect', instruction: message.trim() })
+        } else {
+          // 没有 taskId 时，检查是否有该用户的 pending report，作为 redirect 解析
+          for (const [, pending] of pendingReports) {
+            if (pending.userId === req.userId) {
+              resolvePendingReport(pending.taskId, { action: 'redirect', instruction: message.trim() })
+              break
+            }
+          }
+        }
+
+        // 同时存补充说明
+        if (taskId) {
+          db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, message.trim())
+          addDevLog(db, taskId, '补充说明', message.trim(), 'user', false)
+        }
+        wakeAgent(db, message.trim())
+        res.json({ code: 0, message: 'success', data: null })
+        break
+      }
+
+      case 'approve': {
+        if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+
+        // 检查是否有 pending_review 的版本（区分计划审批 vs 完成审批）
+        const version = db.prepare(
+          "SELECT id, version_number FROM task_versions WHERE task_id = ? AND status = 'pending_review' ORDER BY iteration DESC LIMIT 1"
+        ).get(taskId) as { id: string; version_number: string } | undefined
+
+        const comment = (payload?.comment as string) || '批准'
+
+        if (version) {
+          // 完成审批：批准版本 + 标记任务完成
+          db.prepare("UPDATE task_versions SET status = 'approved', is_final = 1 WHERE id = ?").run(version.id)
+          db.prepare("UPDATE tasks SET ai_status = 'ai_done', review_result = 'approved', review_time = datetime('now', 'localtime'), update_time = datetime('now', 'localtime') WHERE id = ?").run(taskId)
+          insertChatLog(db, req.userId, sId, 'system', 'approval', `已批准任务 — ${comment}`, taskId, { versionNumber: version.version_number, result: 'approved' })
+          wakeAgent(db, `任务 ${taskId} 已批准。请调用 GET /next-task 继续执行下一个任务。`)
+        } else {
+          // 计划审批：只解析 pending /report，不改变任务状态
+          insertChatLog(db, req.userId, sId, 'system', 'approval', `已批准计划 — ${comment}`, taskId, { result: 'plan_approved' })
+        }
+
+        // 解析 pending /report（如果 Agent 正在等待）
+        resolvePendingReport(taskId, { action: 'continue', instruction: '' })
+
+        res.json({ code: 0, message: '已批准', data: { taskId, versionNumber: version?.version_number } })
+        break
+      }
+
+      case 'reject': {
+        if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+
+        const version = db.prepare(
+          "SELECT id, version_number FROM task_versions WHERE task_id = ? AND status = 'pending_review' ORDER BY iteration DESC LIMIT 1"
+        ).get(taskId) as { id: string; version_number: string } | undefined
+        if (version) {
+          db.prepare("UPDATE task_versions SET status = 'rejected' WHERE id = ?").run(version.id)
+        }
+        const comment = (payload?.comment as string) || ''
+        db.prepare("UPDATE tasks SET ai_status = 'ai_rework', review_comment = ?, review_result = 'rejected', review_time = datetime('now', 'localtime'), update_time = datetime('now', 'localtime') WHERE id = ?").run(comment, taskId)
+
+        // 重新加入待办队列（头部插入）
+        const todoList = getTodoList(req.userId)
+        if (!todoList.includes(taskId)) {
+          todoList.unshift(taskId)
+          saveTodoList(todoList, req.userId)
+        }
+
+        insertChatLog(db, req.userId, sId, 'system', 'approval', `已拒绝任务，需要返工 — ${comment}`, taskId, { versionNumber: version?.version_number, result: 'rejected' })
+
+        // 解析 pending /report（如果 Agent 正在等待）
+        resolvePendingReport(taskId, { action: 'abort', instruction: comment || '任务被拒绝，需要返工' })
+
+        wakeAgent(db, `任务 ${taskId} 被拒绝，原因: ${comment}。请调用 GET /next-task 重新开发。`)
+        res.json({ code: 0, message: '已拒绝，任务将返工', data: { taskId } })
+        break
+      }
+
+      case 'redirect': {
+        if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+        const redirectMsg = message || (payload?.instruction as string) || '请调整方向'
+        insertChatLog(db, req.userId, sId, 'user', 'text', redirectMsg, taskId)
+
+        // 解析 pending /report（如果 Agent 正在等待）
+        resolvePendingReport(taskId, { action: 'redirect', instruction: redirectMsg })
+
+        db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, redirectMsg)
+        addDevLog(db, taskId, '补充说明', redirectMsg, 'user', false)
+        wakeAgent(db, redirectMsg)
+        res.json({ code: 0, message: '已发送调整指令', data: null })
+        break
+      }
+
+      case 'answer_question': {
+        if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        if (!message?.trim()) return res.status(400).json({ code: 400, message: '回答不能为空', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+
+        // 清除疑问状态，重新入队
+        db.prepare("UPDATE tasks SET ai_status = 'ai_todo', ai_question = '', update_time = datetime('now', 'localtime') WHERE id = ?").run(taskId)
+        const todoList = getTodoList(req.userId)
+        if (!todoList.includes(taskId)) {
+          todoList.unshift(taskId)
+          saveTodoList(todoList, req.userId)
+        }
+
+        insertChatLog(db, req.userId, sId, 'user', 'text', message.trim(), taskId)
+        addDevLog(db, taskId, '回复', message.trim(), 'user', false)
+        wakeAgent(db, `用户回答了问题: ${message.trim()}。请调用 GET /next-task 继续执行。`)
+        res.json({ code: 0, message: '已回答，任务重新入队', data: { taskId } })
+        break
+      }
+
+      case 'supplement': {
+        if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        if (!message?.trim()) return res.status(400).json({ code: 400, message: '补充说明不能为空', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+
+        db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, message.trim())
+        addDevLog(db, taskId, '补充说明', message.trim(), 'user', false)
+        insertChatLog(db, req.userId, sId, 'user', 'text', message.trim(), taskId)
+
+        // 解析 pending /report
+        resolvePendingReport(taskId, { action: 'redirect', instruction: message.trim() })
+
+        broadcastToTask(taskId, 'supplement', { taskId, content: message.trim() })
+        wakeAgent(db, `[补充说明] 任务 ${taskId}: ${message.trim()}`)
+        res.json({ code: 0, message: '已发送补充说明', data: null })
+        break
+      }
+
+      default:
+        res.status(400).json({ code: 400, message: `未知操作: ${action}`, data: null })
+    }
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+/**
+ * GET /api/agent/chat/sessions
+ * 获取历史会话列表（分页）
+ */
+router.get('/chat/sessions', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const db = getDb()
+    const page = Math.max(Number(req.query.page) || 1, 1)
+    const pageSize = Math.min(Number(req.query.pageSize) || 20, 50)
+    const offset = (page - 1) * pageSize
+
+    const total = (db.prepare('SELECT COUNT(*) as c FROM chat_sessions WHERE user_id = ?').get(req.userId) as { c: number }).c
+    const sessions = db.prepare(
+      'SELECT id, title, task_ids, status, created_at, updated_at FROM chat_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    ).all(req.userId, pageSize, offset) as { id: string; title: string; task_ids: string; status: string; created_at: string; updated_at: string }[]
+
+    // 每条 session 取最后一条消息作摘要
+    const result = sessions.map(s => {
+      const taskIds = JSON.parse(s.task_ids || '[]') as string[]
+      const lastMsg = db.prepare(
+        'SELECT content FROM agent_chat_logs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1'
+      ).get(s.id) as { content: string } | undefined
+      // 统计完成的任务数
+      let completedCount = 0
+      if (taskIds.length > 0) {
+        completedCount = (db.prepare(
+          `SELECT COUNT(*) as c FROM tasks WHERE id IN (${taskIds.map(() => '?').join(',')}) AND ai_status IN ('ai_done', 'ai_review')`
+        ).get(...taskIds) as { c: number }).c
+      }
+      return {
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+        taskCount: taskIds.length,
+        completedCount,
+        lastMessage: lastMsg?.content?.substring(0, 60) || '',
+      }
+    })
+
+    res.json({
+      code: 0,
+      message: 'success',
+      data: { sessions: result, total, page, pageSize },
+    })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// ========== ATEP 同步阻塞上报接口 ==========
+
+/** 解析 pending /report 请求，如果没有 pending 则无操作 */
+function resolvePendingReport(taskId: string, result: { action: string; instruction: string }) {
+  const pending = pendingReports.get(taskId)
+  if (pending) {
+    if (pending.timer) clearTimeout(pending.timer)
+    pendingReports.delete(taskId)
+    pending.resolve(result)
+  }
+}
+
+/** 待处理的 /report 请求（taskId → resolve 函数） */
+interface PendingReport {
+  resolve: (result: { action: string; instruction: string }) => void
+  timer: ReturnType<typeof setTimeout> | null
+  taskId: string
+  userId: string
+  level: string
+  reportAction: string
+  createdAt: number
+}
+const pendingReports = new Map<string, PendingReport>()
+
+/** ATEP 超时配置（毫秒），L4 超时后跳过任务并转为 ai_question */
+const ATEP_TIMEOUTS: Record<string, number> = {
+  L1: 0,        // 立即返回
+  L2: 10_000,   // 10 秒
+  L3: 30_000,   // 30 秒
+  L4: 120_000,  // 2 分钟，超时后跳过任务
+}
+
+/**
+ * POST /api/agent/task/:id/report
+ * ATEP 同步阻塞上报：一次调用完成 — 上报内容 + 更新任务状态 + 推送前端 + 阻塞等待人类响应
+ *
+ * 请求体:
+ *   action:    "plan" | "progress" | "completion" | "question"
+ *   content:   上报内容（计划/进度/完成报告/疑问）
+ *   level:     "L1" | "L2" | "L3" | "L4"（action=plan/completion 时必填）
+ *   aiStatus:  可选，同时更新任务状态：ai_dev | ai_review | ai_question
+ *   metadata:  可选，附加信息（filesChanged, testResult, screenshots 等）
+ */
+router.post('/task/:id/report', async (req, res) => {
+  const id = req.params.id
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const db = getDb()
+    const {
+      action: reportAction,
+      content,
+      level,
+      aiStatus,
+      metadata: reqMetadata,
+    } = req.body as {
+      action?: string; content?: string; level?: string; aiStatus?: string; metadata?: Record<string, unknown>
+    }
+
+    if (!reportAction || !content) {
+      return res.status(400).json({ code: 400, message: '缺少 action 或 content', data: null })
+    }
+
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(id, req.userId) as Record<string, unknown> | undefined
+    if (!row) {
+      return res.status(404).json({ code: 404, message: '任务不存在', data: null })
+    }
+
+    const reportLevel = (level || 'L2').toUpperCase()
+    const timeout = ATEP_TIMEOUTS[reportLevel] ?? 10_000
+    const mergedMetadata: Record<string, unknown> = { level: reportLevel, ...reqMetadata }
+
+    // ===== 1. 更新任务状态 =====
+    if (aiStatus) {
+      switch (aiStatus) {
+        case 'ai_dev':
+          db.prepare("UPDATE tasks SET ai_status = 'ai_dev', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
+          break
+        case 'ai_review':
+          db.prepare("UPDATE tasks SET ai_status = 'ai_review', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
+          break
+        case 'ai_question':
+          db.prepare("UPDATE tasks SET ai_status = 'ai_question', ai_question = ?, update_time = datetime('now', 'localtime') WHERE id = ?").run(content, id)
+          removeFromTodoList(id, req.userId!)
+          break
+      }
+    }
+
+    // ===== 2. 写入 dev_log =====
+    const logAction = reportAction === 'plan' ? 'plan'
+      : reportAction === 'progress' ? '开发'
+      : reportAction === 'completion' ? '开发完成'
+      : reportAction === 'question' ? '疑问'
+      : reportAction
+    addDevLog(db, id, logAction, content, 'agent', false)
+
+    // ===== 3. 写入 chat_log + 推送前端 =====
+    const chatType = reportAction === 'plan' ? 'plan'
+      : reportAction === 'progress' ? 'progress'
+      : reportAction === 'completion' ? 'completion'
+      : reportAction === 'question' ? 'question'
+      : 'text'
+    const activeSession = getActiveSession(db, req.userId)
+    if (activeSession) {
+      // 确保任务关联到 session
+      const taskIds = JSON.parse(activeSession.task_ids || '[]') as string[]
+      if (!taskIds.includes(id)) {
+        taskIds.push(id)
+        db.prepare('UPDATE chat_sessions SET task_ids = ?, updated_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(JSON.stringify(taskIds), activeSession.id)
+      }
+      insertChatLog(db, req.userId, activeSession.id, 'agent', chatType, content, id, mergedMetadata)
+      // 状态变更额外推送一条系统消息
+      if (aiStatus) {
+        const statusText = aiStatus === 'ai_dev' ? 'Agent 开始开发'
+          : aiStatus === 'ai_review' ? 'Agent 提交审核'
+          : aiStatus === 'ai_question' ? 'Agent 提出疑问'
+          : ''
+        if (statusText) {
+          insertChatLog(db, req.userId, activeSession.id, 'system', 'status_change', statusText, id)
+        }
+      }
+    } else {
+      broadcastToTask('*', 'chat', {
+        id: uuidv4(), role: 'agent', content, type: chatType, taskId: id, metadata: mergedMetadata, time: new Date().toISOString(),
+      })
+    }
+
+    // ===== 4. question 立即返回 abort，任务已标记为 ai_question =====
+    if (reportAction === 'question') {
+      return res.json({ code: 0, message: 'success', data: { action: 'abort', instruction: '任务已转为疑问状态，等待人工回复' } })
+    }
+
+    // ===== 5. L1 或 progress：立即返回 continue =====
+    if (reportAction === 'progress' || timeout === 0) {
+      return res.json({ code: 0, message: 'success', data: { action: 'continue', instruction: '' } })
+    }
+
+    // ===== 6. L2/L3/L4 plan/completion：阻塞等待人类响应 =====
+    await new Promise<{ action: string; instruction: string }>((resolve) => {
+      // 清理该任务之前的 pending report
+      const existing = pendingReports.get(id)
+      if (existing) {
+        if (existing.timer) clearTimeout(existing.timer)
+        existing.resolve({ action: 'continue', instruction: '' })
+        pendingReports.delete(id)
+      }
+
+      const entry: PendingReport = {
+        resolve,
+        timer: null,
+        taskId: id,
+        userId: req.userId!,
+        level: reportLevel,
+        reportAction,
+        createdAt: Date.now(),
+      }
+
+      // 设置超时
+      entry.timer = setTimeout(() => {
+        pendingReports.delete(id)
+        if (reportLevel === 'L4') {
+          const questionContent = `[ATEP 超时] Agent 上报了关键操作（L4），等待 2 分钟无人类响应，任务已暂停。原始内容: ${content.substring(0, 100)}`
+          db.prepare("UPDATE tasks SET ai_status = 'ai_question', ai_question = ?, update_time = datetime('now', 'localtime') WHERE id = ?").run(questionContent, id)
+          removeFromTodoList(id, req.userId!)
+          addDevLog(db, id, '疑问', questionContent, 'system', false)
+          if (activeSession) {
+            insertChatLog(db, req.userId!, activeSession.id, 'system', 'status_change', `⚠️ L4 上报超时（2 分钟无人响应），任务已暂停等待人工处理`, id)
+          }
+          resolve({ action: 'abort', instruction: 'L4 超时，任务已暂停等待人工处理' })
+        } else {
+          resolve({ action: 'continue', instruction: '' })
+        }
+      }, timeout)
+
+      pendingReports.set(id, entry)
+    }).then((result) => {
+      res.json({ code: 0, message: 'success', data: result })
+    })
+  } catch (err) {
+    const pending = pendingReports.get(id)
+    if (pending) {
+      if (pending.timer) clearTimeout(pending.timer)
+      pendingReports.delete(id)
+    }
+    if (!res.headersSent) {
+      res.status(500).json({ code: 500, message: String(err), data: null })
+    }
   }
 })
 
