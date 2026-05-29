@@ -320,7 +320,7 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .sync-page {
-  max-width: 1400px;
+  max-width: var(--container-lg);
   margin: 0 auto;
 }
 

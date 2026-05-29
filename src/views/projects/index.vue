@@ -47,7 +47,7 @@
         empty-text="暂无项目配置，点击上方按钮新建"
         row-class-name="table-row"
       >
-        <el-table-column prop="name" label="项目名称" min-width="180" align="center">
+        <el-table-column prop="name" label="项目名称" min-width="140" align="center">
           <template #default="{ row }">
             <el-tooltip :content="row.name" placement="top" :show-after="300">
               <div class="cell-name">
@@ -57,7 +57,7 @@
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column prop="localPath" label="本地路径" min-width="260" align="center">
+        <el-table-column prop="localPath" label="本地路径" min-width="200" align="center">
           <template #default="{ row }">
             <el-tooltip v-if="row.localPath" :content="row.localPath" placement="top" :show-after="300">
               <div class="cell-path">
@@ -68,7 +68,7 @@
             <span v-else class="cell-empty">未配置</span>
           </template>
         </el-table-column>
-        <el-table-column prop="gitUrl" label="Git 地址" min-width="240" align="center">
+        <el-table-column prop="gitUrl" label="Git 地址" min-width="180" align="center">
           <template #default="{ row }">
             <el-tooltip v-if="row.gitUrl" :content="row.gitUrl" placement="top" :show-after="300">
               <div class="cell-path">
@@ -79,13 +79,13 @@
             <span v-else class="cell-empty">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="默认分支" width="180" align="center">
+        <el-table-column label="默认分支" min-width="120" align="center">
           <template #default="{ row }">
             <span v-if="row.defaultBranch" class="branch-plain">{{ row.defaultBranch }}</span>
             <span v-else class="cell-empty">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="分支" width="80" align="center">
+        <el-table-column label="分支" width="60" align="center">
           <template #default="{ row }">
             <span class="branch-plain">{{ row.branches?.length || 0 }}</span>
           </template>
@@ -98,7 +98,7 @@
             <span v-else class="cell-empty">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" min-width="160" fixed="right" align="center">
           <template #default="{ row }">
             <div class="ops-cell">
               <el-button type="primary" link size="small" @click="openDialog(row)">编辑</el-button>
@@ -124,7 +124,7 @@
     <el-dialog
       v-model="showDialog"
       :title="editingId ? '编辑项目配置' : '新建项目配置'"
-      width="720px"
+      width="var(--dialog-lg)"
       :close-on-click-modal="false"
       class="proj-dialog"
       destroy-on-close

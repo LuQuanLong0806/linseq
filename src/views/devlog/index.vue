@@ -4,7 +4,7 @@
       <div class="panel-header">
         <div class="card-header">
           <span class="card-title">📝 开发记录</span>
-          <el-input v-model="keyword" placeholder="搜索记录..." style="width: 250px;" :prefix-icon="Search" clearable />
+          <el-input v-model="keyword" placeholder="搜索记录..." style="min-width: 180px; max-width: 250px;" :prefix-icon="Search" clearable />
         </div>
       </div>
 
@@ -85,7 +85,7 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .devlog-page {
-  max-width: 1000px;
+  max-width: var(--container-sm);
   margin: 0 auto;
 }
 

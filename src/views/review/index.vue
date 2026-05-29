@@ -115,7 +115,7 @@
     </div>
 
     <!-- 打回原因弹窗 -->
-    <el-dialog v-model="rejectDialogVisible" title="打回修改" width="560px" @close="resetRejectForm">
+    <el-dialog v-model="rejectDialogVisible" title="打回修改" width="var(--dialog-md)" @close="resetRejectForm">
       <el-form :model="rejectForm" label-width="90px">
         <el-form-item label="任务">
           <span>{{ rejectTask?.title }}</span>
@@ -436,7 +436,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 760px;
+  max-width: var(--dialog-md);
   margin: 0 auto;
   padding-bottom: 40px;
 }

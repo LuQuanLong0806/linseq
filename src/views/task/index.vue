@@ -9,7 +9,7 @@
             placeholder="搜索任务标题/ID..."
             :prefix-icon="Search"
             clearable
-            style="width: 220px"
+            style="min-width: 150px; max-width: 220px; flex: 1"
             @clear="handleSearch"
             @keyup.enter="handleSearch"
           />
@@ -17,7 +17,7 @@
             v-model="filters.aiStatus"
             placeholder="AI开发状态"
             clearable
-            style="width: 150px"
+            style="min-width: 120px; max-width: 150px"
             @change="handleSearch"
           >
             <el-option label="AI待办" value="ai_todo" />
@@ -96,11 +96,11 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="45" fixed="left" />
-        <el-table-column prop="sourceId" label="单号" width="140" />
+        <el-table-column prop="sourceId" label="单号" min-width="100" />
         <el-table-column
           prop="project"
           label="项目名称"
-          min-width="260"
+          min-width="200"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -110,7 +110,7 @@
         <el-table-column
           prop="customDescription"
           label="任务简述"
-          min-width="360"
+          min-width="240"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -119,7 +119,7 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="AI开发状态" width="130">
+        <el-table-column prop="status" label="AI开发状态" min-width="110">
           <template #default="{ row }">
             <el-tag
               v-if="row.aiStatus"
@@ -134,10 +134,10 @@
         <el-table-column
           prop="module"
           label="模块"
-          width="200"
+          min-width="140"
           show-overflow-tooltip
         />
-        <el-table-column prop="priority" label="优先级" width="120">
+        <el-table-column prop="priority" label="优先级" min-width="90">
           <template #default="{ row }">
             <el-tag :type="getPriorityType(row.priority)" size="small">{{
               getPriorityLabel(row.priority)
@@ -145,12 +145,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="workHours" label="计划小时" width="120" sortable>
+        <el-table-column prop="workHours" label="计划小时" min-width="90" sortable>
           <template #default="{ row }">
             <span>{{ row.workHours || 0 }}h</span>
           </template>
         </el-table-column>
-        <el-table-column prop="staleDays" label="滞留天数" width="120" sortable>
+        <el-table-column prop="staleDays" label="滞留天数" min-width="90" sortable>
           <template #default="{ row }">
             <span
               :class="{
@@ -161,14 +161,14 @@
             >
           </template>
         </el-table-column>
-        <el-table-column prop="deadline" label="截止时间" width="140" sortable>
+        <el-table-column prop="deadline" label="截止时间" min-width="100" sortable>
           <template #default="{ row }">
             <span :class="{ 'overdue-text': isOverdue(row) }">{{
               formatDate(row.deadline)
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" :fixed="'right'">
+        <el-table-column label="操作" min-width="200" :fixed="'right'">
           <template #default="{ row }">
             <div class="ops">
               <span class="op" @click.stop="$router.push(`/tasks/${row.id}`)">
@@ -1138,7 +1138,7 @@ onUnmounted(() => {
   position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; backdrop-filter: blur(2px);
 }
 .task-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 420px; z-index: 100;
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width); z-index: 100;
   background: rgba(10,16,31,0.92); border-left: 1px solid rgba(0,229,255,0.2);
   backdrop-filter: blur(20px); padding: 24px; overflow-y: auto;
   display: flex; flex-direction: column;

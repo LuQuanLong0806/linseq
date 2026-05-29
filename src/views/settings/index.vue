@@ -193,7 +193,7 @@ async function handleResetDB() {
 
 <style lang="scss" scoped>
 .settings-page {
-  max-width: 1200px;
+  max-width: var(--container-md);
   margin: 0 auto;
 }
 

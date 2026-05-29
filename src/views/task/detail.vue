@@ -363,7 +363,7 @@
     </div>
 
     <!-- 编辑开发配置弹窗 -->
-    <el-dialog v-model="showEditDevConfig" title="编辑开发配置" width="600px">
+    <el-dialog v-model="showEditDevConfig" title="编辑开发配置" width="var(--dialog-md)">
       <el-form :model="devConfigForm" label-width="100px">
         <el-form-item label="项目路径">
           <el-input v-model="devConfigForm.projectPath" placeholder="如 F:\00_project\xxx" clearable />
@@ -382,7 +382,7 @@
     </el-dialog>
 
     <!-- 编辑富文本字段弹窗 -->
-    <el-dialog v-model="showEditField" :title="editFieldTitle" width="700px">
+    <el-dialog v-model="showEditField" :title="editFieldTitle" width="var(--dialog-lg)">
       <el-input
         v-model="editFieldValue"
         type="textarea"
@@ -396,7 +396,7 @@
     </el-dialog>
 
     <!-- 添加开发记录弹窗 -->
-    <el-dialog v-model="showAddLog" title="添加开发记录" width="500px">
+    <el-dialog v-model="showAddLog" title="添加开发记录" width="var(--dialog-sm)">
       <el-form :model="logForm" label-width="80px">
         <el-form-item label="操作类型">
           <el-select v-model="logForm.action">
@@ -418,7 +418,7 @@
     </el-dialog>
 
     <!-- 版本差异对比弹窗 -->
-    <el-dialog v-model="showDiffDialog" title="版本差异对比" width="700px" :close-on-click-modal="false">
+    <el-dialog v-model="showDiffDialog" title="版本差异对比" width="var(--dialog-lg)" :close-on-click-modal="false">
       <div style="display:flex;gap:12px;margin-bottom:16px;">
         <el-select v-model="diffFromIdx" placeholder="旧版本" style="flex:1">
           <el-option v-for="(v, i) in versions" :key="v.id" :label="v.versionNumber" :value="i" />
@@ -780,7 +780,7 @@ onMounted(async () => {
 </script>
 
 <style lang="scss" scoped>
-.task-detail-page { max-width: 1400px; margin: 0 auto; }
+.task-detail-page { max-width: var(--container-lg); margin: 0 auto; }
 .error-state {
   text-align: center; padding: 80px 20px; color: #8c8ca1;
   p { font-size: 14px; margin-bottom: 16px; }

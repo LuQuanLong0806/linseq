@@ -319,7 +319,7 @@
       </Transition>
 
       <!-- 新建分组弹窗 -->
-      <el-dialog v-model="showGroupDialog" title="新建分组" width="480px" :close-on-click-modal="false">
+      <el-dialog v-model="showGroupDialog" title="新建分组" width="var(--dialog-sm)" :close-on-click-modal="false">
         <el-form label-width="90px">
           <el-form-item label="分组名称">
             <el-input v-model="newGroupName" placeholder="如：宁对接前端需求" />
@@ -342,7 +342,7 @@
       </el-dialog>
 
       <!-- 编辑分组弹窗 -->
-      <el-dialog v-model="showGroupEdit" :title="`编辑分组 - ${editingGroup?.name || ''}`" width="480px" :close-on-click-modal="false">
+      <el-dialog v-model="showGroupEdit" :title="`编辑分组 - ${editingGroup?.name || ''}`" width="var(--dialog-sm)" :close-on-click-modal="false">
         <el-form label-width="90px">
           <el-form-item label="分组名称"><el-input v-model="groupEditForm.name" /></el-form-item>
           <el-form-item label="补充说明">
@@ -355,7 +355,7 @@
         </template>
       </el-dialog>
 
-      <el-dialog v-model="showPublishDialog" title="发布任务到 AI 待办" width="620px" :close-on-click-modal="false" destroy-on-close>
+      <el-dialog v-model="showPublishDialog" title="发布任务到 AI 待办" width="var(--dialog-md)" :close-on-click-modal="false" destroy-on-close>
         <el-radio-group v-model="publishMode" style="margin-bottom:16px">
           <el-radio-button value="new">新建任务</el-radio-button>
           <el-radio-button value="existing">关联已有任务</el-radio-button>
@@ -903,9 +903,9 @@ async function syncTodoFromBackend() {
 // Dual panel
 .dual-panel {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr clamp(280px, 30vw, 380px);
   gap: 20px;
-  max-width: 1200px;
+  max-width: var(--container-md);
   margin: 0 auto;
   padding-bottom: 40px;
 }
@@ -1078,7 +1078,7 @@ async function syncTodoFromBackend() {
   position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; backdrop-filter: blur(2px);
 }
 .task-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 380px; z-index: 100;
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width); z-index: 100;
   background: rgba(10,16,31,0.92); border-left: 1px solid rgba(0,229,255,0.2);
   backdrop-filter: blur(20px); padding: 24px; overflow-y: auto;
   display: flex; flex-direction: column;
@@ -1197,7 +1197,7 @@ async function syncTodoFromBackend() {
   display: flex; align-items: center; justify-content: center;
 }
 .chat-terminal {
-  position: relative; width: 560px; max-height: 80vh; border-radius: 16px; overflow: hidden;
+  position: relative; width: var(--chat-terminal-width); max-height: 80vh; border-radius: 16px; overflow: hidden;
   background: rgba(10,16,31,0.96); border: 1px solid rgba(0,229,255,0.25);
   box-shadow: 0 0 60px rgba(0,229,255,0.12), 0 0 120px rgba(157,92,255,0.06);
   display: flex; flex-direction: column; animation: terminal-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);

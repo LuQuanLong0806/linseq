@@ -127,24 +127,24 @@
             </div>
           </div>
           <el-table :data="recentTasks" stripe border style="width: 100%">
-            <el-table-column prop="sourceId" label="ID" width="80" />
-            <el-table-column prop="title" label="任务标题" min-width="250" show-overflow-tooltip />
-            <el-table-column prop="status" label="状态" width="100">
+            <el-table-column prop="sourceId" label="ID" min-width="60" />
+            <el-table-column prop="title" label="任务标题" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" min-width="80">
               <template #default="{ row }">
                 <el-tag :type="getStatusType(row.status)" size="small">{{ getStatusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="priority" label="优先级" width="80">
+            <el-table-column prop="priority" label="优先级" min-width="70">
               <template #default="{ row }">
                 <el-tag :type="getPriorityType(row.priority)" size="small">{{ getPriorityLabel(row.priority) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="deadline" label="截止时间" width="120">
+            <el-table-column prop="deadline" label="截止时间" min-width="100">
               <template #default="{ row }">
                 {{ formatDate(row.deadline) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" min-width="80" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link @click="$router.push(`/tasks/${row.id}`)">查看</el-button>
               </template>
@@ -327,7 +327,7 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .dashboard {
-  max-width: 1600px;
+  max-width: var(--container-xl);
   margin: 0 auto;
 }
 
@@ -401,7 +401,7 @@ onUnmounted(() => {
 }
 
 .chart-container {
-  height: 280px;
+  height: clamp(200px, 22vw, 280px);
 }
 
 .table-row {

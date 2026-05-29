@@ -28,6 +28,18 @@
   --cyber-glow-purple: 0 0 20px rgba(157, 92, 255, 0.15);
   --cyber-glow-orange: 0 0 20px rgba(255, 125, 0, 0.15);
 
+  // Responsive layout
+  --container-xl: clamp(900px, 90vw, 1600px);
+  --container-lg: clamp(900px, 85vw, 1400px);
+  --container-md: clamp(900px, 80vw, 1200px);
+  --container-sm: clamp(700px, 75vw, 1000px);
+  --drawer-width: clamp(300px, 30vw, 420px);
+  --chat-terminal-width: clamp(420px, 45vw, 560px);
+  --dialog-sm: clamp(360px, 40vw, 480px);
+  --dialog-md: clamp(420px, 48vw, 620px);
+  --dialog-lg: clamp(520px, 55vw, 720px);
+  --stat-icon: clamp(44px, 4.4vw, 56px);
+
   // Override Element Plus
   --el-color-primary: #00E5FF;
   --el-color-primary-light-3: rgba(0, 229, 255, 0.6);
