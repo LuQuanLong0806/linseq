@@ -923,13 +923,13 @@ function switchChatTask(task: Task) {
 
 async function handleChatSend() {
   if (!chatInput.value.trim() || agentChat.sending.value) return
+  if (!chatTaskId.value) { ElMessage.warning('请先选择一个任务'); return }
   const text = chatInput.value.trim()
   chatInput.value = ''
-  // 发送消息时先停止输入中状态
   stopTyping()
   await agentChat.executeAction('send_message', {
     message: text,
-    taskId: chatTaskId.value || undefined,
+    taskId: chatTaskId.value,
   })
   scrollToBottom()
 }
@@ -1012,6 +1012,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  stopTyping()
 })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null

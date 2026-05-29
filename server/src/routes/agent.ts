@@ -1084,6 +1084,10 @@ router.post('/chat/action', (req, res) => {
 
       case 'cancel_task': {
         if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        const cancelTask = db.prepare('SELECT id, ai_status FROM tasks WHERE id = ? AND user_id = ?').get(taskId, req.userId) as { id: string; ai_status: string } | undefined
+        if (!cancelTask) return res.status(404).json({ code: 404, message: '任务不存在', data: null })
+        if (cancelTask.ai_status !== 'ai_dev') return res.status(400).json({ code: 400, message: '只能终止开发中的任务', data: null })
+
         const active = getActiveSession(db, req.userId)
         const sId = active?.id || ''
         const cancelReason = message || '人工终止任务'
@@ -1192,10 +1196,11 @@ function resolvePendingReport(taskId: string, baseResult: { action: string; inst
       'SELECT id, content, created_at FROM task_supplements WHERE task_id = ? AND read_by_agent = 0 ORDER BY created_at ASC'
     ).all(taskId) as { id: string; content: string; created_at: string }[]
 
-    // 标记为已读
+    // 标记为已读 + 清理输入中状态
     if (unreadSupplements.length > 0) {
       db.prepare('UPDATE task_supplements SET read_by_agent = 1 WHERE task_id = ? AND read_by_agent = 0').run(taskId)
     }
+    typingState.delete(taskId)
 
     // 合并：baseResult.instruction + 所有未读补充说明
     const allMessages: { id: string; content: string; time: string }[] = []

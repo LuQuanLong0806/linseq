@@ -1,7 +1,7 @@
 # QClaw Agent 开发指南 — 灵序 LineSequence
 
 > 本文档供 AI Agent（QClaw）存储到记忆中，用于自动化任务开发调度。
-> 最后更新：2026-05-29（v7 — 强化 Agent 必知：abort 三种含义、多消息处理流程、终止任务完整步骤、新增交互示例）
+> 最后更新：2026-05-29（v8 — 审计修复：completion 级别明确、/complete 前置条件、ai_question 恢复路径、截图要求）
 
 ---
 
@@ -466,20 +466,23 @@ Agent: POST /report { action: "plan", content: "L4 关键：创建 users 表", l
 
 ### 4. POST /task/{taskId}/complete —— 提交开发产出
 
-**你什么时候调：** 开发完成、自测通过后。调用后任务自动从队列移除、进入待审核状态。
+**你什么时候调：** 开发完成、自测通过、且 `/report { action: "completion" }` 返回 `continue` 之后。调用后任务自动从队列移除、进入待审核状态。
 
 **你提交前必须确认：**
 
-1. 代码已写完，功能已实现
-2. `npx tsc --noEmit` 编译无错误（有 TypeScript 的项目）
-3. 测试通过（有测试的项目）
-4. 已 `git add` + `git commit`（不 push！）
-5. 前端任务必须截了图
+1. `/report { action: "completion" }` 已返回 `continue`（禁止未经 /report 直接调 /complete）
+2. 代码已写完，功能已实现
+3. `npx tsc --noEmit` 编译无错误（有 TypeScript 的项目）
+4. 测试通过（有测试的项目）
+5. 已 `git add` + `git commit`（不 push！）
+6. 前端任务必须截了图
 
 **请求方式：**
 
 - 有截图（前端/全栈任务）：`multipart/form-data`
 - 无截图（纯后端任务）：`application/json`
+
+**截图要求：** 前端/全栈任务至少 1 张截图（png/jpg），每张最大 10MB。截图必须包含：功能页面正常显示的状态。如果功能有多种状态（如空列表/有数据），每种状态各截一张。截图通过 `screenshots` 字段上传，支持多张。
 
 **请求字段：**
 
@@ -699,9 +702,11 @@ POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问
 | `ai_dev`      | 开发中 | 你正在做的任务                                       |
 | `ai_review`   | 待审核 | 你已提交，等人类审核                                 |
 | `ai_rework`   | 返工   | 审核不通过，重新入队，你要看 `review` 字段针对性修改 |
-| `ai_question` | 疑问   | 你提交了疑问，等人回复后重新入队                     |
+| `ai_question` | 疑问   | 你提交了疑问或 L4 超时，等人回复后重新入队           |
 | `ai_done`     | 已通过 | 任务完成，不用管了                                   |
 | `ai_cancelled`| 已终止 | 人类主动终止了此任务，你不需要做任何处理             |
+
+**ai_question 的恢复路径：** 任务进入 ai_question 后从队列移除。人类在聊天面板回复后，任务自动回到 `ai_todo` 并重新插入待办队列头部。你下次调 `GET /next-task` 时会再次取到它，从头开始开发流程（7.1 环境准备）。
 
 ### 任务被终止（ai_cancelled）
 
@@ -923,18 +928,21 @@ POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问
 
 ```
 所有需求已完成 + 自测通过
-→ POST /report { action: "completion", content: "开发完成，共创建 N 个文件，自测通过", level: "L2" }
+→ POST /report { action: "completion", aiStatus: "ai_review", content: "开发完成，共创建 N 个文件，自测通过", level: "L2" }
 → 服务端推送完成报告卡片给你，等待 1 分钟
 → 你批准 → 返回 continue → Agent POST /complete
 → 你发指令 → 返回 redirect → Agent 修改后重新上报
 → 1 分钟超时 → 返回 continue → Agent 自动 POST /complete
+→ 人类终止 → 返回 abort → Agent 不提交 complete，直接 GET /next-task
 ```
 
 **铁律：**
 
 - **必须通过 /report 等待** — 不允许直接 POST /complete，必须先上报等确认
-- **redirect 必须处理** — 人类给了修改意见就要改，改完重新上报
+- **completion 的 level 固定用 L2** — 完成上报不需要按复杂度分级，统一 L2 + 1 分钟等待
+- **redirect 必须处理** — 人类给了修改意见就要改，改完重新上报 completion
 - **超时自动提交** — 1 分钟无响应自动继续
+- **abort 不提交** — 如果返回 abort（人类终止），不要调 /complete，直接取下一个
 
 ### 7.6 complete 之前——自测
 
