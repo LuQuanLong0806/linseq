@@ -79,7 +79,7 @@
                 <div class="key-head">
                   <span class="key-name">{{ ak.name || '未命名' }}</span>
                   <el-tag :type="ak.enabled ? 'success' : 'info'" size="small">{{ ak.enabled ? '启用' : '禁用' }}</el-tag>
-                  <span class="key-time" v-if="ak.lastUsedAt">{{ ak.lastUsedAt }}</span>
+                  <span class="key-time" v-if="ak.lastUsedAt">{{ formatDateTime(ak.lastUsedAt) }}</span>
                 </div>
                 <div class="key-value">
                   <code class="key-code" :class="{ masked: !revealedKeys.has(ak.id) }" @click="toggleReveal(ak.id)">
@@ -108,6 +108,7 @@ import { ref, reactive, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Plus, RefreshRight, Delete } from '@element-plus/icons-vue'
+import dayjs from 'dayjs'
 import type { AgentKey } from '@/types'
 
 defineEmits<{ refreshCookie: [username: string] }>()
@@ -130,16 +131,16 @@ function isExpired(expiry: string) {
 
 function formatExpiry(expiry: string): string {
   if (!expiry) return ''
-  const d = new Date(expiry)
-  const now = Date.now()
-  const diff = d.getTime() - now
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const dateStr = dayjs(expiry).format('YYYY-MM-DD HH:mm')
+  const diff = dayjs(expiry).diff(dayjs(), 'millisecond')
   if (diff <= 0) return `到期时间：${dateStr}（已过期）`
   const hours = Math.floor(diff / 3600000)
   if (hours < 24) return `到期时间：${dateStr}（${hours}小时后）`
-  const days = Math.floor(hours / 24)
-  return `到期时间：${dateStr}（${days}天后）`
+  return `到期时间：${dateStr}（${Math.floor(hours / 24)}天后）`
+}
+
+function formatDateTime(date: string) {
+  return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : ''
 }
 
 type UserLike = { cookieExpiry: string }

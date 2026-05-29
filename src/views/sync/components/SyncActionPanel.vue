@@ -11,7 +11,7 @@
             <template v-if="userStore.currentUser">
               {{ userStore.currentUser.displayName }}
               <span v-if="syncStore.config.lastSyncTime" class="sync-time-sep">·</span>
-              <span v-if="syncStore.config.lastSyncTime" class="sync-time">上次 {{ syncStore.config.lastSyncTime }}</span>
+              <span v-if="syncStore.config.lastSyncTime" class="sync-time">上次 {{ formatDateTime(syncStore.config.lastSyncTime) }}</span>
             </template>
             <template v-else>请先登录内网账号</template>
           </div>
@@ -39,11 +39,11 @@
       </div>
       <div class="status-item">
         <span class="status-label">过期时间</span>
-        <span class="status-value">{{ userStore.currentUser.cookieExpiry || '—' }}</span>
+        <span class="status-value">{{ formatDateTime(userStore.currentUser.cookieExpiry) }}</span>
       </div>
       <div class="status-item">
         <span class="status-label">上次同步</span>
-        <span class="status-value">{{ userStore.currentUser.lastSyncTime || '从未' }}</span>
+        <span class="status-value">{{ formatDateTime(userStore.currentUser.lastSyncTime) }}</span>
       </div>
       <el-button link type="primary" size="small" @click="userStore.currentUser && $emit('refreshCookie', userStore.currentUser.username)">
         刷新登录
@@ -56,6 +56,7 @@
 import { useSyncStore } from '@/stores/sync'
 import { useUserStore } from '@/stores/user'
 import { Refresh } from '@element-plus/icons-vue'
+import dayjs from 'dayjs'
 
 defineEmits<{ sync: []; refreshCookie: [username: string] }>()
 
@@ -64,6 +65,10 @@ const userStore = useUserStore()
 
 function isExpired(expiry: string) {
   return !expiry || new Date(expiry).getTime() < Date.now()
+}
+
+function formatDateTime(date: string) {
+  return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '—'
 }
 </script>
 

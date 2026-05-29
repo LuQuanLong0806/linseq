@@ -9,7 +9,7 @@
       <div v-for="record in syncStore.syncRecords" :key="record.id" class="record-card">
         <div class="record-head">
           <div class="record-status-dot" :class="record.status" />
-          <span class="record-time">{{ record.syncTime }}</span>
+          <span class="record-time">{{ formatDateTime(record.syncTime) }}</span>
           <el-tag
             :type="record.status === 'success' ? 'success' : record.status === 'partial' ? 'warning' : 'danger'"
             size="small" effect="dark"
@@ -32,8 +32,13 @@
 
 <script setup lang="ts">
 import { useSyncStore } from '@/stores/sync'
+import dayjs from 'dayjs'
 
 const syncStore = useSyncStore()
+
+function formatDateTime(date: string) {
+  return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '—'
+}
 </script>
 
 <style lang="scss" scoped>
