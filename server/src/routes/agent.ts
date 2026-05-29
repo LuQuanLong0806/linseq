@@ -937,6 +937,12 @@ router.post('/chat/action', (req, res) => {
         const sId = active?.id || ''
         insertChatLog(db, req.userId, sId, 'user', 'text', message.trim(), taskId || '')
 
+        // 先存补充说明（确保 resolve 时能查到未读消息）
+        if (taskId) {
+          db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, message.trim())
+          addDevLog(db, taskId, '补充说明', message.trim(), 'user', false)
+        }
+
         // 解析 pending /report（带 taskId 或找当前用户任意 pending 的）
         if (taskId) {
           resolvePendingReport(taskId, { action: 'redirect', instruction: message.trim() })
@@ -950,11 +956,7 @@ router.post('/chat/action', (req, res) => {
           }
         }
 
-        // 同时存补充说明
-        if (taskId) {
-          db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, message.trim())
-          addDevLog(db, taskId, '补充说明', message.trim(), 'user', false)
-        }
+        // 补充说明已在上面存储
         wakeAgent(db, message.trim())
         res.json({ code: 0, message: 'success', data: null })
         break
@@ -1028,11 +1030,13 @@ router.post('/chat/action', (req, res) => {
         const redirectMsg = message || (payload?.instruction as string) || '请调整方向'
         insertChatLog(db, req.userId, sId, 'user', 'text', redirectMsg, taskId)
 
+        // 先存补充说明（确保 resolve 时能查到未读消息）
+        db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, redirectMsg)
+        addDevLog(db, taskId, '补充说明', redirectMsg, 'user', false)
+
         // 解析 pending /report（如果 Agent 正在等待）
         resolvePendingReport(taskId, { action: 'redirect', instruction: redirectMsg })
 
-        db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, redirectMsg)
-        addDevLog(db, taskId, '补充说明', redirectMsg, 'user', false)
         wakeAgent(db, redirectMsg)
         res.json({ code: 0, message: '已发送调整指令', data: null })
         break
@@ -1075,6 +1079,41 @@ router.post('/chat/action', (req, res) => {
         broadcastToTask(taskId, 'supplement', { taskId, content: message.trim() })
         wakeAgent(db, `[补充说明] 任务 ${taskId}: ${message.trim()}`)
         res.json({ code: 0, message: '已发送补充说明', data: null })
+        break
+      }
+
+      case 'cancel_task': {
+        if (!taskId) return res.status(400).json({ code: 400, message: '缺少 taskId', data: null })
+        const active = getActiveSession(db, req.userId)
+        const sId = active?.id || ''
+        const cancelReason = message || '人工终止任务'
+
+        // 解析 pending /report（如果 Agent 正在等待）
+        resolvePendingReport(taskId, { action: 'abort', instruction: `任务已被人工终止：${cancelReason}` })
+
+        // 更新任务状态为 ai_cancelled
+        db.prepare("UPDATE tasks SET ai_status = 'ai_cancelled', update_time = datetime('now', 'localtime') WHERE id = ?").run(taskId)
+        removeFromTodoList(taskId, req.userId)
+        addDevLog(db, taskId, '终止', `任务被人工终止：${cancelReason}`, 'system', false)
+        insertChatLog(db, req.userId, sId, 'system', 'status_change', `⛔ 任务已终止 — ${cancelReason}`, taskId, { result: 'cancelled' })
+
+        // 唤醒 Agent 取下一个任务
+        wakeAgent(db, `任务 ${taskId} 已被人工终止。请调用 GET /next-task 继续执行下一个任务。`)
+        res.json({ code: 0, message: '任务已终止', data: { taskId } })
+        break
+      }
+
+      case 'typing': {
+        // 输入中状态心跳
+        if (taskId) setTyping(taskId, true)
+        res.json({ code: 0, message: 'success', data: null })
+        break
+      }
+
+      case 'typing_stop': {
+        // 停止输入
+        if (taskId) setTyping(taskId, false)
+        res.json({ code: 0, message: 'success', data: null })
         break
       }
 
@@ -1140,19 +1179,53 @@ router.get('/chat/sessions', (req, res) => {
 
 // ========== ATEP 同步阻塞上报接口 ==========
 
-/** 解析 pending /report 请求，如果没有 pending 则无操作 */
-function resolvePendingReport(taskId: string, result: { action: string; instruction: string }) {
+/** 解析 pending /report 请求，合并所有未读补充说明一并返回 */
+function resolvePendingReport(taskId: string, baseResult: { action: string; instruction: string }) {
   const pending = pendingReports.get(taskId)
   if (pending) {
     if (pending.timer) clearTimeout(pending.timer)
     pendingReports.delete(taskId)
-    pending.resolve(result)
+
+    // 查询该任务所有未读补充说明
+    const db = getDb()
+    const unreadSupplements = db.prepare(
+      'SELECT id, content, created_at FROM task_supplements WHERE task_id = ? AND read_by_agent = 0 ORDER BY created_at ASC'
+    ).all(taskId) as { id: string; content: string; created_at: string }[]
+
+    // 标记为已读
+    if (unreadSupplements.length > 0) {
+      db.prepare('UPDATE task_supplements SET read_by_agent = 1 WHERE task_id = ? AND read_by_agent = 0').run(taskId)
+    }
+
+    // 合并：baseResult.instruction + 所有未读补充说明
+    const allMessages: { id: string; content: string; time: string }[] = []
+    if (baseResult.instruction) {
+      allMessages.push({ id: '', content: baseResult.instruction, time: '' })
+    }
+    for (const s of unreadSupplements) {
+      allMessages.push({ id: s.id, content: s.content, time: s.created_at })
+    }
+
+    const mergedInstruction = allMessages.map(m => m.content).join('\n')
+    pending.resolve({
+      action: baseResult.action,
+      instruction: mergedInstruction,
+      messages: allMessages,
+      attachments: [],
+    })
   }
 }
 
 /** 待处理的 /report 请求（taskId → resolve 函数） */
+interface ReportResult {
+  action: string
+  instruction: string
+  messages?: { id: string; content: string; time: string }[]
+  attachments?: { type: string; url: string; name: string }[]
+}
+
 interface PendingReport {
-  resolve: (result: { action: string; instruction: string }) => void
+  resolve: (result: ReportResult) => void
   timer: ReturnType<typeof setTimeout> | null
   taskId: string
   userId: string
@@ -1162,6 +1235,36 @@ interface PendingReport {
 }
 const pendingReports = new Map<string, PendingReport>()
 
+/** 人类输入中状态：taskId → { isTyping, lastTypingAt, extensions } */
+const typingState = new Map<string, { isTyping: boolean; lastTypingAt: number; extensions: number }>()
+const TYPING_EXTEND_MS = 15_000   // 每次输入心跳延长 15 秒
+const TYPING_MAX_EXTEND = 300_000  // 最多累计延长 5 分钟
+
+/** 标记输入中状态 */
+function setTyping(taskId: string, typing: boolean) {
+  if (typing) {
+    typingState.set(taskId, {
+      isTyping: true,
+      lastTypingAt: Date.now(),
+      extensions: (typingState.get(taskId)?.extensions ?? 0) + 1,
+    })
+  } else {
+    typingState.delete(taskId)
+  }
+}
+
+/** 检查是否正在输入 */
+function isUserTyping(taskId: string): boolean {
+  const s = typingState.get(taskId)
+  if (!s) return false
+  // 超过 10 秒没收到心跳视为停止输入
+  if (Date.now() - s.lastTypingAt > 10_000) {
+    typingState.delete(taskId)
+    return false
+  }
+  return s.isTyping
+}
+
 /** ATEP 超时配置（毫秒），L4 超时后跳过任务并转为 ai_question */
 const ATEP_TIMEOUTS: Record<string, number> = {
   L1: 0,        // 立即返回
@@ -1169,6 +1272,9 @@ const ATEP_TIMEOUTS: Record<string, number> = {
   L3: 30_000,   // 30 秒
   L4: 120_000,  // 2 分钟，超时后跳过任务
 }
+
+/** completion 独立超时：1 分钟（不受 L2/L3 影响） */
+const COMPLETION_TIMEOUT = 60_000
 
 /**
  * POST /api/agent/task/:id/report
@@ -1206,7 +1312,8 @@ router.post('/task/:id/report', async (req, res) => {
     }
 
     const reportLevel = (level || 'L2').toUpperCase()
-    const timeout = ATEP_TIMEOUTS[reportLevel] ?? 10_000
+    // completion 使用独立超时（1 分钟），plan 使用 ATEP 等级超时
+    const timeout = reportAction === 'completion' ? COMPLETION_TIMEOUT : (ATEP_TIMEOUTS[reportLevel] ?? 10_000)
     const mergedMetadata: Record<string, unknown> = { level: reportLevel, ...reqMetadata }
 
     // ===== 1. 更新任务状态 =====
@@ -1268,21 +1375,21 @@ router.post('/task/:id/report', async (req, res) => {
 
     // ===== 4. question 立即返回 abort，任务已标记为 ai_question =====
     if (reportAction === 'question') {
-      return res.json({ code: 0, message: 'success', data: { action: 'abort', instruction: '任务已转为疑问状态，等待人工回复' } })
+      return res.json({ code: 0, message: 'success', data: { action: 'abort', instruction: '任务已转为疑问状态，等待人工回复', messages: [], attachments: [] } })
     }
 
     // ===== 5. L1 或 progress：立即返回 continue =====
     if (reportAction === 'progress' || timeout === 0) {
-      return res.json({ code: 0, message: 'success', data: { action: 'continue', instruction: '' } })
+      return res.json({ code: 0, message: 'success', data: { action: 'continue', instruction: '', messages: [], attachments: [] } })
     }
 
     // ===== 6. L2/L3/L4 plan/completion：阻塞等待人类响应 =====
-    await new Promise<{ action: string; instruction: string }>((resolve) => {
+    await new Promise<ReportResult>((resolve) => {
       // 清理该任务之前的 pending report
       const existing = pendingReports.get(id)
       if (existing) {
         if (existing.timer) clearTimeout(existing.timer)
-        existing.resolve({ action: 'continue', instruction: '' })
+        existing.resolve({ action: 'continue', instruction: '', messages: [], attachments: [] })
         pendingReports.delete(id)
       }
 
@@ -1296,22 +1403,40 @@ router.post('/task/:id/report', async (req, res) => {
         createdAt: Date.now(),
       }
 
-      // 设置超时
-      entry.timer = setTimeout(() => {
+      // 设置超时（支持输入中状态延时）
+      function fireTimeout() {
         pendingReports.delete(id)
-        if (reportLevel === 'L4') {
-          const questionContent = `[ATEP 超时] Agent 上报了关键操作（L4），等待 2 分钟无人类响应，任务已暂停。原始内容: ${content.substring(0, 100)}`
+        typingState.delete(id)
+        if (reportLevel === 'L4' && reportAction !== 'completion') {
+          const questionContent = `[ATEP 超时] Agent 上报了关键操作（L4），等待 2 分钟无人类响应，任务已暂停。原始内容: ${(content || '').substring(0, 100)}`
           db.prepare("UPDATE tasks SET ai_status = 'ai_question', ai_question = ?, update_time = datetime('now', 'localtime') WHERE id = ?").run(questionContent, id)
           removeFromTodoList(id, req.userId!)
           addDevLog(db, id, '疑问', questionContent, 'system', false)
           if (activeSession) {
             insertChatLog(db, req.userId!, activeSession.id, 'system', 'status_change', `⚠️ L4 上报超时（2 分钟无人响应），任务已暂停等待人工处理`, id)
           }
-          resolve({ action: 'abort', instruction: 'L4 超时，任务已暂停等待人工处理' })
+          resolve({ action: 'abort', instruction: 'L4 超时，任务已暂停等待人工处理', messages: [], attachments: [] })
         } else {
-          resolve({ action: 'continue', instruction: '' })
+          resolve({ action: 'continue', instruction: '', messages: [], attachments: [] })
         }
-      }, timeout)
+      }
+
+      function scheduleTimeout() {
+        entry.timer = setTimeout(() => {
+          // 超时前检查：人类是否正在输入
+          if (isUserTyping(id)) {
+            const state = typingState.get(id)
+            const totalExtended = (state?.extensions ?? 0) * TYPING_EXTEND_MS
+            if (totalExtended < TYPING_MAX_EXTEND) {
+              // 人类还在输入，延长等待
+              entry.timer = setTimeout(scheduleTimeout, TYPING_EXTEND_MS)
+              return
+            }
+          }
+          fireTimeout()
+        }, timeout)
+      }
+      scheduleTimeout()
 
       pendingReports.set(id, entry)
     }).then((result) => {

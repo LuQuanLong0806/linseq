@@ -68,6 +68,10 @@ async function start() {
     await initDatabase()
     startCookieRefresh()
     const server = createServer(app)
+    // ATEP L4 阻塞最长 2 分钟 + 余量，HTTP 超时设 5 分钟
+    server.timeout = 300_000
+    server.keepAliveTimeout = 310_000
+    server.headersTimeout = 315_000
     initWebSocket(server)
     server.listen(PORT, () => {
       console.log(`\n⚡ 灵序 LINSEQ Server running at http://localhost:${PORT}`)

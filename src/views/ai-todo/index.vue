@@ -228,6 +228,7 @@
                         <div class="fc-contact-meta">
                           <el-tag v-if="task.aiStatus === 'ai_review'" type="success" size="small" effect="dark" class="fc-mini-tag">审核中</el-tag>
                           <el-tag v-else-if="task.aiStatus === 'ai_done'" type="info" size="small" effect="dark" class="fc-mini-tag">已完成</el-tag>
+                          <el-tag v-else-if="task.aiStatus === 'ai_cancelled'" type="danger" size="small" effect="dark" class="fc-mini-tag">已终止</el-tag>
                           <el-tag v-else-if="task.aiStatus === 'ai_question'" type="danger" size="small" effect="dark" class="fc-mini-tag">疑问</el-tag>
                           <span>{{ getPriorityLabel(task.priority) }}</span>
                         </div>
@@ -253,6 +254,7 @@
                         <el-tag :type="getPriorityType(chatTask.priority)" size="small" effect="dark">{{ getPriorityLabel(chatTask.priority) }}</el-tag>
                         <el-tag v-if="chatTask.aiStatus === 'ai_dev'" type="warning" size="small">开发中</el-tag>
                         <el-tag v-else-if="chatTask.aiStatus === 'ai_review'" type="success" size="small">审核中</el-tag>
+                        <el-tag v-else-if="chatTask.aiStatus === 'ai_cancelled'" type="danger" size="small">已终止</el-tag>
                         <span class="fc-task-id">#{{ chatTask.sourceId }}</span>
                       </div>
                     </div>
@@ -314,6 +316,7 @@
                   <template v-if="activeSessionStatus === 'awaiting_plan'">
                     <el-button type="success" size="small" @click="agentChat.executeAction('approve', { taskId: chatTask.id })">批准计划</el-button>
                     <el-button type="warning" size="small" @click="agentChat.executeAction('redirect', { taskId: chatTask.id, message: '请调整方案' })">调整方向</el-button>
+                    <el-button type="danger" size="small" plain @click="handleCancelTask">终止任务</el-button>
                   </template>
                   <template v-else-if="activeSessionStatus === 'awaiting_review'">
                     <el-button type="success" size="small" @click="agentChat.executeAction('approve', { taskId: chatTask.id })">审核通过</el-button>
@@ -324,18 +327,20 @@
                   </template>
                   <template v-else-if="activeSessionStatus === 'developing'">
                     <el-button size="small" @click="agentChat.executeAction('stop_session')">停止工作</el-button>
+                    <el-button type="danger" size="small" plain @click="handleCancelTask">终止任务</el-button>
                   </template>
                 </div>
 
-                <!-- 输入区域（可拖拽调整高度） -->
-                <div class="fc-input-area" :style="{ height: inputAreaHeight + 'px' }">
+                <!-- 输入区域（仅开发中/疑问状态可输入） -->
+                <div v-if="chatTask && (chatTask.aiStatus === 'ai_dev' || chatTask.aiStatus === 'ai_question')" class="fc-input-area" :style="{ height: inputAreaHeight + 'px' }">
                   <div class="fc-input-resizer" @mousedown="onInputResizeStart"></div>
                   <div class="fc-input-inner">
                     <textarea
                       v-model="chatInput"
                       class="fc-textarea"
-                      placeholder="输入消息，Ctrl+Enter 发送..."
+                      :placeholder="chatTask.aiStatus === 'ai_question' ? '回复 Agent 疑问，Ctrl+Enter 发送...' : '输入消息，Ctrl+Enter 发送...'"
                       @keydown.ctrl.enter="handleChatSend"
+                      @input="onChatInput"
                     ></textarea>
                     <div class="fc-input-toolbar">
                       <span class="fc-input-hint">Ctrl+Enter 发送</span>
@@ -345,6 +350,10 @@
                       </button>
                     </div>
                   </div>
+                </div>
+                <!-- 已完成/审核中任务：只读提示 -->
+                <div v-else-if="chatTask" class="fc-input-readonly">
+                  <span>此任务已{{ chatTask.aiStatus === 'ai_review' ? '提交审核' : chatTask.aiStatus === 'ai_done' ? '完成' : chatTask.aiStatus === 'ai_cancelled' ? '终止' : '归档' }}，会话记录只读</span>
                 </div>
               </div>
             </div>
@@ -916,11 +925,47 @@ async function handleChatSend() {
   if (!chatInput.value.trim() || agentChat.sending.value) return
   const text = chatInput.value.trim()
   chatInput.value = ''
+  // 发送消息时先停止输入中状态
+  stopTyping()
   await agentChat.executeAction('send_message', {
     message: text,
     taskId: chatTaskId.value || undefined,
   })
   scrollToBottom()
+}
+
+// ========== 输入中状态检测（延长 /report 等待时间） ==========
+let typingTimer: ReturnType<typeof setTimeout> | null = null
+let lastTypingSent = 0
+const TYPING_INTERVAL = 5000 // 每 5 秒发送一次输入中心跳
+
+function onChatInput() {
+  if (!chatTaskId.value) return
+  const now = Date.now()
+  if (now - lastTypingSent >= TYPING_INTERVAL) {
+    lastTypingSent = now
+    agentChat.executeAction('typing', { taskId: chatTaskId.value })
+  }
+  // 重置停止输入计时器
+  if (typingTimer) clearTimeout(typingTimer)
+  typingTimer = setTimeout(() => stopTyping(), 3000)
+}
+
+function stopTyping() {
+  if (typingTimer) { clearTimeout(typingTimer); typingTimer = null }
+  lastTypingSent = 0
+  if (chatTaskId.value) {
+    agentChat.executeAction('typing_stop', { taskId: chatTaskId.value })
+  }
+}
+
+async function handleCancelTask() {
+  if (!chatTaskId.value) return
+  try {
+    await ElMessageBox.confirm('确定终止当前任务？Agent 将跳过此任务执行下一个。', '终止任务', { type: 'warning' })
+    await agentChat.executeAction('cancel_task', { taskId: chatTaskId.value, message: '人工终止任务' })
+    ElMessage.success('任务已终止')
+  } catch { /* 取消 */ }
 }
 
 function scrollToBottom() {
@@ -1392,6 +1437,12 @@ async function syncTodoFromBackend() {
   display: flex; flex-direction: column; flex-shrink: 0;
   border-top: 1px solid var(--cyber-glass-border);
   background: rgba(128,128,128,0.04);
+}
+.fc-input-readonly {
+  padding: 12px 24px; text-align: center;
+  border-top: 1px solid var(--cyber-glass-border);
+  background: rgba(128,128,128,0.03);
+  font-size: 12px; color: var(--cyber-text-muted); flex-shrink: 0;
 }
 .fc-input-resizer {
   height: 4px; cursor: row-resize; flex-shrink: 0;
