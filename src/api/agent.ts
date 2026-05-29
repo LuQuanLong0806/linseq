@@ -11,4 +11,19 @@ export const agentApi = {
   getTodoOrder(): Promise<ApiResponse<{ todoList: string[] }>> {
     return http.get('/agent/todo-order')
   },
+
+  /** 唤醒 Agent */
+  wake(command: string): Promise<ApiResponse<{ command: string; message: string }>> {
+    return http.post('/agent/wake', { command })
+  },
+
+  /** 对话模式发送消息 */
+  sendChat(message: string): Promise<ApiResponse<{ id: string }>> {
+    return http.post('/agent/chat', { message })
+  },
+
+  /** 获取对话历史 */
+  getChatHistory(): Promise<ApiResponse<{ id: string; role: string; content: string; created_at: string }[]>> {
+    return http.get('/agent/chat')
+  },
 }

@@ -19,7 +19,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { getDb } from '../db/index.js'
-import { mapDbRowToTask, addDevLog } from './tasks.js'
+import { mapDbRowToTask, addDevLog, wakeAgent } from './tasks.js'
 import { broadcastToTask } from '../websocket.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -263,6 +263,12 @@ router.post('/task/:id/log', (req, res) => {
 
     const logId = addDevLog(db, id, action, content, 'agent', false)
     broadcastToTask(id, 'devlog', { logId, action, content, author: 'agent' })
+    // Agent 回复同步到对话记录
+    if (action === '回复') {
+      const chatId = uuidv4()
+      db.prepare('INSERT INTO agent_chat_logs (id, user_id, role, content) VALUES (?, ?, ?, ?)').run(chatId, req.userId, 'agent', content)
+      broadcastToTask('*', 'chat', { id: chatId, role: 'agent', content, time: new Date().toISOString() })
+    }
     res.json({ code: 0, message: 'success', data: { logId } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
@@ -658,6 +664,70 @@ async function generateDocxReport(params: ReportParams): Promise<string | null> 
   console.log(`[Report] 自测报告已生成: ${filePath}`)
   return filePath
 }
+
+// ========== 唤醒 & 对话接口 ==========
+
+/** POST /api/agent/wake — 唤醒 Agent 执行指令 */
+router.post('/wake', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const { command } = req.body as { command?: string }
+    if (!command) return res.status(400).json({ code: 400, message: '缺少 command', data: null })
+    const db = getDb()
+
+    // 拼接队列上下文
+    let message = command
+    if (command === '开始工作' || command === '取任务' || command === '干活了') {
+      const todoList = getTodoList(req.userId)
+      const count = todoList.length
+      message = count > 0
+        ? `开始工作。队列中有 ${count} 个待办任务，请调用 GET /next-task 开始执行。`
+        : '开始工作。当前队列为空，请调用 GET /next-task 确认。'
+    }
+
+    wakeAgent(db, message)
+    res.json({ code: 0, message: '已发送唤醒指令', data: { command, message } })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+/** POST /api/agent/chat — 对话模式：发送消息给 Agent */
+router.post('/chat', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const { message } = req.body as { message?: string }
+    if (!message?.trim()) return res.status(400).json({ code: 400, message: '消息不能为空', data: null })
+    const db = getDb()
+
+    // 保存用户消息到 agent_chat_logs
+    const chatId = uuidv4()
+    db.prepare(
+      'INSERT INTO agent_chat_logs (id, user_id, role, content) VALUES (?, ?, ?, ?)'
+    ).run(chatId, req.userId, 'user', message.trim())
+
+    broadcastToTask('*', 'chat', { id: chatId, role: 'user', content: message.trim(), time: new Date().toISOString() })
+    wakeAgent(db, message.trim())
+
+    res.json({ code: 0, message: 'success', data: { id: chatId } })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+/** GET /api/agent/chat — 获取对话历史 */
+router.get('/chat', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const db = getDb()
+    const rows = db.prepare(
+      'SELECT id, role, content, created_at FROM agent_chat_logs WHERE user_id = ? ORDER BY created_at ASC LIMIT 200'
+    ).all(req.userId) as { id: string; role: string; content: string; created_at: string }[]
+    res.json({ code: 0, message: 'success', data: rows })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
 
 // ========== 补充说明接口 ==========
 

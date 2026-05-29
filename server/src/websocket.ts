@@ -34,11 +34,11 @@ export function initWebSocket(server: Server) {
   console.log('  WebSocket server ready at /ws')
 }
 
-/** 向订阅了该 taskId 的所有客户端推送消息 */
+/** 向订阅了该 taskId 的所有客户端推送消息。taskId 为 '*' 时广播给所有客户端 */
 export function broadcastToTask(taskId: string, event: string, data: any) {
   const payload = JSON.stringify({ event, taskId, data, time: new Date().toISOString() })
   for (const [, info] of clients) {
-    if (info.taskIds.has(taskId) && info.ws.readyState === WebSocket.OPEN) {
+    if ((taskId === '*' || info.taskIds.has(taskId)) && info.ws.readyState === WebSocket.OPEN) {
       info.ws.send(payload)
     }
   }

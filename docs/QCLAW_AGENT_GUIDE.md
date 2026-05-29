@@ -794,25 +794,115 @@ curl http://localhost:3201/api/agent/next-task -H "x-agent-key: qcl_xxx"
 
 ---
 
-## 十二、与人类的通讯机制
+## 十二、与人类的实时通讯机制
 
-你和人类通过**补充说明 + 开发日志**双向通讯：
+你和人类通过**补充说明 + 开发日志**双向通讯，同时系统提供 Webhook 唤醒机制实现实时通知。
+
+### 通讯通道
 
 ```
-人类 → 你：在聊天框发补充说明
-  → 你通过 GET /supplements 收到（每 5 秒轮询一次）
-  → 收到后先回复确认，再处理
+人类 → 你：
+  人类在聊天框发补充说明
+  → LineSequence 保存到 task_supplements 表
+  → LineSequence 同时通过 WebSocket 推送到前端 + Webhook 唤醒你
+  → 你通过 GET /supplements 收到（每 5 秒轮询，或被唤醒后立即查询）
 
-你 → 人类：POST /log { action: "回复", content: "..." }
+你 → 人类：
+  POST /log { action: "回复", content: "..." }
   → 人类在聊天框实时看到你的消息
   → 用于回复确认、汇报进度、提问等
 ```
 
-**轮询规则：**
+### 实时唤醒机制
+
+人类在同步中心配置「Agent 唤醒地址」（OpenClaw Gateway 的 Chat API 地址，如 `http://localhost:50439/v1/chat/completions`）+ OpenClaw Token + 目标 Agent 后，系统会在以下场景自动唤醒你：
+
+1. 人类发补充说明时
+2. 人类点「唤醒 Agent 开始任务」按钮时
+3. 人类在对话模式发消息时
+
+**唤醒流程（你不需要主动调用任何唤醒接口）：**
+
+```
+LineSequence 后端调用 OpenClaw Gateway Chat API：
+  POST http://localhost:50439/v1/chat/completions
+  Authorization: Bearer <openclaw-token>
+  {
+    "model": "openclaw/{agentTarget}",
+    "messages": [{
+      "role": "user",
+      "content": "唤醒消息内容"
+    }],
+    "stream": false
+  }
+  ↓
+OpenClaw Gateway 唤醒目标 Agent
+  ↓
+你收到唤醒消息后执行对应操作
+```
+
+**不同场景的唤醒消息和你的响应：**
+
+| 唤醒场景 | 消息内容 | 你做什么 |
+|---|---|---|
+| 补充说明 | `[系统通知] 任务 {taskId} 收到新的补充说明：{内容}。请立即 GET /task/{taskId}/supplements 检查。` | `GET /task/{taskId}/supplements` → 处理补充 |
+| 开始任务 | `开始工作。队列中有 N 个待办任务，请调用 GET /next-task 开始执行。` | `GET /next-task` → 进入开发循环 |
+| 对话消息 | `{用户原话}` | 理解意图，执行操作，`POST /log { action: "回复", content: "结果" }` 回复 |
+
+### 补充说明完整处理步骤（收到唤醒或轮询到补充后）
+
+```
+收到补充说明（通过唤醒或 5 秒轮询）
+
+① 立即回复确认（让人类知道你收到了）
+   POST /log { action: "回复", content: "收到补充说明：[摘要]。正在处理..." }
+
+② 停下当前工作，重新分析上下文
+   - 结合原始需求 + 补充说明，确定新方向
+   - 补充说明 > 原始需求，冲突时以补充为准
+
+③ 判断补充类型并处理
+   修改型："把按钮改成红色" → 立刻去改
+   追加型："顺便加上表单校验" → 加到待做列表
+   推翻型："不用做XX了" → 立刻停止，回滚相关代码
+   疑问型："XX参数是做什么的" → POST /log 回答
+
+④ 处理完毕后回复
+   POST /log { action: "回复", content: "已处理完成：[逐条汇报]" }
+
+⑤ 继续下一轮循环（再次检查 GET /supplements）
+```
+
+### 轮询规则（无论是否配置唤醒，轮询都是兜底机制）
+
 - 开发过程中每 5 秒轮询一次 `GET /supplements`
 - 完成等待期（自测通过后）也保持每 5 秒轮询
 - 每次循环的第一步必须是检查补充说明，不是写代码
 - 不允许跳过轮询直接提交
+- 被唤醒后仍然走正常的轮询机制，唤醒只是加速你感知补充说明的速度
+
+### 补充说明通讯时序图
+
+```
+时间线  人类                  LineSequence              Agent
+  |      |                       |                       |
+  |   发补充说明 ──────→ 保存到数据库               |
+  |      |                  推送 WebSocket ──→ 前端显示     |
+  |      |                  调用 Gateway Chat API ──→ 收到唤醒 |
+  |      |                       |                  立即 GET /supplements
+  |      |                  ←── 返回补充内容          |
+  |      |                       |                  POST /log "收到..."
+  |      |                  推送 WebSocket ──→ 看到回复     |
+  |      |                       |                  处理补充...
+  |      |                       |                  POST /log "已处理完成"
+  |      |                  推送 WebSocket ──→ 看到汇报     |
+  |      |                       |                  继续开发循环
+  v      v                       v                       v
+```
+
+### 未配置唤醒地址时
+
+如果人类没有配置唤醒地址，系统仅依赖你的 5 秒轮询来发现补充说明。最坏情况下人类发补充后你 5 秒内会查到，不影响功能，只是实时性略差。
 
 ---
 

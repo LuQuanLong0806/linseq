@@ -299,6 +299,18 @@ export function initDatabase(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_agent_keys_key ON agent_keys(key)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_agent_keys_user ON agent_keys(user_id)')
 
+  // ========== Agent 对话记录表 ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_chat_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_agent_chat_user ON agent_chat_logs(user_id)')
+
   // ========== 索引 ==========
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);

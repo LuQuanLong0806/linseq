@@ -12,6 +12,8 @@ export const useSyncStore = defineStore('sync', () => {
     loginCookie: '',
     cookieExpiry: '',
     webhookUrl: '',
+    openclawToken: '',
+    agentTarget: 'agent-209e563a',
   })
   const syncRecords = ref<SyncRecord[]>([])
   const syncing = ref(false)

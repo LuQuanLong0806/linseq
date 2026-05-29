@@ -7,18 +7,38 @@ import { getDb } from '../db/index.js'
 import { broadcastToTask } from '../websocket.js'
 import type { Task, TaskStatus } from './types.js'
 
-/** Webhook 回调：通知 Agent 有新补充说明 */
-function triggerWebhook(db: ReturnType<typeof getDb>, userId: string, taskId: string, content: string) {
+/** 通过 OpenClaw Gateway 唤醒 Agent，发送消息 */
+function wakeAgent(db: ReturnType<typeof getDb>, message: string) {
   try {
-    const row = db.prepare("SELECT value FROM sync_config WHERE key = 'webhookUrl'").get() as { value: string } | undefined
-    if (!row?.value) return
-    fetch(row.value, {
+    const urlRow = db.prepare("SELECT value FROM sync_config WHERE key = 'webhookUrl'").get() as { value: string } | undefined
+    if (!urlRow?.value) return
+    const url = (urlRow.value as string).replace(/^"|"$/g, '')
+    const tokenRow = db.prepare("SELECT value FROM sync_config WHERE key = 'openclawToken'").get() as { value: string } | undefined
+    const token = tokenRow?.value ? (tokenRow.value as string).replace(/^"|"$/g, '') : ''
+    const targetRow = db.prepare("SELECT value FROM sync_config WHERE key = 'agentTarget'").get() as { value: string } | undefined
+    const target = targetRow?.value ? (targetRow.value as string).replace(/^"|"$/g, '') : 'agent-209e563a'
+    fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'supplement', userId, taskId, content }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        model: `openclaw/${target}`,
+        messages: [{ role: 'user', content: message }],
+        stream: false,
+      }),
     }).catch(() => {})
-  } catch { /* 非阻塞，失败不影响主流程 */ }
+  } catch { /* 非阻塞 */ }
 }
+
+/** 补充说明时唤醒 Agent */
+function triggerWebhook(db: ReturnType<typeof getDb>, userId: string, taskId: string, content: string) {
+  wakeAgent(db, `[系统通知] 任务 ${taskId} 收到新的补充说明：${content.substring(0, 200)}${content.length > 200 ? '...' : ''}\n\n请立即执行 GET /task/${taskId}/supplements 检查并处理。`)
+}
+
+/** 导出 wakeAgent 供 agent 路由使用 */
+export { wakeAgent }
 
 const router = Router()
 

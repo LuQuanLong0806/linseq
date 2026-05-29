@@ -139,6 +139,8 @@ export interface SyncConfig {
   loginCookie: string
   cookieExpiry: string
   webhookUrl: string
+  openclawToken: string
+  agentTarget: string
 }
 
 /** API 响应结构 */

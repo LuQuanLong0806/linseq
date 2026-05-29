@@ -32,8 +32,15 @@
             <el-button v-if="ungroupedTodoTasks.length >= 2" type="primary" size="small" @click="showGroupDialog = true">+ 新建分组</el-button>
           </div>
         </div>
+        <!-- 模式切换 -->
+        <div class="mode-tabs">
+          <button class="mode-tab" :class="{ active: mode === 'task' }" @click="mode = 'task'">任务模式</button>
+          <button class="mode-tab" :class="{ active: mode === 'chat' }" @click="switchToChat">对话模式</button>
+        </div>
       </div>
 
+      <!-- 任务模式 -->
+      <div v-if="mode === 'task'">
       <!-- 双面板布局 -->
       <div class="dual-panel">
         <!-- 左面板：待办队列 -->
@@ -193,6 +200,42 @@
               </div>
             </div>
           </TransitionGroup>
+        </div>
+      </div>
+        <!-- 唤醒 Agent 按钮 -->
+        <div class="wake-action" v-if="todoQueueTasks.length > 0 && devQueueTasks.length === 0">
+          <el-button type="primary" size="large" @click="handleWakeAgent" :loading="waking" class="wake-btn">
+            唤醒 Agent 开始任务
+          </el-button>
+          <span class="wake-hint">队列中有 {{ todoQueueTasks.length }} 个待办任务</span>
+        </div>
+      </div>
+
+      <!-- 对话模式 -->
+      <div v-if="mode === 'chat'" class="chat-panel">
+        <div class="chat-messages" ref="chatMessagesEl">
+          <div v-if="chatMessages.length === 0" class="chat-empty-state">
+            <div class="chat-empty-icon">💬</div>
+            <p>和灵序 Agent 直接对话</p>
+            <span>输入任何需求，Agent 被唤醒后直接处理</span>
+          </div>
+          <div v-for="msg in chatMessages" :key="msg.id"
+            class="chat-bubble-item"
+            :class="msg.role === 'user' ? 'cb-user' : 'cb-agent'">
+            <div class="cb-role">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
+            <div class="cb-content">
+              <div class="cb-text">{{ msg.content }}</div>
+              <div class="cb-time">{{ formatChatTime(msg.created_at) }}</div>
+            </div>
+          </div>
+          <div v-if="waitingChatReply" class="chat-bubble-item cb-agent">
+            <div class="cb-role">🤖</div>
+            <div class="cb-content"><div class="cb-typing"><span></span><span></span><span></span></div></div>
+          </div>
+        </div>
+        <div class="chat-input-bar">
+          <el-input v-model="chatInput" placeholder="输入消息，唤醒 Agent 执行..." @keydown.enter.ctrl="handleChatSend" />
+          <el-button type="primary" @click="handleChatSend" :loading="chatSending" :disabled="!chatInput.trim()">发送</el-button>
         </div>
       </div>
 
@@ -703,6 +746,58 @@ const chatDragOver = ref(false)
 const rainCanvas = ref<HTMLCanvasElement | null>(null)
 let rainAnimId = 0
 
+// ========== 双模式切换 ==========
+const mode = ref<'task' | 'chat'>('task')
+
+// ========== 对话模式 ==========
+const chatMessages = ref<{ id: string; role: string; content: string; created_at: string }[]>([])
+const chatInput = ref('')
+const chatSending = ref(false)
+const waitingChatReply = ref(false)
+const chatMessagesEl = ref<HTMLElement | null>(null)
+
+async function loadChatHistory() {
+  try {
+    const res = await agentApi.getChatHistory()
+    chatMessages.value = res.data || []
+  } catch { /* ignore */ }
+}
+
+async function handleChatSend() {
+  const text = chatInput.value.trim()
+  if (!text) return
+  chatSending.value = true
+  waitingChatReply.value = true
+  try {
+    await agentApi.sendChat(text)
+    chatInput.value = ''
+    await loadChatHistory()
+    await nextTick()
+    if (chatMessagesEl.value) chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
+  } catch { ElMessage.error('发送失败') }
+  finally { chatSending.value = false }
+}
+
+function formatChatTime(t: string) { return dayjs(t).format('HH:mm') }
+
+async function switchToChat() {
+  mode.value = 'chat'
+  await loadChatHistory()
+  await nextTick()
+  if (chatMessagesEl.value) chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
+}
+
+// ========== 唤醒 Agent ==========
+const waking = ref(false)
+async function handleWakeAgent() {
+  waking.value = true
+  try {
+    await agentApi.wake('开始工作')
+    ElMessage.success('已唤醒 Agent')
+  } catch { ElMessage.error('唤醒失败，请检查同步中心配置') }
+  finally { waking.value = false }
+}
+
 function startDigitalRain() {
   const canvas = rainCanvas.value
   if (!canvas) return
@@ -812,7 +907,6 @@ function formatSupplementTime(t: string) {
 // ========== WebSocket 实时消息 ==========
 const { connected: wsConnected, startWs, updateSubscription } = useChatWs((event, taskId, data) => {
   if (event === 'devlog' && chatTask.value?.id === taskId) {
-    // Agent 上报了新的 devLog → 刷新聊天记录
     loadSupplementHistory(taskId)
     waitingAgentReply.value = false
     nextTick(() => {
@@ -820,8 +914,16 @@ const { connected: wsConnected, startWs, updateSubscription } = useChatWs((event
       if (el) el.scrollTop = el.scrollHeight
     })
   }
+  if (event === 'chat') {
+    // 对话模式收到 Agent 回复
+    loadChatHistory()
+    waitingChatReply.value = false
+    nextTick(() => {
+      if (chatMessagesEl.value) chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
+    })
+  }
   if (event === 'supplement') {
-    // 自己发的补充说明通过 HTTP 已处理，这里只处理其他客户端
+    // 自己发的补充说明通过 HTTP 已处理
   }
 })
 
@@ -1333,5 +1435,87 @@ async function syncTodoFromBackend() {
 // Responsive
 @media (max-width: 900px) {
   .dual-panel { grid-template-columns: 1fr; }
+}
+
+// ===== Mode Tabs =====
+.mode-tabs {
+  display: flex; justify-content: center; gap: 4px;
+  margin-top: 14px; padding: 3px; border-radius: 10px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(0,229,255,0.08);
+  width: fit-content; margin-left: auto; margin-right: auto;
+}
+.mode-tab {
+  padding: 6px 24px; border-radius: 8px; border: none;
+  background: transparent; color: #8c8ca1; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.25s;
+  &:hover { color: #e0e0ef; background: rgba(0,229,255,0.05); }
+  &.active {
+    color: #00E5FF; background: rgba(0,229,255,0.1);
+    box-shadow: 0 0 12px rgba(0,229,255,0.15);
+  }
+}
+
+// ===== Wake Button =====
+.wake-action {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 24px 0; max-width: var(--container-md); margin: 0 auto;
+}
+.wake-btn {
+  width: 280px; height: 48px; font-size: 16px; border-radius: 12px;
+  background: linear-gradient(135deg, #00E5FF, #9D5CFF); border: none;
+  box-shadow: 0 0 24px rgba(0,229,255,0.25);
+  transition: box-shadow 0.3s, transform 0.2s;
+  &:hover { box-shadow: 0 0 36px rgba(0,229,255,0.4); transform: translateY(-2px); }
+}
+.wake-hint { font-size: 12px; color: #8c8ca1; }
+
+// ===== Chat Panel =====
+.chat-panel {
+  max-width: var(--container-sm); margin: 0 auto;
+  display: flex; flex-direction: column; height: calc(100vh - 220px);
+  background: rgba(10,16,31,0.2); border: 1px solid rgba(0,229,255,0.1);
+  border-radius: 14px; overflow: hidden;
+}
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px;
+}
+.chat-empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #8c8ca1;
+  .chat-empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+  p { font-size: 16px; font-weight: 600; color: #e0e0ef; margin: 0 0 4px; }
+  span { font-size: 12px; }
+}
+.chat-bubble-item {
+  display: flex; gap: 10px; max-width: 85%;
+  &.cb-user { align-self: flex-end; flex-direction: row-reverse; }
+  &.cb-agent { align-self: flex-start; }
+}
+.cb-role {
+  width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+  .cb-user & { background: rgba(0,229,255,0.12); border: 1px solid rgba(0,229,255,0.2); }
+  .cb-agent & { background: rgba(157,92,255,0.12); border: 1px solid rgba(157,92,255,0.2); }
+}
+.cb-content {
+  padding: 10px 14px; border-radius: 12px; line-height: 1.5;
+  .cb-user & { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.15); }
+  .cb-agent & { background: rgba(157,92,255,0.06); border: 1px solid rgba(157,92,255,0.12); }
+}
+.cb-text { font-size: 13px; color: #e0e0ef; white-space: pre-wrap; word-break: break-word; }
+.cb-time { font-size: 10px; color: #8c8ca1; margin-top: 4px; }
+.cb-typing {
+  display: flex; gap: 4px; padding: 4px 0;
+  span {
+    width: 6px; height: 6px; border-radius: 50%; background: #9D5CFF;
+    animation: typingBounce 1.2s ease-in-out infinite;
+    &:nth-child(2) { animation-delay: 0.2s; }
+    &:nth-child(3) { animation-delay: 0.4s; }
+  }
+}
+@keyframes typingBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+.chat-input-bar {
+  display: flex; gap: 10px; padding: 14px 16px;
+  border-top: 1px solid rgba(0,229,255,0.08);
+  background: rgba(10,16,31,0.4);
 }
 </style>
