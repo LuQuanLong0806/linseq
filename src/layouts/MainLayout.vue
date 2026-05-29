@@ -82,8 +82,8 @@
         <el-menu-item index="/review">
           <el-icon><Checked /></el-icon>
           <template #title>
-            <span>待审核</span>
-            <el-badge v-if="reviewCount > 0" :value="reviewCount" :max="99" class="menu-badge" />
+            <span class="menu-item-label">待审核</span>
+            <el-tag v-if="reviewCount > 0" size="small" type="danger" effect="dark" round class="menu-count-tag">{{ reviewCount > 99 ? '99+' : reviewCount }}</el-tag>
           </template>
         </el-menu-item>
         <el-menu-item index="/sync">
@@ -122,8 +122,8 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
-          <el-tooltip content="Agent 聊天" placement="bottom">
-            <el-icon class="chat-toggle" @click="openChatPanel">
+          <el-tooltip content="AI 会话" placement="bottom">
+            <el-icon class="chat-toggle" @click="openChat()">
               <ChatDotRound />
               <span v-if="chatBadge > 0" class="chat-badge">{{ chatBadge }}</span>
             </el-icon>
@@ -148,7 +148,6 @@
         </router-view>
       </el-main>
     </el-container>
-    <AgentChatPanel />
   </el-container>
 </template>
 
@@ -162,8 +161,8 @@ import { useCyberAnimations } from '@/composables/useCyberAnimations'
 import { useCyberBackground } from '@/composables/useCyberBackground'
 import { useDesktop } from '@/composables/useDesktop'
 import { useTheme } from '@/composables/useTheme'
-import AgentChatPanel from '@/components/AgentChatPanel.vue'
 import { useAgentChat } from '@/composables/useAgentChat'
+import { useChatPanel } from '@/composables/useChatPanel'
 
 useCyberAnimations('.cyber-glass')
 const { isDesktop, sendNotification } = useDesktop()
@@ -171,7 +170,8 @@ const { theme, toggleTheme, initTheme } = useTheme()
 
 const route = useRoute()
 const taskStore = useTaskStore()
-const { openPanel: openChatPanel, inReview: chatBadge } = useAgentChat()
+const { inReview: chatBadge } = useAgentChat()
+const { openChat } = useChatPanel()
 const bgCanvas = ref<HTMLCanvasElement | null>(null)
 const { start: startBg, stop: stopBg } = useCyberBackground(bgCanvas)
 
@@ -342,10 +342,18 @@ onUnmounted(() => {
   }
 }
 
-.menu-badge {
-  :deep(.el-badge__content) {
-    animation: badge-pulse 2s ease-in-out infinite;
-  }
+.menu-count-tag {
+  margin-left: 8px;
+  vertical-align: middle;
+  font-size: 10px;
+  height: 16px;
+  padding: 0 5px;
+  line-height: 16px;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+.menu-item-label {
+  vertical-align: middle;
 }
 
 @keyframes badge-pulse {

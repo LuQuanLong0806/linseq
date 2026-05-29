@@ -33,7 +33,7 @@
           </div>
         </div>
         <!-- 唤醒 Agent -->
-        <div class="wake-bar" v-if="todoQueueTasks.length > 0 && devQueueTasks.length === 0">
+        <div class="wake-bar">
           <span class="wake-hint">队列中有 {{ todoQueueTasks.length }} 个待办任务</span>
           <el-button type="primary" @click="handleWakeAgent" :loading="waking" class="wake-btn-sm">
             唤醒 Agent 开始任务
@@ -41,146 +41,82 @@
         </div>
       </div>
 
-      <!-- 双面板布局 -->
+      <!-- 双栏布局：待办队列 + 开发引擎 -->
       <div class="dual-panel">
         <!-- 左面板：待办队列 -->
         <div class="panel todo-panel">
           <div class="panel-header">
-            <div class="panel-icon todo-icon">
-              <div class="icon-ring"></div>
-              <span class="icon-dot"></span>
-            </div>
+            <div class="panel-icon todo-icon"><div class="icon-ring"></div><span class="icon-dot"></span></div>
             <h3 class="panel-title">待办队列</h3>
             <el-tag size="small" effect="dark" type="info" round>{{ todoQueueTasks.length }}</el-tag>
           </div>
-          <div class="panel-scroll" @dragover.prevent>
-          <div v-if="todoQueueTasks.length === 0" class="panel-empty">
-            <div class="empty-pulse"></div>
-            <p>队列为空</p>
-          </div>
+          <div class="panel-scroll">
+            <div v-if="todoQueueTasks.length === 0" class="panel-empty">
+              <div class="empty-pulse"></div>
+              <p>队列为空</p>
+            </div>
 
-          <!-- 分组卡片 -->
-          <div v-for="group in taskStore.groups" :key="group.id" class="group-card">
-            <div class="group-header" @click="toggleGroup(group.id)">
-              <div class="group-left">
-                <span class="group-arrow" :class="{ expanded: expandedGroups.has(group.id) }">▸</span>
-                <span class="group-name">{{ group.name }}</span>
-                <el-tag size="small" type="info">{{ getGroupTasks(group.id).length }}个任务</el-tag>
+            <!-- 分组卡片 -->
+            <div v-for="group in taskStore.groups" :key="group.id" class="group-card">
+              <div class="group-header" @click="toggleGroup(group.id)">
+                <div class="group-left">
+                  <span class="group-arrow" :class="{ expanded: expandedGroups.has(group.id) }">▸</span>
+                  <span class="group-name">{{ group.name }}</span>
+                  <el-tag size="small" type="info">{{ getGroupTasks(group.id).length }}个任务</el-tag>
+                </div>
+                <div class="group-right" @click.stop>
+                  <el-button link type="primary" size="small" @click="editGroupSettings(group)">编辑</el-button>
+                  <el-button link type="danger" size="small" @click="handleDeleteGroup(group)">解散</el-button>
+                </div>
               </div>
-              <div class="group-right" @click.stop>
-                <el-button link type="primary" size="small" @click="editGroupSettings(group)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteGroup(group)">解散</el-button>
+              <div v-if="group.description" class="group-desc" @click.stop>
+                <span class="group-desc-text">{{ group.description }}</span>
               </div>
-            </div>
-            <!-- 分组补充说明 -->
-            <div v-if="group.description" class="group-desc" @click.stop>
-              <span class="group-desc-text">{{ group.description }}</span>
-            </div>
-            <Transition name="collapse">
-              <div v-if="expandedGroups.has(group.id)" class="group-tasks">
-                <div v-for="(task, idx) in getGroupTasks(group.id)" :key="task.id" class="sub-task"
-                  :draggable="editingDescId !== task.id"
-                  @dragstart="onSubDragStart(group.id, idx, $event)" @dragover.prevent @drop="onSubDrop(group.id, idx)" @dragend="onDragEnd">
-                  <span class="sub-rank">{{ idx + 1 }}</span>
-                  <div class="sub-body">
-                    <div class="sub-top">
-                      <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
-                      <el-tag v-if="isManualTask(task)" size="small" effect="plain" class="manual-tag">手动</el-tag>
-                      <span class="sub-title">{{ task.title }}</span>
-                    </div>
-                    <!-- 任务补充说明 -->
-                    <div v-if="task.customDescription && editingDescId !== task.id" class="sub-desc" @click.stop="openDescEditor(task)">
-                      <span>{{ task.customDescription }}</span>
-                      <span class="sub-desc-edit">✎</span>
-                    </div>
-                    <span v-if="!task.customDescription && editingDescId !== task.id" class="sub-desc-add" @click.stop="openDescEditor(task)">+ 补充</span>
-                    <div v-if="editingDescId === task.id" class="sub-desc-editor" @click.stop @mousedown.stop>
-                      <el-input v-model="editingDescText" type="textarea" :rows="2" placeholder="补充需求说明..." resize="none" @keydown.escape="cancelDescEdit" />
-                      <div class="sub-desc-actions">
-                        <el-button size="small" @click="cancelDescEdit">取消</el-button>
-                        <el-button type="primary" size="small" @click="saveDescEdit(task)" :loading="savingDesc">保存</el-button>
+              <Transition name="collapse">
+                <div v-if="expandedGroups.has(group.id)" class="group-tasks">
+                  <div v-for="(task, idx) in getGroupTasks(group.id)" :key="task.id" class="sub-task"
+                    :draggable="editingDescId !== task.id"
+                    @dragstart="onSubDragStart(group.id, idx, $event)" @dragover.prevent @drop="onSubDrop(group.id, idx)" @dragend="onDragEnd">
+                    <span class="sub-rank">{{ idx + 1 }}</span>
+                    <div class="sub-body">
+                      <div class="sub-top">
+                        <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+                        <span class="sub-title">{{ task.title }}</span>
+                      </div>
+                      <div v-if="task.customDescription && editingDescId !== task.id" class="sub-desc" @click.stop="openDescEditor(task)">
+                        <span>{{ task.customDescription }}</span>
+                        <span class="sub-desc-edit">✎</span>
+                      </div>
+                      <span v-if="!task.customDescription && editingDescId !== task.id" class="sub-desc-add" @click.stop="openDescEditor(task)">+ 补充</span>
+                      <div v-if="editingDescId === task.id" class="sub-desc-editor" @click.stop @mousedown.stop>
+                        <el-input v-model="editingDescText" type="textarea" :rows="2" placeholder="补充需求说明..." resize="none" @keydown.escape="cancelDescEdit" />
+                        <div class="sub-desc-actions">
+                          <el-button size="small" @click="cancelDescEdit">取消</el-button>
+                          <el-button type="primary" size="small" @click="saveDescEdit(task)" :loading="savingDesc">保存</el-button>
+                        </div>
                       </div>
                     </div>
+                    <div class="sub-actions" @click.stop>
+                      <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
+                      <el-button type="success" link size="small" @click="handleComplete(task)">完成</el-button>
+                    </div>
                   </div>
-                  <div class="sub-actions" @click.stop>
-                    <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
-                    <el-button type="success" link size="small" @click="handleComplete(task)">完成</el-button>
-                  </div>
+                  <div v-if="getGroupTasks(group.id).length === 0" class="group-empty">分组内暂无任务</div>
                 </div>
-                <div v-if="getGroupTasks(group.id).length === 0" class="group-empty">分组内暂无任务</div>
-              </div>
-            </Transition>
-          </div>
-
-          <!-- 待办任务列表 -->
-          <TransitionGroup v-if="ungroupedTodoTasks.length > 0" name="card" tag="div" class="card-list">
-            <div v-for="(task, index) in ungroupedTodoTasks" :key="task.id"
-              class="todo-card"
-              :class="{ dragging: dragFrom?.type === 'ungrouped' && dragFrom?.index === index, 'is-active': drawerTask?.id === task.id }"
-              :draggable="!drawerTask || drawerTask.id !== task.id"
-              @dragstart="onDragStart(index, $event)" @dragover.prevent="onDragOver(index)" @drop="onDrop(index)" @dragend="onDragEnd"
-              @click="openDrawer(task)">
-              <div class="card-glow"></div>
-              <div class="card-rank">{{ index + 1 }}</div>
-              <div class="card-body">
-                <div class="card-head">
-                  <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
-                  <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
-                  <el-tag v-if="isManualTask(task)" size="small" effect="plain" class="manual-tag">手动发布</el-tag>
-                  <span class="card-id">#{{ task.sourceId }}</span>
-                </div>
-                <h3 class="card-title">{{ task.title }}</h3>
-                <div class="card-meta">
-                  <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
-                  <span v-if="task.module">{{ task.module }}</span>
-                  <span :class="{ overdue: isOverdue(task) }">截止 {{ formatDate(task.deadline) }}</span>
-                </div>
-                <div v-if="task.customDescription" class="card-desc-preview">
-                  <span class="desc-label">说明</span>
-                  <span class="desc-text">{{ task.customDescription }}</span>
-                </div>
-              </div>
-              <div class="card-actions" @click.stop>
-                <el-button type="primary" link size="small" @click="openDrawer(task)">编辑</el-button>
-                <el-button type="success" link size="small" @click="handleComplete(task)">完成</el-button>
-                <el-button type="danger" link size="small" @click="handleRemove(task)">移出</el-button>
-              </div>
+              </Transition>
             </div>
-          </TransitionGroup>
-          </div>
-        </div>
 
-        <!-- 右面板：开发中 -->
-        <div class="panel dev-panel">
-          <div class="panel-header">
-            <div class="panel-icon dev-icon">
-              <div class="icon-ring dev-ring"></div>
-              <span class="icon-dot dev-dot"></span>
-            </div>
-            <h3 class="panel-title dev-title">开发引擎</h3>
-            <el-tag size="small" effect="dark" type="warning" round>{{ devQueueTasks.length }}</el-tag>
-            <div v-if="devQueueTasks.length > 0" class="engine-indicator">
-              <span class="engine-pulse"></span>
-              <span class="engine-text">RUNNING</span>
-            </div>
-          </div>
-          <div class="panel-scroll" @dragover.prevent>
-
-          <div v-if="devQueueTasks.length === 0" class="panel-empty dev-empty">
-            <div class="empty-engine"></div>
-            <p>引擎待命</p>
-          </div>
-
-          <TransitionGroup v-else name="card" tag="div" class="card-list">
-            <div v-for="task in devQueueTasks" :key="task.id" class="dev-card">
-              <div class="dev-card-glow"></div>
-              <div class="dev-status-bar">
-                <div class="dev-progress"></div>
-              </div>
-              <div class="dev-card-inner">
+            <!-- 未分组待办任务列表 -->
+            <div v-if="ungroupedTodoTasks.length > 0" class="card-list">
+              <div v-for="(task, index) in ungroupedTodoTasks" :key="task.id"
+                class="todo-card"
+                :class="{ 'drag-over': dragOverIndex === index, 'drag-source': dragFromIndex === index }"
+                @mousedown.prevent="onCardMouseDown($event, index)"
+                @click="handleCardClick(task)">
+                <div class="card-glow"></div>
+                <div class="card-rank">{{ index + 1 }}</div>
                 <div class="card-body">
                   <div class="card-head">
-                    <el-tag type="warning" size="small" effect="dark">开发中</el-tag>
                     <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
                     <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
                     <span class="card-id">#{{ task.sourceId }}</span>
@@ -189,22 +125,232 @@
                   <div class="card-meta">
                     <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
                     <span v-if="task.module">{{ task.module }}</span>
+                    <span :class="{ overdue: isOverdue(task) }">截止 {{ formatDate(task.deadline) }}</span>
                   </div>
-                  <div v-if="task.projectPath || task.gitBranch" class="card-config">
-                    <span v-if="task.projectPath" class="config-item">📁 {{ task.projectPath }}</span>
-                    <span v-if="task.gitBranch" class="config-item">🌿 {{ task.gitBranch }}</span>
+                  <div v-if="task.customDescription" class="card-desc-preview">
+                    <span class="desc-label">说明</span>
+                    <span class="desc-text">{{ task.customDescription }}</span>
                   </div>
                 </div>
-                <div class="card-actions">
-                  <el-button type="primary" link size="small" @click="openAgentChat(task)">对话</el-button>
-                  <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
+                <div class="card-actions" @mousedown.stop @click.stop>
+                  <el-button type="primary" link size="small" @click="openDrawer(task)">编辑</el-button>
+                  <el-button type="success" link size="small" @click="handleComplete(task)">完成</el-button>
+                  <el-button type="danger" link size="small" @click="handleRemove(task)">移出</el-button>
                 </div>
               </div>
             </div>
-          </TransitionGroup>
+          </div>
+        </div>
+
+        <!-- 右面板：开发引擎 -->
+        <div class="panel dev-panel">
+          <div class="panel-header">
+            <div class="panel-icon dev-icon"><div class="icon-ring dev-ring"></div><span class="icon-dot dev-dot"></span></div>
+            <h3 class="panel-title dev-title">开发引擎</h3>
+            <el-tag size="small" effect="dark" type="warning" round>{{ devQueueTasks.length }}</el-tag>
+            <div v-if="devQueueTasks.length > 0" class="engine-indicator">
+              <span class="engine-pulse"></span>
+              <span class="engine-text">RUNNING</span>
+            </div>
+          </div>
+          <div class="panel-scroll">
+            <div v-if="devQueueTasks.length === 0" class="panel-empty dev-empty">
+              <div class="empty-engine"></div>
+              <p>引擎待命</p>
+            </div>
+            <div v-else class="card-list">
+              <div v-for="task in devQueueTasks" :key="task.id" class="dev-card">
+                <div class="dev-card-glow"></div>
+                <div class="dev-status-bar"><div class="dev-progress"></div></div>
+                <div class="dev-card-inner">
+                  <div class="card-body">
+                    <div class="card-head">
+                      <el-tag type="warning" size="small" effect="dark">开发中</el-tag>
+                      <el-tag :type="getPriorityType(task.priority)" size="small">{{ getPriorityLabel(task.priority) }}</el-tag>
+                      <span class="card-id">#{{ task.sourceId }}</span>
+                    </div>
+                    <h3 class="card-title">{{ task.title }}</h3>
+                    <div class="card-meta">
+                      <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
+                      <span v-if="task.module">{{ task.module }}</span>
+                    </div>
+                    <div v-if="task.projectPath || task.gitBranch" class="card-config">
+                      <span v-if="task.projectPath" class="config-item">📁 {{ task.projectPath }}</span>
+                      <span v-if="task.gitBranch" class="config-item">🌿 {{ task.gitBranch }}</span>
+                    </div>
+                  </div>
+                  <div class="card-actions">
+                    <el-button type="primary" link size="small" @click="openFullscreenChat(task)">对话</el-button>
+                    <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- 全屏会话面板 -->
+      <Teleport to="body">
+        <Transition name="fullscreen-chat">
+          <div v-if="chatOpen" class="fullscreen-chat-mask" @click.self="closeChat">
+            <div class="fullscreen-chat">
+              <!-- 左侧：会话任务列表 -->
+              <div class="fc-sidebar" :style="{ width: sidebarWidth + 'px' }">
+                <div class="fc-sidebar-header">
+                  <h3>会话列表</h3>
+                  <span class="fc-sidebar-count">{{ chatTaskList.length }}</span>
+                </div>
+                <div class="fc-sidebar-list">
+                  <div v-if="devChatTasks.length > 0" class="fc-sidebar-group">
+                    <div class="fc-group-label">开发中</div>
+                    <div v-for="task in devChatTasks" :key="task.id"
+                      class="fc-contact" :class="{ active: chatTaskId === task.id }"
+                      @click="switchChatTask(task)">
+                      <div class="fc-contact-dot dot-dev"></div>
+                      <div class="fc-contact-info">
+                        <div class="fc-contact-name">{{ task.title }}</div>
+                        <div class="fc-contact-meta">
+                          <el-tag type="warning" size="small" effect="dark" class="fc-mini-tag">开发中</el-tag>
+                          <span>{{ getPriorityLabel(task.priority) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="doneChatTasks.length > 0" class="fc-sidebar-group">
+                    <div class="fc-group-label">已完成 / 审核中</div>
+                    <div v-for="task in doneChatTasks" :key="task.id"
+                      class="fc-contact" :class="{ active: chatTaskId === task.id }"
+                      @click="switchChatTask(task)">
+                      <div class="fc-contact-dot dot-done"></div>
+                      <div class="fc-contact-info">
+                        <div class="fc-contact-name">{{ task.title }}</div>
+                        <div class="fc-contact-meta">
+                          <el-tag v-if="task.aiStatus === 'ai_review'" type="success" size="small" effect="dark" class="fc-mini-tag">审核中</el-tag>
+                          <el-tag v-else-if="task.aiStatus === 'ai_done'" type="info" size="small" effect="dark" class="fc-mini-tag">已完成</el-tag>
+                          <el-tag v-else-if="task.aiStatus === 'ai_question'" type="danger" size="small" effect="dark" class="fc-mini-tag">疑问</el-tag>
+                          <span>{{ getPriorityLabel(task.priority) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="chatTaskList.length === 0" class="fc-sidebar-empty">暂无会话记录</div>
+                </div>
+              </div>
+
+              <!-- 拖拽分隔条 -->
+              <div class="fc-resizer" @mousedown="onSidebarResizeStart"></div>
+
+              <!-- 右侧：聊天窗口 -->
+              <div class="fc-main">
+                <!-- 头部 -->
+                <div class="fc-header" v-if="chatTask">
+                  <div class="fc-header-left">
+                    <div class="fc-header-dot" :class="'priority-' + chatTask.priority"></div>
+                    <div class="fc-header-info">
+                      <h3>{{ chatTask.title }}</h3>
+                      <div class="fc-header-meta">
+                        <el-tag :type="getPriorityType(chatTask.priority)" size="small" effect="dark">{{ getPriorityLabel(chatTask.priority) }}</el-tag>
+                        <el-tag v-if="chatTask.aiStatus === 'ai_dev'" type="warning" size="small">开发中</el-tag>
+                        <el-tag v-else-if="chatTask.aiStatus === 'ai_review'" type="success" size="small">审核中</el-tag>
+                        <span class="fc-task-id">#{{ chatTask.sourceId }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="fc-header-right">
+                    <el-select
+                      v-if="agentChat.sessions.value.length > 1"
+                      :model-value="agentChat.currentSession.value?.id"
+                      @change="(id) => agentChat.loadContext(id)"
+                      size="small" style="width:120px"
+                    >
+                      <el-option v-for="s in agentChat.sessions.value" :key="s.id" :label="s.title" :value="s.id" />
+                    </el-select>
+                    <button class="fc-close-btn" @click="closeChat">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 消息流 -->
+                <div class="fc-messages" ref="chatMessagesRef">
+                  <div v-if="agentChat.loading.value" class="fc-loading">
+                    <div class="fc-loading-spinner"></div>
+                    <span>加载中...</span>
+                  </div>
+                  <div v-else-if="currentTaskMessages.length === 0" class="fc-empty">
+                    <div class="fc-empty-icon">
+                      <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="28" rx="4" stroke="var(--cyber-glass-border)" stroke-width="1.5"/><path d="M6 16h36" stroke="var(--cyber-glass-border)" stroke-width="1.5"/><circle cx="12" cy="13" r="1.5" fill="var(--cyber-glass-border)"/><circle cx="17" cy="13" r="1.5" fill="var(--cyber-glass-border)"/><circle cx="22" cy="13" r="1.5" fill="var(--cyber-glass-border)"/><path d="M16 26l4 4 8-8" stroke="var(--cyber-cyan)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/></svg>
+                    </div>
+                    <p>暂无对话记录</p>
+                    <span>Agent 开始开发后将在此显示实时通讯</span>
+                  </div>
+                  <template v-else>
+                    <div v-for="msg in currentTaskMessages" :key="msg.id" class="fc-msg" :class="msg.role">
+                      <div class="fc-msg-avatar" :class="msg.role">
+                        <span v-if="msg.role === 'user'">我</span>
+                        <span v-else-if="msg.role === 'agent'">AI</span>
+                        <span v-else>SYS</span>
+                      </div>
+                      <div class="fc-msg-body">
+                        <div class="fc-msg-meta">
+                          <span class="fc-msg-role">{{ msg.role === 'user' ? '我' : msg.role === 'agent' ? 'Agent' : '系统' }}</span>
+                          <span v-if="msg.type === 'plan'" class="fc-badge plan">计划</span>
+                          <span v-else-if="msg.type === 'completion'" class="fc-badge done">完成</span>
+                          <span v-else-if="msg.type === 'question'" class="fc-badge question">疑问</span>
+                          <span v-else-if="msg.type === 'progress'" class="fc-badge progress">进度</span>
+                          <span class="fc-msg-time">{{ formatMsgTime(msg.time) }}</span>
+                        </div>
+                        <div class="fc-msg-bubble" :class="[msg.role, msg.type]">
+                          <p>{{ msg.content }}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- 快捷操作 -->
+                <div class="fc-actions" v-if="chatTask">
+                  <template v-if="activeSessionStatus === 'awaiting_plan'">
+                    <el-button type="success" size="small" @click="agentChat.executeAction('approve', { taskId: chatTask.id })">批准计划</el-button>
+                    <el-button type="warning" size="small" @click="agentChat.executeAction('redirect', { taskId: chatTask.id, message: '请调整方案' })">调整方向</el-button>
+                  </template>
+                  <template v-else-if="activeSessionStatus === 'awaiting_review'">
+                    <el-button type="success" size="small" @click="agentChat.executeAction('approve', { taskId: chatTask.id })">审核通过</el-button>
+                    <el-button type="danger" size="small" @click="agentChat.executeAction('reject', { taskId: chatTask.id, message: '需要修改' })">打回修改</el-button>
+                  </template>
+                  <template v-else-if="activeSessionStatus === 'awaiting_question'">
+                    <span class="fc-actions-hint">Agent 有疑问，请在下方回复</span>
+                  </template>
+                  <template v-else-if="activeSessionStatus === 'developing'">
+                    <el-button size="small" @click="agentChat.executeAction('stop_session')">停止工作</el-button>
+                  </template>
+                </div>
+
+                <!-- 输入区域（可拖拽调整高度） -->
+                <div class="fc-input-area" :style="{ height: inputAreaHeight + 'px' }">
+                  <div class="fc-input-resizer" @mousedown="onInputResizeStart"></div>
+                  <div class="fc-input-inner">
+                    <textarea
+                      v-model="chatInput"
+                      class="fc-textarea"
+                      placeholder="输入消息，Ctrl+Enter 发送..."
+                      @keydown.ctrl.enter="handleChatSend"
+                    ></textarea>
+                    <div class="fc-input-toolbar">
+                      <span class="fc-input-hint">Ctrl+Enter 发送</span>
+                      <button class="fc-send-btn" @click="handleChatSend" :disabled="!chatInput.trim() || agentChat.sending.value">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-5-5-2z" fill="currentColor"/></svg>
+                        <span>发送</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <!-- 配置弹窗 -->
       <Teleport to="body">
@@ -360,7 +506,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useTaskStore } from '@/stores/task'
-import { agentApi } from '@/api/agent'
+import { agentApi, type ChatMessage } from '@/api/agent'
 import { projectApi, type ProjectConfig } from '@/api/project'
 import { taskApi } from '@/api/task'
 import type { Task, TaskGroup } from '@/types'
@@ -368,10 +514,16 @@ import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useChatWs } from '@/composables/useChatWs'
 import { useAgentChat } from '@/composables/useAgentChat'
+import { useChatPanel } from '@/composables/useChatPanel'
 
 const taskStore = useTaskStore()
 
 // Drag state
+let isDragging = false
+const dragFromIndex = ref(-1)
+const dragOverIndex = ref(-1)
+let dragStartY = 0
+let dragMoved = false
 const dragFrom = ref<{ type: 'ungrouped' | 'group'; index: number; groupId?: string } | null>(null)
 
 // Group UI
@@ -526,27 +678,56 @@ async function handleDeleteGroup(group: TaskGroup) {
   }
 }
 
-// Drag
-function onDragOver(_index: number) { /* unused */ }
-function onDrop(index: number) {
-  if (dragFrom.value?.type === 'ungrouped' && dragFrom.value.index !== index) {
+// Drag — mouse-based reordering for todo cards
+function onCardMouseDown(e: MouseEvent, index: number) {
+  if ((e.target as HTMLElement).closest('.card-actions')) return
+  dragFromIndex.value = index
+  dragStartY = e.clientY
+  dragMoved = false
+  document.addEventListener('mousemove', onCardMouseMove)
+  document.addEventListener('mouseup', onCardMouseUp)
+}
+function onCardMouseMove(e: MouseEvent) {
+  const dy = Math.abs(e.clientY - dragStartY)
+  if (!dragMoved && dy < 5) return
+  dragMoved = true
+  isDragging = true
+  const cardList = document.querySelector('.todo-panel .card-list')
+  if (!cardList) return
+  const cards = cardList.querySelectorAll('.todo-card')
+  dragOverIndex.value = -1
+  cards.forEach((card, i) => {
+    const rect = card.getBoundingClientRect()
+    if (e.clientY >= rect.top && e.clientY <= rect.bottom) dragOverIndex.value = i
+  })
+}
+function onCardMouseUp() {
+  document.removeEventListener('mousemove', onCardMouseMove)
+  document.removeEventListener('mouseup', onCardMouseUp)
+  if (dragMoved && dragFromIndex.value >= 0 && dragOverIndex.value >= 0 && dragFromIndex.value !== dragOverIndex.value) {
     const tasks = ungroupedTodoTasks.value
-    const fromTask = tasks[dragFrom.value.index]
-    const toTask = tasks[index]
+    const fromTask = tasks[dragFromIndex.value]
+    const toTask = tasks[dragOverIndex.value]
     if (fromTask && toTask) {
       const fromIdx = taskStore.todoList.indexOf(fromTask.id)
       const toIdx = taskStore.todoList.indexOf(toTask.id)
       if (fromIdx !== -1 && toIdx !== -1) {
         const item = taskStore.todoList.splice(fromIdx, 1)[0]
-        taskStore.todoList.splice(fromIdx < toIdx ? toIdx : toIdx, 0, item)
+        const newToIdx = taskStore.todoList.indexOf(toTask.id)
+        taskStore.todoList.splice(newToIdx, 0, item)
         saveOrder()
       }
     }
   }
-  dragFrom.value = null
+  dragFromIndex.value = -1
+  dragOverIndex.value = -1
+  setTimeout(() => { isDragging = false }, 50)
+  dragMoved = false
 }
-
-function onSubDragStart(groupId: string, index: number, e: DragEvent) { dragFrom.value = { type: 'group', index, groupId }; e.dataTransfer!.effectAllowed = 'move' }
+function onSubDragStart(groupId: string, index: number, e: DragEvent) {
+  dragFrom.value = { type: 'group', index, groupId }
+  e.dataTransfer!.effectAllowed = 'move'
+}
 function onSubDrop(groupId: string, index: number) {
   if (dragFrom.value?.type === 'group' && dragFrom.value.groupId === groupId && dragFrom.value.index !== index) {
     const group = taskStore.groups.find(g => g.id === groupId)
@@ -558,35 +739,7 @@ function onSubDrop(groupId: string, index: number) {
   }
   dragFrom.value = null
 }
-
-function onDragEnd() { dragFrom.value = null; stopAutoScroll(); document.removeEventListener('dragover', onDragMove) }
-
-// Auto-scroll during drag
-let scrollRAF = 0
-function stopAutoScroll() { cancelAnimationFrame(scrollRAF) }
-
-function onDragStart(index: number, e: DragEvent) {
-  dragFrom.value = { type: 'ungrouped', index }; e.dataTransfer!.effectAllowed = 'move'
-  document.addEventListener('dragover', onDragMove)
-}
-function onDragMove(e: DragEvent) {
-  if (!dragFrom.value) return
-  stopAutoScroll()
-  const tick = () => {
-    const panels = document.querySelectorAll('.panel-scroll')
-    for (const el of panels) {
-      const rect = (el as HTMLElement).getBoundingClientRect()
-      const y = e.clientY
-      const edge = 40
-      if (y >= rect.top && y <= rect.bottom) {
-        if (y < rect.top + edge) (el as HTMLElement).scrollTop -= 8
-        else if (y > rect.bottom - edge) (el as HTMLElement).scrollTop += 8
-      }
-    }
-    if (dragFrom.value) scrollRAF = requestAnimationFrame(tick)
-  }
-  scrollRAF = requestAnimationFrame(tick)
-}
+function onDragEnd() { dragFrom.value = null }
 
 function saveOrder() {
   localStorage.setItem('linesequence-todo-list', JSON.stringify(taskStore.todoList))
@@ -596,7 +749,7 @@ function saveOrder() {
 function handleRemove(task: Task) { taskStore.toggleTodo(task); ElMessage.success('已移出 AI 待办') }
 async function handleComplete(task: Task) { await taskStore.updateTask(task.id, { aiStatus: 'ai_review' }); taskStore.toggleTodo(task); ElMessage.success('已提交审核') }
 
-// Right drawer
+// Config drawer (for editing task settings)
 const drawerTask = ref<Task | null>(null)
 const drawerSaving = ref(false)
 const drawerForm = reactive({ projectPath: '', gitBranch: '', customDescription: '' })
@@ -622,6 +775,19 @@ async function saveDrawer() {
   } catch { ElMessage.error('保存失败') }
   finally { drawerSaving.value = false }
 }
+
+function openUrl(url: string) { window.open(url) }
+
+function isOverdue(task: Task) { return task.status !== 'completed' && task.deadline && new Date(task.deadline).getTime() < Date.now() }
+function formatDate(d: string) { return dayjs(d).format('MM-DD') }
+function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as const)[p] || 'info' }
+function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
+
+function handleCardClick(task: Task) {
+  if (isDragging) return
+  openDrawer(task)
+}
+
 // Description editor
 const editingDescId = ref<string | null>(null)
 const editingDescText = ref('')
@@ -641,93 +807,153 @@ async function saveDescEdit(task: Task) {
   finally { savingDesc.value = false }
 }
 
-function openUrl(url: string) { window.open(url) }
+// ========== 全屏会话聊天 ==========
+const chatTaskId = ref<string | null>(null)
+const chatInput = ref('')
+const chatMessagesRef = ref<HTMLElement | null>(null)
 
-function isOverdue(task: Task) { return task.status !== 'completed' && new Date(task.deadline).getTime() < Date.now() }
-function formatDate(d: string) { return dayjs(d).format('MM-DD') }
-function formatLogTime(t: string) { return dayjs(t).format('HH:mm') }
-function isManualTask(task: Task) { return task.sourceId?.startsWith('manual_') }
-function getPriorityType(p: string): 'success' | 'primary' | 'warning' | 'danger' | 'info' { return ({ urgent: 'danger', high: 'warning', medium: 'info', low: 'success' } as const)[p] || 'info' }
-function getPriorityLabel(p: string) { return ({ urgent: '紧急', high: '高', medium: '中', low: '低' } as Record<string, string>)[p] || p }
-
-// ========== 补充说明（开发中追加指令，聊天式交互） ==========
-interface SupplementMsg {
-  id: string
-  content: string
-  created_at: string
-  read_by_agent: number
-  type: 'user' | 'agent'
-  action?: string
-}
-const supplementMap = reactive<Record<string, SupplementMsg[]>>({})
-const supplementInput = ref('')
-const supplementSending = ref(false)
-const waitingAgentReply = ref(false)
-
-// ========== Agent Chat Panel ==========
+const { chatOpen, closeChat } = useChatPanel()
 const agentChat = useAgentChat()
 
-function openAgentChat(task: Task) {
-  agentChat.openPanel()
+const sidebarWidth = ref(260)
+const inputAreaHeight = ref(120)
+
+const chatTask = computed(() => {
+  if (!chatTaskId.value) return null
+  return taskStore.tasks.find(t => t.id === chatTaskId.value) || null
+})
+
+// 会话列表：开发中 + 已完成/审核/疑问的任务（只要有过开发记录的都展示）
+const chatTaskList = computed(() => {
+  const devIds = new Set(devQueueTasks.value.map(t => t.id))
+  // 从 session 消息中提取出现过 taskId 的任务
+  const msgTaskIds = new Set<string>()
+  for (const m of agentChat.messages.value) {
+    if (m.taskId) msgTaskIds.add(m.taskId)
+  }
+  // 当前开发中的 + 消息流中出现过的（可能是已审核/已完成/疑问）
+  const result = [...devQueueTasks.value]
+  for (const tid of msgTaskIds) {
+    if (!devIds.has(tid)) {
+      const task = taskStore.tasks.find(t => t.id === tid)
+      if (task) result.push(task)
+    }
+  }
+  // 开发中排前面
+  return result.sort((a, b) => (a.aiStatus === 'ai_dev' ? 0 : 1) - (b.aiStatus === 'ai_dev' ? 0 : 1))
+})
+
+const devChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus === 'ai_dev'))
+const doneChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus !== 'ai_dev'))
+
+const currentTaskMessages = computed(() => {
+  if (!chatTaskId.value) return []
+  return agentChat.messages.value.filter(m => m.taskId === chatTaskId.value || !m.taskId)
+})
+
+const activeSessionStatus = computed(() => {
+  if (!agentChat.currentSession.value) return 'idle'
+  if (agentChat.currentSession.value.status === 'archived') return 'archived'
+  const lastMsg = agentChat.messages.value[agentChat.messages.value.length - 1]
+  if (lastMsg?.type === 'plan' && lastMsg?.role === 'agent') return 'awaiting_plan'
+  if (lastMsg?.type === 'question' && lastMsg?.role === 'agent') return 'awaiting_question'
+  if (agentChat.inReview.value > 0) return 'awaiting_review'
+  if (agentChat.inDev.value > 0) return 'developing'
+  if (agentChat.todoCount.value > 0) return 'ready'
+  return 'idle'
+})
+
+async function openFullscreenChat(task: Task) {
+  chatTaskId.value = task.id
+  chatOpen.value = true
+  await agentChat.loadContext()
+  nextTick(() => scrollToBottom())
 }
 
-async function loadSupplementHistory(taskId: string) {
-  try {
-    const res = await taskApi.getSupplements(taskId)
-    const task = taskStore.tasks.find(t => t.id === taskId)
-    const logs = (task?.devLog || [])
-      .filter(l => l.action !== '补充说明')
-      .map(l => ({
-        id: l.id, content: l.content, created_at: l.time, read_by_agent: 1, type: 'agent' as const, action: l.action
-      }))
-    const sups = (res.data || []).map(s => ({
-      ...s, type: 'user' as const
-    }))
-    const merged = [...logs, ...sups].sort((a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    )
-    supplementMap[taskId] = merged
-  } catch { /* ignore */ }
+// 全局 chatOpen 时自动加载上下文
+watch(chatOpen, async (v) => {
+  if (v) {
+    if (!chatTaskId.value && chatTaskList.value.length > 0) {
+      chatTaskId.value = chatTaskList.value[0].id
+    }
+    await agentChat.loadContext()
+    nextTick(() => scrollToBottom())
+  }
+})
+
+// 侧边栏宽度拖拽
+function onSidebarResizeStart(e: MouseEvent) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = sidebarWidth.value
+  function onMove(ev: MouseEvent) {
+    sidebarWidth.value = Math.max(180, Math.min(500, startW + ev.clientX - startX))
+  }
+  function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
 }
 
-async function sendSupplement(task: Task) {
-  const text = supplementInput.value.trim()
-  if (!text) return
-  supplementSending.value = true
-  try {
-    await taskApi.addSupplement(task.id, text)
-    supplementInput.value = ''
-    waitingAgentReply.value = true
-    await loadSupplementHistory(task.id)
-    await nextTick()
-  } catch { ElMessage.error('发送失败') }
-  finally { supplementSending.value = false }
+// 输入区域高度拖拽
+function onInputResizeStart(e: MouseEvent) {
+  e.preventDefault()
+  const startY = e.clientY
+  const startH = inputAreaHeight.value
+  function onMove(ev: MouseEvent) {
+    inputAreaHeight.value = Math.max(80, Math.min(400, startH - (ev.clientY - startY)))
+  }
+  function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
 }
 
-function formatSupplementTime(t: string) {
-  const d = dayjs(t)
-  return d.format('MM-DD HH:mm')
+function switchChatTask(task: Task) {
+  chatTaskId.value = task.id
+  nextTick(() => scrollToBottom())
 }
+
+async function handleChatSend() {
+  if (!chatInput.value.trim() || agentChat.sending.value) return
+  const text = chatInput.value.trim()
+  chatInput.value = ''
+  await agentChat.executeAction('send_message', {
+    message: text,
+    taskId: chatTaskId.value || undefined,
+  })
+  scrollToBottom()
+}
+
+function scrollToBottom() {
+  nextTick(() => {
+    if (chatMessagesRef.value) {
+      chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
+    }
+  })
+}
+
+function formatMsgTime(t: string) { return dayjs(t).format('HH:mm') }
+
+watch(() => agentChat.messages.value.length, () => { scrollToBottom() })
 
 // ========== 唤醒 Agent ==========
 const waking = ref(false)
 async function handleWakeAgent() {
+  if (todoQueueTasks.value.length === 0) {
+    ElMessage.warning('待办队列为空，无法唤醒 Agent')
+    return
+  }
   waking.value = true
   try {
     await agentChat.executeAction('wake', { message: '开始工作' })
-    agentChat.openPanel()
     ElMessage.success('已唤醒 Agent')
   } catch { ElMessage.error('唤醒失败，请检查同步中心配置') }
   finally { waking.value = false }
 }
 
 // ========== WebSocket 实时消息 ==========
-const { connected: wsConnected, startWs, updateSubscription, subscribeGlobal } = useChatWs((event, taskId, data) => {
+const { connected: wsConnected, startWs, subscribeGlobal } = useChatWs((event, _taskId, data) => {
   if (event === 'chat') {
     agentChat.handleWsMessage(event, data)
-  }
-  if (event === 'supplement') {
-    // 自己发的补充说明通过 HTTP 已处理
   }
 })
 
@@ -763,14 +989,8 @@ async function syncTodoFromBackend() {
 .content-layer { position: relative; z-index: 1; padding: 0 12px; }
 
 // Stats bar
-.stats-bar {
-  display: flex; align-items: center; justify-content: center; gap: 24px;
-  padding: 8px 0 4px;
-}
-.stat-item {
-  display: flex; align-items: center; gap: 8px;
-  position: relative;
-}
+.stats-bar { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 8px 0 4px; }
+.stat-item { display: flex; align-items: center; gap: 8px; }
 .stat-pulse {
   width: 8px; height: 8px; border-radius: 50%; background: #00E5FF;
   box-shadow: 0 0 8px #00E5FF; animation: pulse 2s ease-in-out infinite;
@@ -779,7 +999,6 @@ async function syncTodoFromBackend() {
 .stat-num { font-size: 24px; font-weight: 800; color: var(--cyber-text-primary); font-variant-numeric: tabular-nums; }
 .stat-label { font-size: 12px; color: var(--cyber-text-secondary); text-transform: uppercase; letter-spacing: 1px; }
 .stat-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.08); }
-
 @keyframes pulse { 0%,100%{ opacity:0.6; transform:scale(1); } 50%{ opacity:1; transform:scale(1.3); } }
 @keyframes pulse-red { 0%,100%{ opacity:0.5; transform:scale(1); } 50%{ opacity:1; transform:scale(1.5); } }
 
@@ -805,7 +1024,6 @@ async function syncTodoFromBackend() {
   margin: 0 auto;
   padding-bottom: 40px;
 }
-
 .panel {
   background: var(--cyber-glass-bg);
   border: 1px solid var(--cyber-glass-border);
@@ -815,12 +1033,10 @@ async function syncTodoFromBackend() {
   position: relative;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 240px);
+  min-height: 320px;
 }
-
 .todo-panel { border-color: var(--cyber-glass-border); }
 .dev-panel { border-color: rgba(255,125,0,0.2); }
-
 .todo-panel::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
   background: linear-gradient(90deg, transparent, #00E5FF, #00E5FF, transparent);
@@ -833,20 +1049,14 @@ async function syncTodoFromBackend() {
 }
 @keyframes scanLine { 0%{opacity:0.3} 50%{opacity:1} 100%{opacity:0.3} }
 
-.panel-header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-shrink: 0;
-}
+.panel-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-shrink: 0; }
 .panel-scroll {
-  flex: 1; overflow-y: auto; padding-right: 4px;
+  flex: 1; overflow-y: auto; min-height: 0;
   &::-webkit-scrollbar { width: 4px; }
   &::-webkit-scrollbar-track { background: transparent; }
   &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.15); border-radius: 4px; }
-  &::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.3); }
 }
-.panel-icon {
-  width: 28px; height: 28px; position: relative;
-  display: flex; align-items: center; justify-content: center;
-}
+.panel-icon { width: 28px; height: 28px; position: relative; display: flex; align-items: center; justify-content: center; }
 .icon-ring {
   position: absolute; inset: 0; border: 2px solid var(--cyber-cyan); border-radius: 50%;
   animation: ringPulse 2s ease-in-out infinite;
@@ -857,45 +1067,27 @@ async function syncTodoFromBackend() {
   &.dev-dot { background: #FF7D00; box-shadow: 0 0 10px #FF7D00; }
 }
 @keyframes ringPulse { 0%,100%{transform:scale(1);opacity:0.6} 50%{transform:scale(1.2);opacity:0.2} }
-
 .panel-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--cyber-text-primary); flex: 1; }
 .dev-title { color: var(--cyber-orange); }
-
 .engine-indicator {
-  display: flex; align-items: center; gap: 6px;
-  padding: 2px 10px; border-radius: 10px;
+  display: flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 10px;
   background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.2);
 }
 .engine-pulse { width: 6px; height: 6px; border-radius: 50%; background: #FF7D00; animation: pulse-red 1s ease-in-out infinite; }
 .engine-text { font-size: 10px; font-weight: 700; color: var(--cyber-orange); letter-spacing: 2px; }
 
-.panel-empty {
-  text-align: center; padding: 40px 0; color: var(--cyber-text-secondary);
-  p { margin: 12px 0 0; font-size: 14px; }
-}
-.empty-pulse {
-  width: 40px; height: 40px; margin: 0 auto; border-radius: 50%;
-  border: 2px solid rgba(102,126,234,0.2); animation: ringPulse 3s ease-in-out infinite;
-}
-.empty-engine {
-  width: 40px; height: 40px; margin: 0 auto; border-radius: 50%;
-  border: 2px solid rgba(255,107,107,0.15); background: rgba(255,107,107,0.03);
-}
+.panel-empty { text-align: center; padding: 40px 0; color: var(--cyber-text-secondary); p { margin: 12px 0 0; font-size: 14px; } }
+.empty-pulse { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; border: 2px solid rgba(102,126,234,0.2); animation: ringPulse 3s ease-in-out infinite; }
+.empty-engine { width: 40px; height: 40px; margin: 0 auto; border-radius: 50%; border: 2px solid rgba(255,107,107,0.15); background: rgba(255,107,107,0.03); }
 .dev-empty p { color: var(--cyber-text-muted); }
 
-// Group cards (inside todo panel)
+// Group cards
 .group-card {
-  background: var(--cyber-glass-bg);
-  border: 1px solid rgba(157,92,255,0.15);
-  border-radius: 10px;
-  margin-bottom: 10px;
-  overflow: hidden;
-  transition: border-color 0.3s;
+  background: var(--cyber-glass-bg); border: 1px solid rgba(157,92,255,0.15);
+  border-radius: 10px; margin-bottom: 10px; overflow: hidden; transition: border-color 0.3s;
   &:hover { border-color: rgba(157,92,255,0.35); }
 }
-.group-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; transition: background 0.2s;
-  &:hover { background: rgba(157,92,255,0.08); }
-}
+.group-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; transition: background 0.2s; &:hover { background: rgba(157,92,255,0.08); } }
 .group-left { display: flex; align-items: center; gap: 8px; }
 .group-arrow { color: var(--cyber-purple); font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
 .group-name { font-size: 14px; font-weight: 600; color: var(--cyber-text-primary); }
@@ -914,32 +1106,28 @@ async function syncTodoFromBackend() {
 .sub-body { flex: 1; min-width: 0; }
 .sub-top { display: flex; align-items: center; gap: 6px; }
 .sub-title { flex: 1; font-size: 12px; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub-desc { margin-top: 4px; font-size: 11px; color: var(--cyber-cyan); opacity: 0.8; cursor: pointer; display: flex; align-items: flex-start; gap: 4px;
-  span:first-child { flex: 1; line-height: 1.4; }
-  &:hover { opacity: 1; }
-}
+.sub-desc { margin-top: 4px; font-size: 11px; color: var(--cyber-cyan); opacity: 0.8; cursor: pointer; display: flex; align-items: flex-start; gap: 4px; span:first-child { flex: 1; line-height: 1.4; } &:hover { opacity: 1; } }
 .sub-desc-edit { font-size: 10px; opacity: 0.5; flex-shrink: 0; }
 .sub-desc-add { margin-top: 4px; font-size: 11px; color: var(--cyber-purple); cursor: pointer; opacity: 0.6; &:hover { opacity: 1; } }
 .sub-desc-editor { margin-top: 6px; }
 .sub-desc-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .sub-actions { display: flex; gap: 4px; flex-shrink: 0; margin-top: 2px; }
-
 .collapse-enter-active,.collapse-leave-active { transition: all 0.25s ease; overflow: hidden; }
 .collapse-enter-from,.collapse-leave-to { opacity: 0; max-height: 0; }
 .collapse-enter-to,.collapse-leave-from { max-height: 600px; }
 
 // Card list
-.card-list { display: flex; flex-direction: column; gap: 10px; }
+.card-list { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
 
 // Todo card
 .todo-card {
   position: relative; display: flex; align-items: stretch;
   background: var(--cyber-glass-bg); border: 1px solid var(--cyber-glass-border);
-  border-radius: 10px; transition: all 0.3s ease; cursor: grab; overflow: hidden;
+  border-radius: 10px; transition: border-color 0.3s ease, box-shadow 0.3s ease; cursor: grab;
   backdrop-filter: blur(2px);
-  &:hover { border-color: var(--cyber-glass-border-hover); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
-  &.dragging { opacity: 0.4; transform: scale(0.97); }
-  &.is-editing { cursor: default; }
+  &:hover { border-color: var(--cyber-glass-border-hover); box-shadow: 0 0 20px rgba(0,229,255,0.1); }
+  &.drag-source { opacity: 0.4; }
+  &.drag-over { border-color: var(--cyber-cyan); box-shadow: 0 0 16px rgba(0,229,255,0.3); }
 }
 .card-glow {
   position: absolute; inset: -1px; border-radius: 10px;
@@ -949,107 +1137,59 @@ async function syncTodoFromBackend() {
 .todo-card:hover .card-glow { opacity: 1; }
 @keyframes rotateGlow { to { --angle: 360deg; } }
 @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-
-.card-rank {
-  display: flex; align-items: center; justify-content: center; width: 40px; flex-shrink: 0;
-  font-size: 16px; font-weight: 800;
-  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: var(--cyber-cyan);
-  border-right: 1px solid var(--cyber-glass-border);
-}
+.card-rank { display: flex; align-items: center; justify-content: center; width: 40px; flex-shrink: 0; font-size: 16px; font-weight: 800; background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: var(--cyber-cyan); border-right: 1px solid var(--cyber-glass-border); }
 .card-body { flex: 1; padding: 12px 14px; min-width: 0; }
 .card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; .card-id { color: var(--cyber-text-secondary); font-size: 11px; margin-left: auto; } }
 .card-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--cyber-text-primary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--cyber-text-secondary); .overdue { color: #f56c6c; font-weight: 600; } }
-.card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: var(--cyber-cyan); opacity: 0.8;
-  .config-item { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: var(--cyber-cyan); opacity: 0.8; .config-item { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+.card-actions { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 4px; padding: 0 10px; border-left: 1px solid var(--cyber-glass-border);
+  :deep(.el-button) { width: 100%; text-align: center; margin-left: 0 !important; padding: 0 !important; }
+  :deep(.el-button + .el-button) { margin-left: 0 !important; }
 }
-.card-actions { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; padding: 0 10px; border-left: 1px solid var(--cyber-glass-border); }
-
-// Card desc preview (read-only in card)
-.card-desc-preview {
-  margin-top: 8px; padding: 5px 10px; border-radius: 6px;
-  background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border);
-  display: flex; align-items: flex-start; gap: 6px;
-}
+.card-desc-preview { margin-top: 8px; padding: 5px 10px; border-radius: 6px; background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border); display: flex; align-items: flex-start; gap: 6px; }
 .desc-label { font-size: 10px; color: var(--cyber-cyan); white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
-.desc-text { flex: 1; font-size: 11px; color: var(--cyber-text-muted); line-height: 1.4;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-// Card active state
-.todo-card.is-active { border-color: rgba(0,229,255,0.4); box-shadow: 0 0 20px rgba(0,229,255,0.15); }
-
-// ===== Config Modal =====
-.config-modal-mask {
-  position: fixed; inset: 0; z-index: 2000;
-  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-}
-.config-modal {
-  width: var(--dialog-lg); max-height: 80vh; border-radius: 14px; overflow: hidden;
-  background: var(--cyber-glass-bg-strong); border: 1px solid var(--cyber-glass-border);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
-  display: flex; flex-direction: column;
-  animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes modal-in {
-  from { opacity: 0; transform: scale(0.95) translateY(10px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-.config-modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 24px; border-bottom: 1px solid var(--cyber-glass-border);
-}
-.config-modal-title {
-  display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;
-}
-.config-modal-id { color: var(--cyber-text-secondary); font-size: 12px; }
-.config-modal-name {
-  font-size: 15px; font-weight: 600; color: var(--cyber-text-primary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.config-modal-close { font-size: 18px; color: var(--cyber-text-secondary); &:hover { color: var(--cyber-cyan); } }
-.config-modal-body {
-  flex: 1; overflow-y: auto; padding: 20px 24px;
-}
-.config-form :deep(.el-form-item__label) { font-weight: 500; }
-.config-field { font-size: 13px; color: var(--cyber-text-primary); padding: 6px 0; line-height: 1.5; }
-.doc-link { display: flex; align-items: center; justify-content: space-between; }
-.config-modal-footer {
-  padding: 16px 24px; border-top: 1px solid var(--cyber-glass-border);
-  display: flex; justify-content: flex-end; gap: 10px;
-}
-
-.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.2s ease; }
-.fade-mask-enter-from, .fade-mask-leave-to { opacity: 0; }
+.desc-text { flex: 1; font-size: 11px; color: var(--cyber-text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 // Dev card
 .dev-card {
   position: relative; display: flex; flex-direction: column;
   background: var(--cyber-glass-bg); border: 1px solid rgba(255,125,0,0.15);
   border-radius: 10px; overflow: hidden; transition: all 0.3s ease;
-  backdrop-filter: blur(2px);
   &:hover { border-color: rgba(255,125,0,0.35); box-shadow: 0 0 24px rgba(255,125,0,0.1); transform: translateY(-1px); }
 }
-.dev-card-inner {
-  display: flex; align-items: stretch; flex: 1;
-}
+.dev-card-inner { display: flex; align-items: stretch; flex: 1; }
 .dev-card-glow {
   position: absolute; inset: -1px; border-radius: 10px;
   background: conic-gradient(from var(--angle,0deg), transparent 60%, rgba(255,107,107,0.35), rgba(255,215,0,0.2), transparent 85%);
   animation: rotateGlow 4s linear infinite; z-index: -1; opacity: 0; transition: opacity 0.4s; pointer-events: none;
 }
 .dev-card:hover .dev-card-glow { opacity: 1; }
-
-.dev-status-bar {
-  width: 3px; flex-shrink: 0; position: relative; overflow: hidden;
-  background: rgba(255,107,107,0.15);
-}
-.dev-progress {
-  position: absolute; bottom: 0; left: 0; right: 0; height: 40%;
-  background: linear-gradient(180deg, #FF7D00, #ffd700);
-  animation: progressGrow 3s ease-in-out infinite alternate;
-}
+.dev-status-bar { width: 3px; flex-shrink: 0; position: relative; overflow: hidden; background: rgba(255,107,107,0.15); }
+.dev-progress { position: absolute; bottom: 0; left: 0; right: 0; height: 40%; background: linear-gradient(180deg, #FF7D00, #ffd700); animation: progressGrow 3s ease-in-out infinite alternate; }
 @keyframes progressGrow { 0%{height:20%;opacity:0.6} 100%{height:80%;opacity:1} }
+
+// Wake Bar
+.wake-bar { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 8px; padding: 8px 16px; border-radius: 10px; background: rgba(0,229,255,0.04); border: 1px solid rgba(0,229,255,0.12); }
+.wake-btn-sm { border-radius: 8px; background: linear-gradient(135deg, #00E5FF, #9D5CFF); border: none; box-shadow: 0 0 16px rgba(0,229,255,0.2); transition: box-shadow 0.3s, transform 0.2s; &:hover { box-shadow: 0 0 24px rgba(0,229,255,0.35); transform: translateY(-1px); } }
+.wake-hint { font-size: 13px; color: var(--cyber-text-secondary); }
+
+// Config Modal
+.config-modal-mask { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.45); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
+.config-modal { width: var(--dialog-lg); max-height: 80vh; border-radius: 14px; overflow: hidden; background: var(--cyber-glass-bg-strong); border: 1px solid var(--cyber-glass-border); box-shadow: 0 8px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; animation: modal-in 0.25s cubic-bezier(0.16,1,0.3,1); }
+@keyframes modal-in { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.config-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--cyber-glass-border); }
+.config-modal-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.config-modal-id { color: var(--cyber-text-secondary); font-size: 12px; }
+.config-modal-name { font-size: 15px; font-weight: 600; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.config-modal-close { font-size: 18px; color: var(--cyber-text-secondary); &:hover { color: var(--cyber-cyan); } }
+.config-modal-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.config-form :deep(.el-form-item__label) { font-weight: 500; }
+.config-field { font-size: 13px; color: var(--cyber-text-primary); padding: 6px 0; line-height: 1.5; }
+.doc-link { display: flex; align-items: center; justify-content: space-between; }
+.config-modal-footer { padding: 16px 24px; border-top: 1px solid var(--cyber-glass-border); display: flex; justify-content: flex-end; gap: 10px; }
+.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.2s ease; }
+.fade-mask-enter-from, .fade-mask-leave-to { opacity: 0; }
 
 // Transitions
 .card-enter-active { transition: all 0.4s ease; }
@@ -1058,263 +1198,236 @@ async function syncTodoFromBackend() {
 .card-leave-to { opacity: 0; transform: translateX(-30px); }
 .card-move { transition: transform 0.35s ease; }
 
-// Dev log section
-.dev-log-section {
-  border-top: 1px solid rgba(255,125,0,0.12);
-  background: rgba(255,125,0,0.03);
-}
-.dev-log-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 14px 4px;
-}
-.dev-log-title {
-  font-size: 11px; font-weight: 600; color: rgba(255,125,0,0.7);
-  text-transform: uppercase; letter-spacing: 1px;
-}
-.dev-log-count {
-  font-size: 10px; color: rgba(255,125,0,0.5); background: rgba(255,125,0,0.1);
-  padding: 1px 6px; border-radius: 8px;
-}
-.dev-log-list { padding: 0 14px 10px; }
-.dev-log-item {
-  display: flex; gap: 8px; padding: 5px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-  &:last-child { border-bottom: none; }
-}
-.log-indicator {
-  width: 3px; border-radius: 2px; flex-shrink: 0; margin-top: 3px;
-  background: rgba(255,125,0,0.5); min-height: 20px;
-  &.开发 { background: rgba(0,229,255,0.5); }
-  &.调试 { background: rgba(229,162,27,0.5); }
-  &.重构 { background: rgba(157,92,255,0.5); }
-  &.自测 { background: rgba(46,184,92,0.5); }
-  &.异常 { background: rgba(245,108,108,0.5); }
-  &.暂停 { background: rgba(144,147,153,0.5); }
-}
-.log-body { flex: 1; min-width: 0; }
-.log-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.log-action {
-  font-size: 10px; font-weight: 600; color: rgba(255,125,0,0.8);
-  background: rgba(255,125,0,0.08); padding: 1px 5px; border-radius: 3px;
-}
-.log-time { font-size: 10px; color: rgba(140,140,161,0.5); font-family: 'Courier New', monospace; }
-.log-content {
-  font-size: 11px; color: rgba(207,211,220,0.8); line-height: 1.4;
-  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
-  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-}
-.log-more {
-  text-align: center; font-size: 10px; color: rgba(140,140,161,0.4);
-  padding: 4px 0 2px; font-style: italic;
-}
-
-// ========== 聊天终端 Modal ==========
-.chat-modal-mask {
-  position: fixed; inset: 0; z-index: 2000;
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
-  display: flex; align-items: center; justify-content: center;
-}
-.chat-terminal {
-  position: relative; width: var(--chat-terminal-width); max-height: 80vh; border-radius: 16px; overflow: hidden;
-  background: rgba(10,16,31,0.96); border: 1px solid var(--cyber-glass-border-hover);
-  box-shadow: 0 0 60px rgba(0,229,255,0.12), 0 0 120px rgba(157,92,255,0.06);
-  display: flex; flex-direction: column; animation: terminal-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.terminal-rain {
-  position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.5;
-}
-@keyframes terminal-in {
-  from { opacity: 0; transform: scale(0.92) translateY(20px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-.terminal-header {
-  position: relative; z-index: 1; padding: 14px 20px;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--cyber-glass-border);
-  background: linear-gradient(180deg, rgba(0,229,255,0.04), transparent);
-}
-.terminal-title-area {
-  display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;
-}
-.terminal-status-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #FF7D00; flex-shrink: 0;
-  box-shadow: 0 0 8px #FF7D00; animation: pulse 1.5s ease-in-out infinite;
-}
-.terminal-task-name {
-  font-size: 14px; font-weight: 600; color: var(--cyber-text-primary);
-  max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.terminal-tag { flex-shrink: 0; }
-.terminal-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.terminal-link { color: rgba(0,229,255,0.6); &:hover { color: var(--cyber-cyan); } }
-.terminal-close { font-size: 16px; color: var(--cyber-text-secondary); &:hover { color: var(--cyber-cyan); } }
-
-.terminal-messages {
-  position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 16px 20px;
-  min-height: 300px; max-height: 50vh;
-  display: flex; flex-direction: column; gap: 10px;
-  &::-webkit-scrollbar { width: 3px; }
-  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.15); border-radius: 3px; }
-}
-.chat-empty {
-  text-align: center; padding: 50px 0;
-  .empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
-  p { font-size: 14px; color: var(--cyber-text-primary); margin: 0 0 6px; }
-  span { font-size: 12px; color: rgba(140,140,161,0.4); }
-}
-.chat-bubble {
-  max-width: 85%; padding: 10px 14px; border-radius: 12px;
-  font-size: 12px; line-height: 1.6; position: relative;
-  animation: bubble-in 0.25s ease-out;
-}
-.bubble-user {
-  align-self: flex-end;
-  background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border-hover);
-  border-bottom-right-radius: 3px;
-}
-.bubble-agent {
-  align-self: flex-start;
-  background: rgba(157,92,255,0.08); border: 1px solid rgba(157,92,255,0.15);
-  border-bottom-left-radius: 3px;
-}
-.bubble-reply {
-  align-self: flex-start;
-  background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border-hover);
-  border-bottom-left-radius: 3px;
-  .bubble-role { color: rgba(0,229,255,0.85) !important; }
-}
-.bubble-waiting {
-  align-self: flex-start;
-  background: rgba(157,92,255,0.06); border: 1px solid rgba(157,92,255,0.12);
-  border-bottom-left-radius: 3px;
-}
-.bubble-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.bubble-role {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
-  .bubble-user & { color: rgba(0,229,255,0.7); }
-  .bubble-agent & { color: rgba(157,92,255,0.7); }
-  .bubble-waiting & { color: rgba(157,92,255,0.6); }
-}
-.bubble-time { font-size: 9px; color: rgba(140,140,161,0.4); font-family: 'Courier New', monospace; }
-.bubble-content { color: rgba(207,211,220,0.85); word-break: break-word; white-space: pre-wrap; }
-.bubble-unread {
-  position: absolute; top: 6px; right: 8px;
-  font-size: 9px; color: rgba(245,108,108,0.7);
-  background: rgba(245,108,108,0.08); padding: 1px 5px; border-radius: 6px;
-}
-@keyframes bubble-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-// Loading 等待动画
-.waiting-dots {
-  display: flex; gap: 5px; padding: 4px 0;
-  .dot {
-    width: 7px; height: 7px; border-radius: 50%; background: rgba(157,92,255,0.5);
-    animation: dotBounce 1.4s ease-in-out infinite;
-    &:nth-child(2) { animation-delay: 0.15s; }
-    &:nth-child(3) { animation-delay: 0.3s; }
-  }
-}
-@keyframes dotBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
-  30% { transform: translateY(-8px); opacity: 1; }
-}
-.terminal-input {
-  position: relative; z-index: 1; padding: 14px 20px; border-top: 1px solid var(--cyber-glass-border);
-  background: rgba(0,15,30,0.5); position: relative;
-  &.drag-over { border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.04); }
-  :deep(.el-textarea__inner) {
-    background: rgba(0,20,40,0.6) !important;
-    border-color: var(--cyber-glass-border) !important;
-    color: var(--cyber-text-muted) !important; font-size: 12px;
-    &:focus { border-color: rgba(0,229,255,0.3) !important; }
-  }
-}
-.drop-overlay {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: var(--cyber-glass-border); color: var(--cyber-cyan); font-size: 13px; z-index: 1;
-  border: 2px dashed rgba(0,229,255,0.3); border-radius: 6px; margin: 6px;
-}
-.terminal-input-actions {
-  display: flex; align-items: center; justify-content: space-between; margin-top: 8px;
-}
-.input-hint { font-size: 10px; color: rgba(140,140,161,0.3); }
-
-// Manual task tag
-.manual-tag {
-  border-color: rgba(46,184,92,0.3) !important;
-  color: rgba(46,184,92,0.8) !important;
-  background: rgba(46,184,92,0.06) !important;
-}
-
 // Responsive
-@media (max-width: 900px) {
-  .dual-panel { grid-template-columns: 1fr; }
+@media (max-width: 900px) { .dual-panel { grid-template-columns: 1fr; } }
+
+// ========================================
+// 全屏会话聊天面板
+// ========================================
+.fullscreen-chat-mask {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
+  animation: fc-mask-in 0.2s ease;
+}
+@keyframes fc-mask-in { from { opacity: 0; } to { opacity: 1; } }
+
+.fullscreen-chat {
+  position: absolute; inset: 20px;
+  background: var(--cyber-glass-bg-strong);
+  border: 1px solid var(--cyber-glass-border);
+  border-radius: 16px; overflow: hidden;
+  display: flex;
+  box-shadow: 0 0 80px rgba(0,229,255,0.06), 0 0 200px rgba(157,92,255,0.03);
+  animation: fc-panel-in 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes fc-panel-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+
+// 左侧：会话列表
+.fc-sidebar {
+  border-right: 1px solid var(--cyber-glass-border);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+  background: rgba(128,128,128,0.06);
+}
+.fc-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 16px 14px;
+  h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--cyber-text-primary); }
+}
+.fc-sidebar-count {
+  font-size: 11px; background: rgba(0,229,255,0.08); color: var(--cyber-cyan);
+  padding: 2px 10px; border-radius: 10px; border: 1px solid rgba(0,229,255,0.12);
+}
+.fc-sidebar-list {
+  flex: 1; overflow-y: auto; padding: 0 8px 8px;
+  &::-webkit-scrollbar { width: 3px; }
+  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.08); border-radius: 3px; }
+}
+.fc-sidebar-group { margin-bottom: 8px; }
+.fc-group-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--cyber-text-muted); padding: 8px 10px 4px; user-select: none;
+}
+.fc-mini-tag { font-size: 9px !important; padding: 0 4px !important; height: 14px !important; line-height: 14px !important; }
+
+.fc-contact {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px; border-radius: 10px; cursor: pointer;
+  transition: all 0.2s; margin-bottom: 2px;
+  border: 1px solid transparent;
+  &:hover { background: rgba(0,229,255,0.04); }
+  &.active { background: rgba(0,229,255,0.06); border-color: rgba(0,229,255,0.15); }
+}
+.fc-contact-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  &.dot-dev { background: #FF7D00; box-shadow: 0 0 8px rgba(255,125,0,0.5); animation: pulse-red 1.5s ease-in-out infinite; }
+  &.dot-done { background: #67c23a; box-shadow: 0 0 4px rgba(103,194,58,0.3); }
+}
+.fc-contact-info { flex: 1; min-width: 0; }
+.fc-contact-name { font-size: 13px; font-weight: 500; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-contact-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--cyber-text-secondary); }
+.fc-sidebar-empty { text-align: center; padding: 40px 12px; font-size: 13px; color: var(--cyber-text-muted); }
+
+// 拖拽分隔条
+.fc-resizer {
+  width: 4px; cursor: col-resize; flex-shrink: 0;
+  background: var(--cyber-glass-border); transition: background 0.2s;
+  &:hover { background: var(--cyber-cyan); }
 }
 
-// ===== Wake Bar =====
-.wake-bar {
-  display: flex; align-items: center; justify-content: center; gap: 14px;
-  margin-top: 8px; padding: 8px 16px; border-radius: 10px;
-  background: rgba(0,229,255,0.04); border: 1px solid rgba(0,229,255,0.12);
+// 右侧：聊天主区域
+.fc-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
 }
-.wake-btn-sm {
-  border-radius: 8px;
-  background: linear-gradient(135deg, #00E5FF, #9D5CFF); border: none;
-  box-shadow: 0 0 16px rgba(0,229,255,0.2);
-  transition: box-shadow 0.3s, transform 0.2s;
-  &:hover { box-shadow: 0 0 24px rgba(0,229,255,0.35); transform: translateY(-1px); }
-}
-.wake-hint { font-size: 13px; color: var(--cyber-text-secondary); }
 
-// ===== Chat Panel =====
-.chat-panel {
-  max-width: var(--container-sm); margin: 0 auto;
-  display: flex; flex-direction: column; height: calc(100vh - 220px);
-  background: rgba(10,16,31,0.2); border: 1px solid var(--cyber-glass-border);
-  border-radius: 14px; overflow: hidden;
+// 聊天头部
+.fc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px; border-bottom: 1px solid var(--cyber-glass-border); flex-shrink: 0;
+  background: rgba(128,128,128,0.04);
 }
-.chat-messages {
-  flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px;
+.fc-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+.fc-header-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  &.priority-urgent { background: #f56c6c; box-shadow: 0 0 6px #f56c6c; }
+  &.priority-high { background: #e6a23c; box-shadow: 0 0 6px #e6a23c; }
+  &.priority-medium { background: #409eff; }
+  &.priority-low { background: #67c23a; }
 }
-.chat-empty-state {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--cyber-text-secondary);
-  .chat-empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
-  p { font-size: 16px; font-weight: 600; color: var(--cyber-text-primary); margin: 0 0 4px; }
-  span { font-size: 12px; }
+.fc-header-info { min-width: 0; flex: 1;
+  h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
-.chat-bubble-item {
-  display: flex; gap: 10px; max-width: 85%;
-  &.cb-user { align-self: flex-end; flex-direction: row-reverse; }
-  &.cb-agent { align-self: flex-start; }
+.fc-header-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.fc-task-id { font-size: 11px; color: var(--cyber-text-secondary); font-family: 'Cascadia Code', Consolas, monospace; }
+.fc-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.fc-close-btn {
+  width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--cyber-glass-border);
+  background: transparent; color: var(--cyber-text-secondary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+  &:hover { background: rgba(245,108,108,0.08); border-color: rgba(245,108,108,0.3); color: #f56c6c; }
 }
-.cb-role {
-  width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  font-size: 16px; flex-shrink: 0;
-  .cb-user & { background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border-hover); }
-  .cb-agent & { background: rgba(157,92,255,0.12); border: 1px solid rgba(157,92,255,0.2); }
+
+// 消息流
+.fc-messages {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 14px;
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.08); border-radius: 4px; }
 }
-.cb-content {
-  padding: 10px 14px; border-radius: 12px; line-height: 1.5;
-  .cb-user & { background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border); }
-  .cb-agent & { background: rgba(157,92,255,0.06); border: 1px solid rgba(157,92,255,0.12); }
+.fc-loading {
+  display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 60px 0;
+  color: var(--cyber-text-muted); font-size: 13px;
 }
-.cb-text { font-size: 13px; color: var(--cyber-text-primary); white-space: pre-wrap; word-break: break-word; }
-.cb-time { font-size: 10px; color: var(--cyber-text-secondary); margin-top: 4px; }
-.cb-typing {
-  display: flex; gap: 4px; padding: 4px 0;
-  span {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--cyber-purple);
-    animation: typingBounce 1.2s ease-in-out infinite;
-    &:nth-child(2) { animation-delay: 0.2s; }
-    &:nth-child(3) { animation-delay: 0.4s; }
+.fc-loading-spinner {
+  width: 24px; height: 24px; border: 2px solid var(--cyber-glass-border);
+  border-top-color: var(--cyber-cyan); border-radius: 50%;
+  animation: fc-spin 0.8s linear infinite;
+}
+@keyframes fc-spin { to { transform: rotate(360deg); } }
+
+.fc-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  .fc-empty-icon { opacity: 0.4; margin-bottom: 8px; }
+  p { font-size: 14px; color: var(--cyber-text-primary); margin: 0; }
+  span { font-size: 12px; color: var(--cyber-text-muted); }
+}
+
+// 消息
+.fc-msg {
+  display: flex; gap: 10px; max-width: 80%;
+  &.user { align-self: flex-end; flex-direction: row-reverse; }
+  &.agent { align-self: flex-start; }
+  &.system { align-self: center; max-width: 65%; }
+}
+.fc-msg-avatar {
+  width: 34px; height: 34px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; flex-shrink: 0; letter-spacing: 0.5px;
+  &.user { background: linear-gradient(135deg, rgba(0,229,255,0.12), rgba(0,229,255,0.04)); border: 1px solid rgba(0,229,255,0.2); color: var(--cyber-cyan); }
+  &.agent { background: linear-gradient(135deg, rgba(157,92,255,0.12), rgba(157,92,255,0.04)); border: 1px solid rgba(157,92,255,0.2); color: var(--cyber-purple); }
+  &.system { background: rgba(255,255,255,0.04); border: 1px solid var(--cyber-glass-border); color: var(--cyber-text-muted); }
+}
+.fc-msg-body { min-width: 0; flex: 1; }
+.fc-msg-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.fc-msg-role { font-size: 11px; font-weight: 600; color: var(--cyber-text-secondary); }
+.fc-msg-time { font-size: 10px; color: var(--cyber-text-muted); margin-left: auto; font-family: 'Cascadia Code', Consolas, monospace; }
+.fc-badge {
+  font-size: 10px; padding: 1px 8px; border-radius: 6px; font-weight: 600;
+  &.plan { background: rgba(0,229,255,0.1); color: var(--cyber-cyan); border: 1px solid rgba(0,229,255,0.15); }
+  &.done { background: rgba(46,184,92,0.1); color: #67c23a; border: 1px solid rgba(46,184,92,0.15); }
+  &.question { background: rgba(245,108,108,0.1); color: #f56c6c; border: 1px solid rgba(245,108,108,0.15); }
+  &.progress { background: rgba(157,92,255,0.1); color: var(--cyber-purple); border: 1px solid rgba(157,92,255,0.15); }
+}
+.fc-msg-bubble {
+  padding: 12px 16px; border-radius: 14px; font-size: 13px; line-height: 1.7;
+  word-break: break-word; white-space: pre-wrap;
+  &.user {
+    background: linear-gradient(135deg, rgba(0,229,255,0.08), rgba(0,229,255,0.03));
+    border: 1px solid rgba(0,229,255,0.12); border-top-right-radius: 4px;
   }
+  &.agent {
+    background: linear-gradient(135deg, rgba(157,92,255,0.08), rgba(157,92,255,0.03));
+    border: 1px solid rgba(157,92,255,0.12); border-top-left-radius: 4px;
+  }
+  &.system {
+    background: rgba(255,255,255,0.02); border: 1px solid var(--cyber-glass-border); border-radius: 10px;
+  }
+  &.plan { border-color: rgba(0,229,255,0.25); background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(0,229,255,0.03)); }
+  &.completion { border-color: rgba(46,184,92,0.25); background: linear-gradient(135deg, rgba(46,184,92,0.1), rgba(46,184,92,0.03)); }
+  &.question { border-color: rgba(245,108,108,0.25); background: linear-gradient(135deg, rgba(245,108,108,0.1), rgba(245,108,108,0.03)); }
+  p { color: var(--cyber-text-primary); margin: 0; }
+  &.system p { color: var(--cyber-text-secondary); font-size: 12px; }
 }
-@keyframes typingBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
-.chat-input-bar {
-  display: flex; gap: 10px; padding: 14px 16px;
+
+// 快捷操作
+.fc-actions {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border-top: 1px solid var(--cyber-glass-border);
+  flex-wrap: wrap; flex-shrink: 0; background: rgba(128,128,128,0.04);
+}
+.fc-actions-hint { font-size: 12px; color: var(--cyber-cyan); opacity: 0.7; }
+
+// 输入区域
+.fc-input-area {
+  display: flex; flex-direction: column; flex-shrink: 0;
   border-top: 1px solid var(--cyber-glass-border);
-  background: rgba(10,16,31,0.4);
+  background: rgba(128,128,128,0.04);
 }
+.fc-input-resizer {
+  height: 4px; cursor: row-resize; flex-shrink: 0;
+  background: transparent; transition: background 0.2s;
+  &:hover { background: var(--cyber-cyan); }
+}
+.fc-input-inner {
+  flex: 1; display: flex; flex-direction: column; padding: 0 24px 12px;
+  min-height: 0;
+}
+.fc-textarea {
+  flex: 1; width: 100%; resize: none; border: none; outline: none;
+  background: transparent; color: var(--cyber-text-primary);
+  font-size: 13px; line-height: 1.6; font-family: inherit;
+  padding: 8px 0;
+  &::placeholder { color: var(--cyber-text-muted); }
+}
+.fc-input-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; padding-top: 4px;
+}
+.fc-input-hint { font-size: 11px; color: var(--cyber-text-muted); }
+.fc-send-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 18px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #00E5FF, #9D5CFF);
+  color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s; box-shadow: 0 2px 12px rgba(0,229,255,0.15);
+  &:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,255,0.25); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+}
+
+// Fullscreen chat transition
+.fullscreen-chat-enter-active { transition: all 0.25s ease; }
+.fullscreen-chat-leave-active { transition: all 0.2s ease; }
+.fullscreen-chat-enter-from, .fullscreen-chat-leave-to { opacity: 0; }
+.fullscreen-chat-enter-from .fullscreen-chat { transform: scale(0.96); }
+.fullscreen-chat-leave-to .fullscreen-chat { transform: scale(0.97); }
 </style>

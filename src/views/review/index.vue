@@ -431,7 +431,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 }
 
 .empty-text { font-size: 16px; font-weight: 600; color: var(--cyber-text-primary); }
-.empty-hint { margin-top: 8px; font-size: 12px; color: #606266; }
+.empty-hint { margin-top: 8px; font-size: 12px; color: var(--cyber-text-muted); }
 
 .card-list {
   display: flex;
@@ -444,8 +444,8 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 
 .review-card {
   position: relative;
-  background: rgba(10, 10, 30, 0.55);
-  border: 1px solid rgba(0, 229, 160, 0.15);
+  background: var(--cyber-glass-bg);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 14px;
   backdrop-filter: blur(14px);
   padding: 20px 24px;
@@ -453,8 +453,8 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   transition: all 0.3s ease;
 
   &:hover {
-    border-color: rgba(0, 229, 160, 0.4);
-    box-shadow: 0 0 24px rgba(0, 229, 160, 0.1), 0 0 60px rgba(255, 215, 0, 0.04);
+    border-color: rgba(0, 229, 255, 0.4);
+    box-shadow: 0 0 24px rgba(0, 229, 255, 0.1);
     transform: translateY(-2px);
   }
 }
@@ -463,7 +463,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   position: absolute;
   inset: -1px;
   border-radius: 14px;
-  background: conic-gradient(from var(--angle, 0deg), transparent 70%, rgba(0, 229, 160, 0.35), rgba(255, 215, 0, 0.25), transparent 90%);
+  background: conic-gradient(from var(--angle, 0deg), transparent 70%, rgba(0,229,255,0.35), rgba(157,92,255,0.25), transparent 90%);
   animation: rotateGlow 6s linear infinite;
   z-index: -1;
   opacity: 0;
@@ -529,7 +529,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 .card-report {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--cyber-glass-border);
 }
 
 .report-label {
@@ -554,7 +554,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   width: 100px;
   height: 70px;
   border-radius: 6px;
-  border: 1px solid rgba(0, 229, 160, 0.2);
+  border: 1px solid var(--cyber-glass-border);
   cursor: pointer;
   object-fit: cover;
 }
@@ -590,7 +590,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 
 .file-more {
   font-size: 11px;
-  color: #606266;
+  color: var(--cyber-text-muted);
 }
 
 .card-test {
@@ -619,7 +619,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   gap: 10px;
   margin-top: 16px;
   padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--cyber-glass-border);
 }
 
 .card-enter-active { transition: all 0.4s ease; }

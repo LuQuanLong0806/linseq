@@ -19,7 +19,6 @@ declare module 'vue' {
     ChatMsgStatus: typeof import('./components/chat/ChatMsgStatus.vue')['default']
     ChatMsgText: typeof import('./components/chat/ChatMsgText.vue')['default']
     ElAside: typeof import('element-plus/es')['ElAside']
-    ElBadge: typeof import('element-plus/es')['ElBadge']
     ElBreadcrumb: typeof import('element-plus/es')['ElBreadcrumb']
     ElBreadcrumbItem: typeof import('element-plus/es')['ElBreadcrumbItem']
     ElButton: typeof import('element-plus/es')['ElButton']

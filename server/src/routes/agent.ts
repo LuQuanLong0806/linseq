@@ -1210,8 +1210,10 @@ router.post('/task/:id/report', async (req, res) => {
     const mergedMetadata: Record<string, unknown> = { level: reportLevel, ...reqMetadata }
 
     // ===== 1. 更新任务状态 =====
-    if (aiStatus) {
-      switch (aiStatus) {
+    // question action 自动更新为 ai_question
+    const effectiveAiStatus = reportAction === 'question' ? 'ai_question' : aiStatus
+    if (effectiveAiStatus) {
+      switch (effectiveAiStatus) {
         case 'ai_dev':
           db.prepare("UPDATE tasks SET ai_status = 'ai_dev', update_time = datetime('now', 'localtime') WHERE id = ?").run(id)
           break
@@ -1249,9 +1251,9 @@ router.post('/task/:id/report', async (req, res) => {
       }
       insertChatLog(db, req.userId, activeSession.id, 'agent', chatType, content, id, mergedMetadata)
       // 状态变更额外推送一条系统消息
-      if (aiStatus) {
-        const statusText = aiStatus === 'ai_dev' ? 'Agent 开始开发'
-          : aiStatus === 'ai_review' ? 'Agent 提交审核'
+      if (effectiveAiStatus) {
+        const statusText = effectiveAiStatus === 'ai_dev' ? 'Agent 开始开发'
+          : effectiveAiStatus === 'ai_review' ? 'Agent 提交审核'
           : aiStatus === 'ai_question' ? 'Agent 提出疑问'
           : ''
         if (statusText) {
