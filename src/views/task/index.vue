@@ -96,11 +96,11 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="45" fixed="left" />
-        <el-table-column prop="sourceId" label="单号" min-width="100" />
+        <el-table-column prop="sourceId" label="单号" width="90" />
         <el-table-column
           prop="project"
           label="项目名称"
-          min-width="200"
+          min-width="140"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -110,7 +110,7 @@
         <el-table-column
           prop="customDescription"
           label="任务简述"
-          min-width="240"
+          min-width="180"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -119,7 +119,7 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="AI开发状态" min-width="110">
+        <el-table-column prop="status" label="AI开发状态" width="100">
           <template #default="{ row }">
             <el-tag
               v-if="row.aiStatus"
@@ -134,10 +134,10 @@
         <el-table-column
           prop="module"
           label="模块"
-          min-width="140"
+          min-width="100"
           show-overflow-tooltip
         />
-        <el-table-column prop="priority" label="优先级" min-width="90">
+        <el-table-column prop="priority" label="优先级" width="80">
           <template #default="{ row }">
             <el-tag :type="getPriorityType(row.priority)" size="small">{{
               getPriorityLabel(row.priority)
@@ -145,12 +145,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="workHours" label="计划小时" min-width="90" sortable>
+        <el-table-column prop="workHours" label="计划小时" width="75" sortable>
           <template #default="{ row }">
             <span>{{ row.workHours || 0 }}h</span>
           </template>
         </el-table-column>
-        <el-table-column prop="staleDays" label="滞留天数" min-width="90" sortable>
+        <el-table-column prop="staleDays" label="滞留天数" width="80" sortable>
           <template #default="{ row }">
             <span
               :class="{
@@ -161,14 +161,14 @@
             >
           </template>
         </el-table-column>
-        <el-table-column prop="deadline" label="截止时间" min-width="100" sortable>
+        <el-table-column prop="deadline" label="截止时间" width="95" sortable>
           <template #default="{ row }">
             <span :class="{ 'overdue-text': isOverdue(row) }">{{
               formatDate(row.deadline)
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="200" :fixed="'right'">
+        <el-table-column label="操作" width="240" :fixed="'right'">
           <template #default="{ row }">
             <div class="ops">
               <span class="op" @click.stop="$router.push(`/tasks/${row.id}`)">
@@ -234,124 +234,118 @@
       <div v-if="!holoHasMore && taskStore.tasks.length > 0" class="holo-loading">已加载全部</div>
     </div>
 
-    <!-- 右侧抽屉配置面板 -->
-    <Transition name="fade-mask">
-      <div v-if="drawerOpen" class="drawer-mask" @click="drawerOpen = false"></div>
-    </Transition>
-    <Transition name="drawer-slide">
-      <div v-if="drawerOpen" class="task-drawer" @click.stop>
-        <div class="drawer-header">
-          <div class="drawer-title-area">
-            <template v-if="isBatchMode">
-              <el-tag type="info" size="small">已选 {{ activeSelected.length }} 项</el-tag>
-              <span class="drawer-batch-name">{{ batchProjectName }}</span>
-            </template>
-            <template v-else-if="currentEditTask">
-              <el-tag :type="getPriorityType(currentEditTask.priority)" size="small">{{ getPriorityLabel(currentEditTask.priority) }}</el-tag>
-              <span class="drawer-id">#{{ currentEditTask.sourceId }}</span>
-            </template>
-          </div>
-          <el-button link size="small" @click="drawerOpen = false" class="drawer-close">✕</el-button>
-        </div>
-        <h3 v-if="currentEditTask && !isBatchMode" class="drawer-task-title">{{ currentEditTask.title }}</h3>
+    <!-- 配置弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade-mask">
+        <div v-if="drawerOpen" class="config-modal-mask" @click.self="drawerOpen = false">
+          <div class="config-modal">
+            <div class="config-modal-header">
+              <div class="config-modal-title">
+                <template v-if="isBatchMode">
+                  <el-tag type="info" size="small">已选 {{ activeSelected.length }} 项</el-tag>
+                  <span class="config-modal-batch">{{ batchProjectName }}</span>
+                </template>
+                <template v-else-if="currentEditTask">
+                  <el-tag :type="getPriorityType(currentEditTask.priority)" size="small">{{ getPriorityLabel(currentEditTask.priority) }}</el-tag>
+                  <span class="config-modal-id">#{{ currentEditTask.sourceId }}</span>
+                  <span class="config-modal-name">{{ currentEditTask.title }}</span>
+                </template>
+              </div>
+              <el-button link size="small" @click="drawerOpen = false" class="config-modal-close">✕</el-button>
+            </div>
 
-        <el-form label-width="80px" label-position="top" class="drawer-form">
-          <el-form-item v-if="currentEditTask && !isBatchMode" label="项目名称">
-            <div class="drawer-field">{{ currentEditTask.project || currentEditTask.customer || '-' }}</div>
-          </el-form-item>
-          <el-form-item label="项目配置">
-            <el-select
-              v-model="selectedProjectName"
-              placeholder="选择项目自动填充路径和分支"
-              clearable
-              filterable
-              style="width:100%"
-              @change="handleProjectSelect"
-            >
-              <el-option
-                v-for="p in projectConfigs"
-                :key="p.id"
-                :label="p.name"
-                :value="p.name"
-              >
-                <span>{{ p.name }}</span>
-                <span style="float:right;color:#909399;font-size:12px">{{ p.localPath || '未配置路径' }}</span>
-              </el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="本地项目路径">
-            <el-input v-model="projectForm.projectPath" placeholder="例: F:/projects/my-project" clearable />
-          </el-form-item>
-          <el-form-item label="Git 分支">
-            <el-select v-model="projectForm.gitBranch" placeholder="选择或输入分支" clearable filterable allow-create style="width:100%">
-              <el-option v-for="b in selectedProjectBranches" :key="b" :label="b" :value="b" />
-            </el-select>
-          </el-form-item>
-          <el-form-item v-if="!isBatchMode" label="需求文件路径">
-            <el-input v-model="projectForm.taskPageUrl" placeholder="如 src/views/login/index.vue" clearable />
-          </el-form-item>
-          <el-form-item v-if="!isBatchMode" label="补充说明">
-            <el-input v-model="projectForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明..." resize="none" />
-          </el-form-item>
-        </el-form>
+            <div class="config-modal-body">
+              <el-form label-width="80px" label-position="top" class="config-form">
+                <el-form-item v-if="currentEditTask && !isBatchMode" label="项目名称">
+                  <div class="config-field">{{ currentEditTask.project || currentEditTask.customer || '-' }}</div>
+                </el-form-item>
+                <el-form-item label="项目配置">
+                  <el-select
+                    v-model="selectedProjectName"
+                    placeholder="选择项目自动填充路径和分支"
+                    clearable
+                    filterable
+                    style="width:100%"
+                    @change="handleProjectSelect"
+                  >
+                    <el-option
+                      v-for="p in projectConfigs"
+                      :key="p.id"
+                      :label="p.name"
+                      :value="p.name"
+                    >
+                      <span>{{ p.name }}</span>
+                      <span style="float:right;color:var(--cyber-text-muted);font-size:12px">{{ p.localPath || '未配置路径' }}</span>
+                    </el-option>
+                  </el-select>
+                </el-form-item>
+                <el-row :gutter="16">
+                  <el-col :span="12">
+                    <el-form-item label="本地项目路径">
+                      <el-input v-model="projectForm.projectPath" placeholder="例: F:/projects/my-project" clearable />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="Git 分支">
+                      <el-select v-model="projectForm.gitBranch" placeholder="选择或输入分支" clearable filterable allow-create style="width:100%">
+                        <el-option v-for="b in selectedProjectBranches" :key="b" :label="b" :value="b" />
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <el-form-item v-if="!isBatchMode" label="需求文件路径">
+                  <el-input v-model="projectForm.taskPageUrl" placeholder="如 src/views/login/index.vue" clearable />
+                </el-form-item>
+                <el-form-item v-if="!isBatchMode" label="补充说明">
+                  <el-input v-model="projectForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明..." resize="none" />
+                </el-form-item>
+              </el-form>
 
-        <!-- 需求文档 -->
-        <div v-if="currentEditTask && !isBatchMode" class="req-doc-section">
-          <div class="req-doc-header">
-            <span class="req-doc-title">需求文档</span>
-            <div class="req-doc-actions">
-              <a
-                v-if="currentEditTask.reqDocUrl"
-                :href="`/api/sync/req-doc?url=${encodeURIComponent(currentEditTask.reqDocUrl)}`"
-                target="_blank"
-                class="req-doc-link"
-              >查看原文</a>
-              <el-button
-                v-if="currentEditTask.reqDocText && !docEditing"
-                type="primary"
-                link
-                size="small"
-                @click="startDocEdit"
-              >编辑</el-button>
-              <el-button
-                v-if="!currentEditTask.reqDocText && currentEditTask.reqDocName"
-                type="primary"
-                link
-                size="small"
-                :loading="extractingPdf"
-                @click="handleExtractPdf"
-              >{{ extractingPdf ? '提取中...' : '提取文字' }}</el-button>
+              <!-- 需求文档 -->
+              <div v-if="currentEditTask && !isBatchMode" class="req-doc-section">
+                <div class="req-doc-header">
+                  <span class="req-doc-title">需求文档</span>
+                  <div class="req-doc-actions">
+                    <a
+                      v-if="currentEditTask.reqDocUrl"
+                      :href="`/api/sync/req-doc?url=${encodeURIComponent(currentEditTask.reqDocUrl)}`"
+                      target="_blank"
+                      class="req-doc-link"
+                    >查看原文</a>
+                    <el-button
+                      v-if="currentEditTask.reqDocText && !docEditing"
+                      type="primary" link size="small" @click="startDocEdit"
+                    >编辑</el-button>
+                    <el-button
+                      v-if="!currentEditTask.reqDocText && currentEditTask.reqDocName"
+                      type="primary" link size="small" :loading="extractingPdf" @click="handleExtractPdf"
+                    >{{ extractingPdf ? '提取中...' : '提取文字' }}</el-button>
+                  </div>
+                </div>
+                <div v-if="currentEditTask.reqDocName" class="req-doc-name">{{ currentEditTask.reqDocName }}</div>
+                <template v-if="currentEditTask.reqDocText">
+                  <el-input v-if="docEditing" v-model="docEditText" type="textarea" :autosize="{ minRows: 4, maxRows: 20 }" placeholder="编辑需求文档内容" />
+                  <div v-else class="req-doc-content">
+                    <div v-for="(line, i) in currentEditTask.reqDocText.split('\n').filter(l => l.trim())" :key="i" class="req-doc-line">{{ line }}</div>
+                  </div>
+                  <div v-if="docEditing" style="margin-top:8px;display:flex;justify-content:flex-end;gap:8px;">
+                    <el-button size="small" @click="docEditing = false">取消</el-button>
+                    <el-button size="small" type="primary" :loading="docSaving" @click="saveDocEdit">保存</el-button>
+                  </div>
+                </template>
+                <div v-else-if="currentEditTask.reqDocName" class="req-doc-empty">点击上方「提取文字」解析文档内容</div>
+                <div v-else class="req-doc-empty">暂无需求文档</div>
+              </div>
+            </div>
+
+            <div class="config-modal-footer">
+              <el-button @click="drawerOpen = false">取消</el-button>
+              <el-button type="primary" @click="saveProjectSettings" :loading="saving">保存</el-button>
             </div>
           </div>
-          <div v-if="currentEditTask.reqDocName" class="req-doc-name">
-            {{ currentEditTask.reqDocName }}
-          </div>
-          <template v-if="currentEditTask.reqDocText">
-            <el-input
-              v-if="docEditing"
-              v-model="docEditText"
-              type="textarea"
-              :autosize="{ minRows: 4, maxRows: 20 }"
-              placeholder="编辑需求文档内容"
-            />
-            <div v-else class="req-doc-content">
-              <div v-for="(line, i) in currentEditTask.reqDocText.split('\n').filter(l => l.trim())" :key="i" class="req-doc-line">{{ line }}</div>
-            </div>
-            <div v-if="docEditing" style="margin-top:8px;display:flex;justify-content:flex-end;gap:8px;">
-              <el-button size="small" @click="docEditing = false">取消</el-button>
-              <el-button size="small" type="primary" :loading="docSaving" @click="saveDocEdit">保存</el-button>
-            </div>
-          </template>
-          <div v-else-if="currentEditTask.reqDocName" class="req-doc-empty">点击上方「提取文字」解析文档内容</div>
-          <div v-else class="req-doc-empty">暂无需求文档</div>
         </div>
-
-        <div class="drawer-footer">
-          <el-button @click="drawerOpen = false">取消</el-button>
-          <el-button type="primary" @click="saveProjectSettings" :loading="saving">保存</el-button>
-        </div>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -944,7 +938,7 @@ onUnmounted(() => {
       text-align: center;
     }
     &:hover {
-      background-color: rgba(0, 229, 255, 0.06);
+      background-color: var(--cyber-glass-border);
     }
   }
   :deep .el-table__cell {
@@ -1008,14 +1002,15 @@ onUnmounted(() => {
 
 .cyber-card {
   position: relative; display: flex; align-items: stretch;
-  background: rgba(10,16,31,0.15); border: 1px solid rgba(0,229,255,0.12);
+  background: var(--cyber-glass-bg); border: 1px solid var(--cyber-glass-border);
   border-radius: 10px; transition: all 0.3s ease; cursor: pointer; overflow: hidden;
   backdrop-filter: blur(2px);
-  &:hover { border-color: rgba(0,229,255,0.35); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
-  &.in-todo { border-left: 3px solid #FF7D00; }
+  &:hover { border-color: var(--cyber-glass-border-hover); transform: translateY(-1px); }
+  &.in-todo { border-left: 3px solid var(--cyber-orange); }
 }
 
 .card-glow {
+  display: none;
   position: absolute; top: 0; bottom: 0; left: 42px; width: 120px;
   background: linear-gradient(90deg,
     rgba(0,229,255,0.18) 0%,
@@ -1035,41 +1030,41 @@ onUnmounted(() => {
 .card-rank {
   display: flex; align-items: center; justify-content: center; width: 42px; flex-shrink: 0;
   font-size: 15px; font-weight: 800;
-  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: #00E5FF;
-  border-right: 1px solid rgba(0,229,255,0.08);
+  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: var(--cyber-cyan);
+  border-right: 1px solid var(--cyber-glass-border);
 }
 
 .card-body { flex: 1; padding: 12px 14px; min-width: 0; }
 
 .card-head {
   display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
-  .card-id { color: #8c8ca1; font-size: 11px; margin-left: auto; }
+  .card-id { color: var(--cyber-text-secondary); font-size: 11px; margin-left: auto; }
 }
 
 .card-title {
-  margin: 0; font-size: 14px; font-weight: 600; color: #e0e0ef; line-height: 1.4;
+  margin: 0; font-size: 14px; font-weight: 600; color: var(--cyber-text-primary); line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 .card-meta {
-  display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: #8c8ca1;
+  display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--cyber-text-secondary);
   .overdue { color: #f56c6c; font-weight: 600; }
 }
 
 .card-desc-preview {
   margin-top: 8px; padding: 5px 10px; border-radius: 6px;
-  background: rgba(0,229,255,0.06); border: 1px solid rgba(0,229,255,0.08);
+  background: rgba(0,229,255,0.06); border: 1px solid var(--cyber-glass-border);
   display: flex; align-items: flex-start; gap: 6px;
 }
-.desc-label { font-size: 10px; color: #00E5FF; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+.desc-label { font-size: 10px; color: var(--cyber-cyan); white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
 .desc-text {
-  flex: 1; font-size: 11px; color: #cfd3dc; line-height: 1.4;
+  flex: 1; font-size: 11px; color: var(--cyber-text-primary); line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 .card-ops {
   display: flex; align-items: center; gap: 2px; padding: 0 12px;
-  border-left: 1px solid rgba(0,229,255,0.06);
+  border-left: 1px solid var(--cyber-glass-border);
 }
 
 .ops {
@@ -1085,7 +1080,7 @@ onUnmounted(() => {
   gap: 3px;
   padding: 4px 8px;
   font-size: 12px;
-  color: #00E5FF;
+  color: var(--cyber-cyan);
   cursor: pointer;
   border-radius: 6px;
   transition:
@@ -1096,14 +1091,14 @@ onUnmounted(() => {
 
   .el-icon { font-size: 13px; }
   &:hover {
-    color: #00E5FF;
+    color: var(--cyber-cyan);
     background: rgba(0, 229, 255, 0.12);
     text-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
   }
 }
 
 .op-todo {
-  color: #00E5FF;
+  color: var(--cyber-cyan);
   font-weight: 500;
   &:hover {
     background: rgba(0, 229, 255, 0.08);
@@ -1111,7 +1106,7 @@ onUnmounted(() => {
 }
 
 .op-active {
-  color: #9D5CFF;
+  color: var(--cyber-purple);
   font-weight: 500;
   &:hover {
     background: rgba(157, 92, 255, 0.08);
@@ -1133,33 +1128,51 @@ onUnmounted(() => {
   border-radius: 6px;
 }
 
-// ===== Right Drawer =====
-.drawer-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; backdrop-filter: blur(2px);
+// ===== Config Modal =====
+.config-modal-mask {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
 }
-.task-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width); z-index: 100;
-  background: rgba(10,16,31,0.92); border-left: 1px solid rgba(0,229,255,0.2);
-  backdrop-filter: blur(20px); padding: 24px; overflow-y: auto;
+.config-modal {
+  width: var(--dialog-lg); max-height: 80vh; border-radius: 14px; overflow: hidden;
+  background: var(--cyber-glass-bg-strong); border: 1px solid var(--cyber-glass-border);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
   display: flex; flex-direction: column;
+  animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.drawer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.drawer-title-area { display: flex; align-items: center; gap: 8px; }
-.drawer-batch-name { color: #e0e0ef; font-size: 13px; font-weight: 600; }
-.drawer-id { color: #8c8ca1; font-size: 12px; }
-.drawer-close { font-size: 18px; color: #8c8ca1; &:hover { color: #00E5FF; } }
-.drawer-task-title { margin: 0 0 20px; font-size: 16px; font-weight: 600; color: #e0e0ef; line-height: 1.4; }
-.drawer-form { flex: 1; }
-.drawer-field { font-size: 13px; color: #cfd3dc; padding: 6px 0; line-height: 1.5; }
-.drawer-footer {
-  padding-top: 16px; border-top: 1px solid rgba(0,229,255,0.1);
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.config-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px; border-bottom: 1px solid var(--cyber-glass-border);
+}
+.config-modal-title {
+  display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;
+}
+.config-modal-batch { color: var(--cyber-text-primary); font-size: 13px; font-weight: 600; }
+.config-modal-id { color: var(--cyber-text-secondary); font-size: 12px; }
+.config-modal-name {
+  font-size: 15px; font-weight: 600; color: var(--cyber-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.config-modal-close { font-size: 18px; color: var(--cyber-text-secondary); &:hover { color: var(--cyber-cyan); } }
+.config-modal-body {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+}
+.config-form :deep(.el-form-item__label) { font-weight: 500; }
+.config-field { font-size: 13px; color: var(--cyber-text-primary); padding: 6px 0; line-height: 1.5; }
+.config-modal-footer {
+  padding: 16px 24px; border-top: 1px solid var(--cyber-glass-border);
   display: flex; justify-content: flex-end; gap: 10px;
 }
 
 .req-doc-section {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid rgba(0,229,255,0.08);
+  border-top: 1px solid var(--cyber-glass-border);
 }
 
 .req-doc-header {
@@ -1172,7 +1185,7 @@ onUnmounted(() => {
 .req-doc-title {
   font-weight: 600;
   font-size: 14px;
-  color: #e0e0ef;
+  color: var(--cyber-text-primary);
 }
 
 .req-doc-actions {
@@ -1183,14 +1196,14 @@ onUnmounted(() => {
 
 .req-doc-link {
   font-size: 12px;
-  color: #00E5FF;
+  color: var(--cyber-cyan);
   text-decoration: none;
   &:hover { text-decoration: underline; }
 }
 
 .req-doc-name {
   font-size: 12px;
-  color: #8c8ca1;
+  color: var(--cyber-text-secondary);
   margin-bottom: 10px;
 }
 
@@ -1198,12 +1211,12 @@ onUnmounted(() => {
   max-height: 300px;
   overflow-y: auto;
   background: rgba(0,229,255,0.04);
-  border: 1px solid rgba(0,229,255,0.08);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 8px;
   padding: 12px;
   font-size: 12px;
   line-height: 1.6;
-  color: #c0c4cc;
+  color: var(--cyber-text-muted);
 }
 
 .req-doc-line {
@@ -1219,20 +1232,18 @@ onUnmounted(() => {
   padding: 20px 0;
 }
 
-.drawer-slide-enter-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.drawer-slide-leave-active { transition: transform 0.2s ease-in; }
-.drawer-slide-enter-from { transform: translateX(100%); }
-.drawer-slide-leave-to { transform: translateX(100%); }
-.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.25s ease; }
+.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.2s ease; }
 .fade-mask-enter-from, .fade-mask-leave-to { opacity: 0; }
 
 // ===== Holographic Scroll Loading =====
 .holo-scroll-wrapper {
   position: relative; z-index: 1;
   max-height: calc(100vh - 240px);
+  padding: 4px 0;
   overflow-y: auto;
+  overflow-x: hidden;
   &::-webkit-scrollbar { width: 6px; }
-  &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.2); border-radius: 3px; }
+  &::-webkit-scrollbar-thumb { background: var(--cyber-glass-border-hover); border-radius: 3px; }
 }
 
 .holo-sentinel { height: 1px; }

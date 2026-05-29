@@ -409,12 +409,12 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   50% { background-position: 100% 50%; }
 }
 
-.page-desc { margin-top: 6px; color: #8c8ca1; font-size: 13px; }
+.page-desc { margin-top: 6px; color: var(--cyber-text-secondary); font-size: 13px; }
 
 .empty-state {
   text-align: center;
   padding: 80px 0;
-  color: #8c8ca1;
+  color: var(--cyber-text-secondary);
 }
 
 .empty-ring {
@@ -429,7 +429,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   50% { transform: scale(1.08); opacity: 1; }
 }
 
-.empty-text { font-size: 16px; font-weight: 600; color: #c0c0d0; }
+.empty-text { font-size: 16px; font-weight: 600; color: var(--cyber-text-primary); }
 .empty-hint { margin-top: 8px; font-size: 12px; color: #606266; }
 
 .card-list {
@@ -482,21 +482,21 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   margin-bottom: 10px;
 }
 
-.card-id { color: #8c8ca1; font-size: 12px; font-weight: 600; }
-.card-project { color: #00E5FF; font-size: 12px; margin-left: auto; }
+.card-id { color: var(--cyber-text-secondary); font-size: 12px; font-weight: 600; }
+.card-project { color: var(--cyber-cyan); font-size: 12px; margin-left: auto; }
 
 .card-title {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #e0e0ef;
+  color: var(--cyber-text-primary);
   line-height: 1.5;
 }
 
 .card-desc {
   margin: 8px 0 0;
   font-size: 13px;
-  color: #a0a0b8;
+  color: var(--cyber-text-secondary);
   line-height: 1.6;
 }
 
@@ -505,7 +505,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   gap: 12px;
   margin-top: 10px;
   font-size: 12px;
-  color: #8c8ca1;
+  color: var(--cyber-text-secondary);
 }
 
 .card-config {
@@ -513,15 +513,15 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   gap: 12px;
   margin-top: 6px;
   font-size: 11px;
-  color: #FF7D00;
+  color: var(--cyber-orange);
   opacity: 0.8;
 }
 
 .card-output {
   margin-top: 8px;
   font-size: 12px;
-  color: #a0a0b8;
-  .output-label { color: #00E5FF; font-weight: 600; }
+  color: var(--cyber-text-secondary);
+  .output-label { color: var(--cyber-cyan); font-weight: 600; }
 }
 
 /* 自测报告区域 */
@@ -532,7 +532,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 }
 
 .report-label {
-  color: #00E5FF;
+  color: var(--cyber-cyan);
   font-size: 12px;
   font-weight: 600;
   display: block;
@@ -563,7 +563,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
   p {
     margin: 0;
     font-size: 12px;
-    color: #a0a0b8;
+    color: var(--cyber-text-secondary);
     line-height: 1.6;
     white-space: pre-wrap;
   }
@@ -581,7 +581,7 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 
 .file-item {
   font-size: 11px;
-  color: #a0a0b8;
+  color: var(--cyber-text-secondary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -601,13 +601,13 @@ function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 
 .test-details {
   font-size: 11px;
-  color: #a0a0b8;
+  color: var(--cyber-text-secondary);
 }
 
 .card-duration {
   margin-bottom: 8px;
   span:last-child {
-    color: #FF7D00;
+    color: var(--cyber-orange);
     font-size: 12px;
     font-weight: 600;
   }

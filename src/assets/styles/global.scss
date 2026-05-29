@@ -61,6 +61,356 @@
   --el-mask-color: rgba(0, 0, 0, 0.7);
 }
 
+// --- WhiteSur Light Theme — Apple HIG Clean ---
+:root[data-theme="light"] {
+  // macOS Big Sur palette
+  --cyber-bg: #F5F5F7;
+  --cyber-bg-secondary: #FFFFFF;
+  --cyber-cyan: #007AFF;
+  --cyber-purple: #5856D6;
+  --cyber-orange: #FF9500;
+  --cyber-silver: #1D1D1F;
+
+  // Solid materials — no glass in light mode
+  --cyber-glass-bg: rgba(255, 255, 255, 0.85);
+  --cyber-glass-bg-strong: #FFFFFF;
+  --cyber-glass-border: rgba(0, 0, 0, 0.06);
+  --cyber-glass-border-hover: rgba(0, 0, 0, 0.12);
+
+  // Text — Apple system colors
+  --cyber-text-primary: #1D1D1F;
+  --cyber-text-secondary: #86868B;
+  --cyber-text-muted: #AEAEB2;
+
+  // No glow in light mode
+  --cyber-glow-cyan: none;
+  --cyber-glow-purple: none;
+  --cyber-glow-orange: none;
+
+  // Element Plus
+  --el-color-primary: #007AFF;
+  --el-color-primary-light-3: #4da3ff;
+  --el-color-primary-light-5: #80bfff;
+  --el-color-primary-light-7: #b3d9ff;
+  --el-color-primary-light-9: #e6f2ff;
+  --el-color-primary-dark-2: #0062cc;
+  --el-bg-color: #F5F5F7;
+  --el-bg-color-page: #F5F5F7;
+  --el-bg-color-overlay: #FFFFFF;
+  --el-border-color: #E5E5EA;
+  --el-border-color-light: #EFEFF0;
+  --el-border-color-lighter: #F5F5F7;
+  --el-text-color-primary: #1D1D1F;
+  --el-text-color-regular: #3C3C43;
+  --el-text-color-secondary: #86868B;
+  --el-text-color-placeholder: #C7C7CC;
+  --el-fill-color-blank: #FFFFFF;
+  --el-mask-color: rgba(0, 0, 0, 0.24);
+
+  // Font — Apple system stack for light mode
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+
+  // Scrollbar — Apple thin gray
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    &:hover { background: rgba(0, 0, 0, 0.32); background-clip: content-box; }
+  }
+
+  // ── Cards: solid white, soft shadow, NO border glow ──
+  .el-card {
+    background: #FFFFFF !important;
+    border: none !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+    backdrop-filter: none !important;
+    transition: box-shadow 0.25s ease !important;
+    &:hover {
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08) !important;
+      border-color: transparent !important;
+    }
+    .el-card__header { border-bottom: 1px solid #F0F0F0; }
+  }
+
+  // ── Table: clean Apple style ──
+  .el-table {
+    --el-table-header-bg-color: #FAFAFA;
+    --el-table-row-hover-bg-color: rgba(0, 122, 255, 0.04);
+    --el-table-border-color: #EFEFF0;
+    &,
+    .el-table__inner-wrapper,
+    .el-table__body-wrapper,
+    .el-table__header-wrapper,
+    .el-table__footer-wrapper,
+    .el-table__body tr,
+    .el-table__header tr,
+    .el-table__body tr.el-table__row--striped td,
+    .el-table__header th,
+    .el-table__header th .cell {
+      background-color: transparent !important;
+    }
+    .el-table__empty-block { background-color: transparent !important; }
+    .el-table-fixed-column--left,
+    .el-table-fixed-column--right {
+      background: rgba(255, 255, 255, 0.92) !important;
+      backdrop-filter: saturate(180%) blur(20px);
+    }
+    .el-button--primary.is-link, .el-button--primary.is-text {
+      color: #007AFF; &:hover { color: #005EC4; text-shadow: none; }
+    }
+    .el-button--success.is-link, .el-button--success.is-text {
+      color: #34C759; &:hover { color: #248A3D; }
+    }
+    .el-button--danger.is-link, .el-button--danger.is-text {
+      color: #FF3B30; &:hover { color: #D70015; }
+    }
+    .el-button--warning.is-link, .el-button--warning.is-text {
+      color: #FF9500; &:hover { color: #C77700; }
+    }
+  }
+
+  // ── Tooltips: Apple popover style ──
+  .el-popper.is-dark,
+  .el-tooltip__popper.is-dark {
+    background: rgba(30, 30, 30, 0.96) !important;
+    border: none !important;
+    color: #FFF !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18) !important;
+    border-radius: 8px !important;
+    padding: 6px 12px !important;
+    .el-popper__arrow::before {
+      background: rgba(30, 30, 30, 0.96) !important;
+      border: none !important;
+    }
+  }
+  .el-popper.is-light,
+  .el-tooltip__popper.is-light {
+    background: #FFFFFF !important;
+    border: none !important;
+    color: #1D1D1F !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12) !important;
+    border-radius: 8px !important;
+    padding: 6px 12px !important;
+    .el-popper__arrow::before {
+      background: #FFFFFF !important;
+      border: none !important;
+    }
+  }
+  .el-dropdown__popper {
+    background: #FFFFFF !important;
+    border: none !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0,0,0,0.06) !important;
+    border-radius: 10px !important;
+  }
+  .el-dropdown-menu__item {
+    border-radius: 6px;
+    margin: 2px 6px;
+    &:hover { background: #F0F0F5; color: #007AFF; }
+  }
+
+  // ── Dialog: macOS sheet style ──
+  .el-dialog {
+    background: #FFFFFF !important;
+    border: none !important;
+    border-radius: 14px !important;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0,0,0,0.06) !important;
+    backdrop-filter: none !important;
+    overflow: hidden;
+    .el-dialog__title { color: #1D1D1F; font-weight: 600; }
+    .el-dialog__body { color: #3C3C43; }
+    .el-dialog__header { border-bottom: none; background: #FAFAFA; }
+    .el-dialog__headerbtn .el-dialog__close { color: #86868B; }
+  }
+
+  // ── Drawer: iOS sheet ──
+  .el-drawer {
+    background: #FFFFFF !important;
+    border-left: none !important;
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.08);
+  }
+
+  // ── Inputs: Apple style with focus ring ──
+  .el-input__wrapper {
+    background: #FFFFFF !important;
+    border: 1px solid #D1D1D6 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+    &:hover { border-color: #AEAEB2 !important; }
+    &.is-focus {
+      border-color: #007AFF !important;
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important;
+    }
+  }
+
+  .el-textarea__inner {
+    background: #FFFFFF !important;
+    border: 1px solid #D1D1D6 !important;
+    border-radius: 8px !important;
+    color: #1D1D1F;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+    &:focus {
+      border-color: #007AFF !important;
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important;
+    }
+  }
+
+  .el-select__wrapper {
+    background: #FFFFFF !important;
+    border: 1px solid #D1D1D6 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    &:hover { border-color: #AEAEB2 !important; }
+    &.is-focused { border-color: #007AFF !important; box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important; }
+  }
+
+  .el-select-dropdown {
+    background: #FFFFFF !important;
+    border: none !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0,0,0,0.06) !important;
+  }
+
+  // ── Tags: pill shape ──
+  .el-tag {
+    border-radius: 20px;
+    backdrop-filter: none;
+    border: none;
+  }
+
+  // ── Descriptions: clean ──
+  .el-descriptions {
+    --el-descriptions-table-border: #EFEFF0;
+    .el-descriptions__label { color: #86868B; }
+    .el-descriptions__content { color: #1D1D1F; }
+  }
+
+  // ── Timeline: Apple dots ──
+  .el-timeline-item__tail { border-left: 2px solid #E5E5EA; }
+  .el-timeline-item__node { background: #007AFF; box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15); }
+
+  // ── MessageBox: clean ──
+  .el-message-box {
+    background: #FFFFFF !important;
+    border: none !important;
+    border-radius: 14px !important;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0,0,0,0.06) !important;
+  }
+
+  // ── Tabs: iOS segmented control ──
+  .el-tabs__item { color: #86868B; font-weight: 500; &.is-active { color: #007AFF; } }
+  .el-tabs__active-bar { background: #007AFF; height: 2px; border-radius: 1px; }
+
+  // ── Pagination ──
+  .el-pagination {
+    .el-pager li {
+      background: transparent !important;
+      color: #007AFF;
+      border-radius: 6px;
+      &.is-active { background: #007AFF !important; color: #FFF; }
+    }
+  }
+
+  // ── Switch: Apple green ──
+  .el-switch { --el-switch-on-color: #34C759; --el-switch-off-color: #E5E5EA; }
+
+  // ── Breadcrumb: subtle ──
+  .el-breadcrumb__inner, .el-breadcrumb__text { color: #86868B !important; }
+  .el-breadcrumb__item:last-child .el-breadcrumb__inner { color: #1D1D1F !important; }
+
+  // ── Form labels ──
+  .el-form-item__label { color: #3C3C43 !important; }
+
+  // ── Utility classes: clean white panels ──
+  .cyber-panel {
+    background: #FFFFFF;
+    border: none;
+    border-radius: 12px;
+    backdrop-filter: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+    transition: box-shadow 0.25s ease;
+    &:hover {
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  .cyber-glass {
+    background: #FFFFFF;
+    border: none;
+    border-radius: 12px;
+    backdrop-filter: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+    transition: box-shadow 0.25s ease;
+    &:hover {
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  // No grid pattern in light mode
+  .cyber-grid-bg { display: none; }
+
+  // Kill ALL scan beams and sweep effects
+  .main-layout::before,
+  .main-layout::after,
+  .main-content::before,
+  .main-content::after {
+    display: none !important;
+    animation: none !important;
+  }
+
+  // Kill cyberpunk hover glow effect
+  .cyber-hover-glow::after { display: none !important; }
+
+  // Sidebar — macOS Finder style
+  .aside {
+    background: rgba(245, 245, 247, 0.9) !important;
+    border-right: none !important;
+    backdrop-filter: saturate(180%) blur(20px) !important;
+  }
+
+  // Header — clean translucent
+  .header {
+    background: rgba(255, 255, 255, 0.72) !important;
+    border-bottom: none !important;
+    backdrop-filter: saturate(180%) blur(20px) !important;
+    box-shadow: 0 0.5px 0 rgba(0, 0, 0, 0.06) !important;
+  }
+
+  // Logo — simple, no glow
+  .logo-glow { display: none !important; }
+  .logo-svg {
+    filter: none !important;
+    animation: none !important;
+  }
+  .logo-text { color: #1D1D1F !important; letter-spacing: 1px; }
+
+  // Menu items — iOS sidebar selection
+  .side-menu {
+    .el-menu-item {
+      margin: 2px 8px;
+      border-radius: 8px !important;
+      height: 38px !important;
+      line-height: 38px !important;
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.04) !important;
+      }
+      &.is-active {
+        background-color: rgba(0, 122, 255, 0.1) !important;
+        color: #007AFF !important;
+        border-right: none !important;
+      }
+    }
+  }
+
+  // Badge pulse — subtle in light
+  .agent-reply-dot {
+    background: #007AFF !important;
+    box-shadow: none !important;
+  }
+}
+
 // --- Global Reset ---
 * {
   margin: 0;

@@ -1,8 +1,8 @@
 <template>
-  <el-container class="main-layout">
+  <el-container :class="['main-layout', theme]">
     <canvas ref="bgCanvas" class="global-bg-canvas"></canvas>
     <!-- 侧边栏 -->
-    <el-aside :width="isCollapsed ? '64px' : '220px'" class="aside">
+    <el-aside :width="isCollapsed ? '56px' : '180px'" class="aside">
       <div class="logo-area">
         <div class="logo-icon">
           <div class="logo-glow"></div>
@@ -61,8 +61,8 @@
         router
         class="side-menu"
         background-color="transparent"
-        text-color="#E8F0FF"
-        active-text-color="#00E5FF"
+        :text-color="theme === 'dark' ? '#E8F0FF' : '#1D1D1F'"
+        :active-text-color="theme === 'dark' ? '#00E5FF' : '#007AFF'"
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataBoard /></el-icon>
@@ -122,6 +122,12 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <el-tooltip :content="theme === 'dark' ? '切换浅色主题' : '切换深色主题'" placement="bottom">
+            <el-icon class="theme-toggle" @click="toggleTheme">
+              <Sunny v-if="theme === 'dark'" />
+              <Moon v-else />
+            </el-icon>
+          </el-tooltip>
           <el-tag effect="dark" type="info" size="small" class="time-tag">
             {{ currentTime }}
           </el-tag>
@@ -143,14 +149,16 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
-import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened } from '@element-plus/icons-vue'
+import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened, Sunny, Moon } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useCyberAnimations } from '@/composables/useCyberAnimations'
 import { useCyberBackground } from '@/composables/useCyberBackground'
 import { useDesktop } from '@/composables/useDesktop'
+import { useTheme } from '@/composables/useTheme'
 
 useCyberAnimations('.cyber-glass')
 const { isDesktop, sendNotification } = useDesktop()
+const { theme, toggleTheme, initTheme } = useTheme()
 
 const route = useRoute()
 const taskStore = useTaskStore()
@@ -222,6 +230,7 @@ watch([reviewCount, hasAgentReply, agentReplySeen], ([count, hasReply, seen]) =>
 }, { immediate: true })
 
 onMounted(async () => {
+  initTheme()
   startBg()
   timer = setInterval(() => {
     currentTime.value = dayjs().format('HH:mm')
@@ -254,8 +263,8 @@ onUnmounted(() => {
 .aside {
   position: relative;
   z-index: 1;
-  background: rgba(10, 16, 31, 0.15);
-  border-right: 1px solid rgba(0, 229, 255, 0.08);
+  background: var(--cyber-glass-bg);
+  border-right: 1px solid var(--cyber-glass-border);
   backdrop-filter: blur(2px);
   transition: width 0.3s ease;
   overflow: hidden;
@@ -268,7 +277,7 @@ onUnmounted(() => {
   height: 60px;
   padding: 0 16px;
   gap: 10px;
-  border-bottom: 1px solid rgba(0, 229, 255, 0.08);
+  border-bottom: 1px solid var(--cyber-glass-border);
 
   .logo-icon {
     flex-shrink: 0;
@@ -313,10 +322,10 @@ onUnmounted(() => {
 
   :deep(.el-menu-item) {
     &:hover {
-      background-color: rgba(0, 229, 255, 0.08) !important;
+      background-color: var(--cyber-glass-border) !important;
     }
     &.is-active {
-      background-color: rgba(0, 229, 255, 0.12) !important;
+      background-color: var(--cyber-glass-border) !important;
       border-right: 3px solid var(--cyber-cyan);
       color: var(--cyber-cyan);
     }
@@ -345,8 +354,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(10, 16, 31, 0.15);
-  border-bottom: 1px solid rgba(0, 229, 255, 0.08);
+  background: var(--cyber-glass-bg);
+  border-bottom: 1px solid var(--cyber-glass-border);
   backdrop-filter: blur(2px);
   box-shadow: none;
   padding: 0 24px;
@@ -371,6 +380,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+
+  .theme-toggle {
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--cyber-text-secondary);
+    transition: color 0.2s, transform 0.3s;
+    &:hover { color: var(--cyber-cyan); transform: rotate(30deg); }
+  }
 
   .time-tag {
     font-family: 'Courier New', monospace;
@@ -469,5 +486,66 @@ onUnmounted(() => {
 @keyframes agentPulse {
   0%, 100% { opacity: 0.5; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.2); }
+}
+
+// ── Light Theme: Kill all cyberpunk effects ──
+.light {
+  &.main-layout::before,
+  .main-layout::before,
+  &::before {
+    display: none !important;
+    animation: none !important;
+  }
+
+  .main-content::after {
+    display: none !important;
+    animation: none !important;
+  }
+
+  .global-bg-canvas {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+
+  .aside {
+    background: rgba(245, 245, 247, 0.9);
+    border-right: none;
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .logo-area {
+    border-bottom: none;
+    .logo-glow { display: none; }
+    .logo-svg {
+      filter: none;
+      animation: none;
+    }
+    .logo-text { color: #1D1D1F; letter-spacing: 1px; }
+  }
+
+  .side-menu {
+    :deep(.el-menu-item) {
+      margin: 2px 8px;
+      border-radius: 8px;
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.04) !important;
+      }
+      &.is-active {
+        background-color: rgba(0, 122, 255, 0.1) !important;
+        color: #007AFF !important;
+        border-right: none !important;
+      }
+    }
+  }
+
+  .header {
+    background: rgba(255, 255, 255, 0.72);
+    border-bottom: none;
+    backdrop-filter: saturate(180%) blur(20px);
+    box-shadow: 0 0.5px 0 rgba(0, 0, 0, 0.06);
+  }
+
+  .header-left .collapse-btn:hover { color: #007AFF; }
+  .header-right .theme-toggle:hover { color: #007AFF; }
 }
 </style>

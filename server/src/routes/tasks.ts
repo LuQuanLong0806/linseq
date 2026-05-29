@@ -37,8 +37,40 @@ function triggerWebhook(db: ReturnType<typeof getDb>, userId: string, taskId: st
   wakeAgent(db, `[系统通知] 任务 ${taskId} 收到新的补充说明：${content.substring(0, 200)}${content.length > 200 ? '...' : ''}\n\n请立即执行 GET /task/${taskId}/supplements 检查并处理。`)
 }
 
-/** 导出 wakeAgent 供 agent 路由使用 */
-export { wakeAgent }
+/** 带对话历史唤醒 Agent（OpenClaw Gateway 是无状态的，需传完整 messages） */
+function wakeAgentWithHistory(db: ReturnType<typeof getDb>, userId: string, newMessage: string) {
+  try {
+    const urlRow = db.prepare("SELECT value FROM sync_config WHERE key = 'webhookUrl'").get() as { value: string } | undefined
+    if (!urlRow?.value) return
+    const url = (urlRow.value as string).replace(/^"|"$/g, '')
+    const tokenRow = db.prepare("SELECT value FROM sync_config WHERE key = 'openclawToken'").get() as { value: string } | undefined
+    const token = tokenRow?.value ? (tokenRow.value as string).replace(/^"|"$/g, '') : ''
+    const targetRow = db.prepare("SELECT value FROM sync_config WHERE key = 'agentTarget'").get() as { value: string } | undefined
+    const target = targetRow?.value ? (targetRow.value as string).replace(/^"|"$/g, '') : 'agent-209e563a'
+
+    // 取最近 50 条对话历史构建 messages
+    const history = db.prepare(
+      'SELECT role, content FROM agent_chat_logs WHERE user_id = ? ORDER BY created_at ASC LIMIT 50'
+    ).all(userId) as { role: string; content: string }[]
+    const messages = history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content }))
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        model: `openclaw/${target}`,
+        messages,
+        stream: false,
+      }),
+    }).catch(() => {})
+  } catch { /* 非阻塞 */ }
+}
+
+/** 导出供 agent 路由使用 */
+export { wakeAgent, wakeAgentWithHistory }
 
 const router = Router()
 

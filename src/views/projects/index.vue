@@ -1,38 +1,16 @@
 <template>
   <div class="projects-page">
-    <!-- Header Banner -->
-    <div class="page-hero">
-      <div class="hero-grid"></div>
-      <div class="hero-scan"></div>
-      <div class="hero-pulse"></div>
-      <div class="hero-glow"></div>
-      <div class="hero-content">
-        <div class="hero-top">
-          <div class="hero-text">
-            <h1 class="hero-title">PROJECT<span class="hero-accent">.CONFIG</span></h1>
-            <p class="hero-desc">维护内网项目名称与本地路径、Git 分支的关联，同步时自动填充任务信息</p>
-          </div>
-          <el-button type="primary" size="large" class="hero-btn" @click="openDialog()">
-            <span class="btn-icon">+</span> 新建项目
-          </el-button>
-        </div>
-        <div class="hero-stats">
-          <div class="hero-stat">
-            <span class="hs-num" :data-target="projects.length">{{ projects.length }}</span>
-            <span class="hs-label">已配置项目</span>
-          </div>
-          <div class="hero-stat-divider"></div>
-          <div class="hero-stat">
-            <span class="hs-num">{{ projects.filter(p => p.localPath).length }}</span>
-            <span class="hs-label">已关联路径</span>
-          </div>
-          <div class="hero-stat-divider"></div>
-          <div class="hero-stat">
-            <span class="hs-num">{{ projects.filter(p => p.branches?.length > 0).length }}</span>
-            <span class="hs-label">已获取分支</span>
-          </div>
-        </div>
+    <!-- Header -->
+    <div class="page-header-bar">
+      <div>
+        <h1 class="page-title">项目配置</h1>
+        <p class="page-desc">
+          已配置 <strong>{{ projects.length }}</strong> 个项目 ·
+          已关联路径 <strong>{{ projects.filter(p => p.localPath).length }}</strong> ·
+          已获取分支 <strong>{{ projects.filter(p => p.branches?.length > 0).length }}</strong>
+        </p>
       </div>
+      <el-button type="primary" @click="openDialog()">+ 新建项目</el-button>
     </div>
 
     <!-- Table Card -->
@@ -43,27 +21,21 @@
         v-loading="loading"
         border
         style="width:100%"
-        :header-cell-style="{ background: 'rgba(0,229,255,0.04)', color: 'var(--cyber-text-primary)', fontWeight: 600 }"
+        :header-cell-style="{ fontWeight: 600 }"
         empty-text="暂无项目配置，点击上方按钮新建"
         row-class-name="table-row"
       >
         <el-table-column prop="name" label="项目名称" min-width="140" align="center">
           <template #default="{ row }">
             <el-tooltip :content="row.name" placement="top" :show-after="300">
-              <div class="cell-name">
-                <span class="name-dot"><span class="name-dot-inner"></span></span>
-                <span class="name-text cell-ellipsis">{{ row.name }}</span>
-              </div>
+              <span class="name-text cell-ellipsis">{{ row.name }}</span>
             </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column prop="localPath" label="本地路径" min-width="200" align="center">
           <template #default="{ row }">
             <el-tooltip v-if="row.localPath" :content="row.localPath" placement="top" :show-after="300">
-              <div class="cell-path">
-                <span class="path-icon">📁</span>
-                <span class="path-text cell-ellipsis">{{ row.localPath }}</span>
-              </div>
+              <span class="path-text cell-ellipsis">{{ row.localPath }}</span>
             </el-tooltip>
             <span v-else class="cell-empty">未配置</span>
           </template>
@@ -71,10 +43,7 @@
         <el-table-column prop="gitUrl" label="Git 地址" min-width="180" align="center">
           <template #default="{ row }">
             <el-tooltip v-if="row.gitUrl" :content="row.gitUrl" placement="top" :show-after="300">
-              <div class="cell-path">
-                <span class="path-icon">🔗</span>
-                <span class="path-text cell-ellipsis">{{ row.gitUrl }}</span>
-              </div>
+              <span class="path-text cell-ellipsis">{{ row.gitUrl }}</span>
             </el-tooltip>
             <span v-else class="cell-empty">-</span>
           </template>
@@ -367,354 +336,77 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .projects-page {
   min-height: calc(100vh - 96px);
 }
 
-/* ===== Hero Banner ===== */
-.page-hero {
-  position: relative;
-  padding: 28px 32px 24px;
-  background: linear-gradient(135deg, rgba(10,14,39,0.15) 0%, rgba(26,16,64,0.15) 40%, rgba(13,31,60,0.15) 100%);
-  border-radius: 14px;
-  overflow: hidden;
-  margin-bottom: 20px;
-  border: 1px solid rgba(0,229,255,0.15);
-  animation: hero-enter 0.6s ease-out;
-}
-
-@keyframes hero-enter {
-  from { opacity: 0; transform: translateY(-20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.hero-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0,229,255,0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,229,255,0.06) 1px, transparent 1px);
-  background-size: 40px 40px;
-  pointer-events: none;
-  animation: grid-drift 20s linear infinite;
-}
-
-@keyframes grid-drift {
-  from { transform: translate(0, 0); }
-  to { transform: translate(40px, 40px); }
-}
-
-.hero-scan {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00E5FF, #00e5ff, #00E5FF, transparent);
-  animation: hero-scan 4s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes hero-scan {
-  0%, 100% { top: 0; opacity: 0; }
-  10% { opacity: 1; }
-  50% { top: 100%; opacity: 0.6; }
-  90% { opacity: 1; }
-}
-
-.hero-pulse {
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent 0%, #00e5ff 50%, transparent 100%);
-  background-size: 200% 100%;
-  animation: pulse-border 3s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes pulse-border {
-  0%, 100% { background-position: 200% 0; opacity: 0.4; }
-  50% { background-position: -200% 0; opacity: 1; }
-}
-
-.hero-glow {
-  position: absolute;
-  top: -50%;
-  right: -15%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(0,229,255,0.12) 0%, rgba(0,229,255,0.05) 40%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  animation: glow-breathe 6s ease-in-out infinite;
-}
-
-@keyframes glow-breathe {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.15); opacity: 0.7; }
-}
-
-.hero-content { position: relative; z-index: 1; }
-
-.hero-top {
+/* ===== Header ===== */
+.page-header-bar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
-.hero-title {
-  margin: 0 0 6px;
-  font-size: 26px;
-  font-weight: 800;
-  color: #e0e6ff;
-  letter-spacing: 3px;
-  font-family: 'Cascadia Code', Consolas, monospace;
-  animation: title-glow 3s ease-in-out infinite alternate;
-}
-
-@keyframes title-glow {
-  from { text-shadow: 0 0 8px rgba(0,229,255,0.3); }
-  to { text-shadow: 0 0 16px rgba(0,229,255,0.5), 0 0 30px rgba(0,229,255,0.15); }
-}
-
-.hero-accent {
-  color: #00e5ff;
-  text-shadow: 0 0 12px rgba(0,229,255,0.4);
-}
-
-.hero-desc {
+.page-title {
   margin: 0;
-  font-size: 13px;
-  color: rgba(200,210,240,0.6);
-  max-width: 480px;
-  line-height: 1.6;
-}
-
-.hero-btn {
-  background: rgba(0,229,255,0.1) !important;
-  border: 1px solid rgba(0,229,255,0.35) !important;
-  color: #00e5ff !important;
-  font-weight: 600;
-  backdrop-filter: blur(8px);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  font-family: 'Cascadia Code', Consolas, monospace;
-  letter-spacing: 1px;
-  position: relative;
-  overflow: hidden;
-}
-.hero-btn::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  background: rgba(0,229,255,0.15);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  transition: width 0.4s, height 0.4s;
-}
-.hero-btn:hover {
-  background: rgba(0,229,255,0.2) !important;
-  box-shadow: 0 0 20px rgba(0,229,255,0.15), inset 0 0 20px rgba(0,229,255,0.05);
-  transform: translateY(-2px);
-}
-.hero-btn:hover::after {
-  width: 300px;
-  height: 300px;
-}
-.hero-btn:active {
-  transform: translateY(0) scale(0.97);
-}
-.btn-icon { font-size: 18px; margin-right: 4px; vertical-align: middle; }
-
-.hero-stats {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  background: rgba(0,229,255,0.06);
-  border: 1px solid rgba(0,229,255,0.12);
-  border-radius: 10px;
-  padding: 14px 0;
-  backdrop-filter: blur(4px);
-}
-
-.hero-stat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  transition: transform 0.3s;
-}
-.hero-stat:hover {
-  transform: scale(1.08);
-}
-
-.hero-stat-divider {
-  width: 1px;
-  height: 32px;
-  background: linear-gradient(transparent, rgba(0,229,255,0.3), transparent);
-  flex-shrink: 0;
-  animation: divider-pulse 2s ease-in-out infinite alternate;
-}
-@keyframes divider-pulse {
-  from { opacity: 0.4; }
-  to { opacity: 1; }
-}
-
-.hs-num {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  color: #00e5ff;
-  font-family: 'Cascadia Code', Consolas, monospace;
-  text-shadow: 0 0 10px rgba(0,229,255,0.3);
-  transition: all 0.3s;
-}
-.hero-stat:hover .hs-num {
-  text-shadow: 0 0 20px rgba(0,229,255,0.6);
-  transform: scale(1.1);
+  color: var(--cyber-text-primary);
 }
 
-.hs-label {
-  font-size: 12px;
-  color: rgba(200,210,240,0.5);
-  letter-spacing: 1px;
+.page-desc {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--cyber-text-secondary);
+  strong { color: var(--cyber-text-primary); font-weight: 600; }
 }
 
 /* ===== Table Card ===== */
 .table-card {
   position: relative;
-  background: rgba(10,16,31,0.15);
+  background: var(--cyber-glass-bg);
   border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   border: 1px solid var(--cyber-glass-border);
+  backdrop-filter: blur(6px);
   padding: 4px;
   overflow: hidden;
-  animation: card-enter 0.5s ease-out 0.2s both;
-}
-
-@keyframes card-enter {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .table-card-border {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #00E5FF, #00e5ff, #9D5CFF, #00E5FF);
-  background-size: 300% 100%;
-  animation: border-flow 6s linear infinite;
-  z-index: 1;
-}
-
-@keyframes border-flow {
-  from { background-position: 0 0; }
-  to { background-position: 300% 0; }
+  display: none;
 }
 
 .table-card :deep(.el-table) { --el-table-border-color: var(--cyber-glass-border); }
 
 .table-card :deep(.table-row) {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  transition: background 0.2s;
 }
 .table-card :deep(.table-row:hover > td) {
-  background: rgba(0,229,255,0.05) !important;
-}
-.table-card :deep(.table-row:hover) {
-  transform: scale(1.002);
-  box-shadow: 0 2px 12px rgba(0,229,255,0.08);
+  background: var(--cyber-glass-border-hover) !important;
 }
 
-/* Staggered row entrance */
-.table-card :deep(.el-table__body tr) {
-  animation: row-enter 0.35s ease-out both;
-}
-.table-card :deep(.el-table__body tr:nth-child(1)) { animation-delay: 0.05s; }
-.table-card :deep(.el-table__body tr:nth-child(2)) { animation-delay: 0.08s; }
-.table-card :deep(.el-table__body tr:nth-child(3)) { animation-delay: 0.11s; }
-.table-card :deep(.el-table__body tr:nth-child(4)) { animation-delay: 0.14s; }
-.table-card :deep(.el-table__body tr:nth-child(5)) { animation-delay: 0.17s; }
-.table-card :deep(.el-table__body tr:nth-child(6)) { animation-delay: 0.20s; }
-.table-card :deep(.el-table__body tr:nth-child(7)) { animation-delay: 0.23s; }
-.table-card :deep(.el-table__body tr:nth-child(8)) { animation-delay: 0.26s; }
-.table-card :deep(.el-table__body tr:nth-child(9)) { animation-delay: 0.29s; }
-.table-card :deep(.el-table__body tr:nth-child(10)) { animation-delay: 0.32s; }
-
-@keyframes row-enter {
-  from { opacity: 0; transform: translateX(-12px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-.cell-name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.name-dot {
-  position: relative;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #00E5FF, #9D5CFF);
-  flex-shrink: 0;
-  transition: all 0.3s;
-}
-.name-dot-inner {
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1px solid rgba(0,229,255,0.3);
-  animation: dot-ring 2s ease-in-out infinite;
-}
-@keyframes dot-ring {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.3); opacity: 0; }
-}
-.table-row:hover .name-dot {
-  transform: scale(1.2);
-  box-shadow: 0 0 8px rgba(0,229,255,0.4);
+.name-text {
+  display: none;
 }
 
 .name-text {
   font-weight: 600;
   color: var(--cyber-text-primary);
   font-size: 14px;
-  transition: color 0.2s;
 }
-.table-row:hover .name-text {
-  color: #00E5FF;
-}
-
-.cell-path {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.path-icon { font-size: 14px; flex-shrink: 0; }
 
 .path-text {
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 13px;
-  color: #00E5FF;
+  color: var(--cyber-text-secondary);
   word-break: break-all;
   line-height: 1.5;
-  transition: color 0.2s;
-}
-.table-row:hover .path-text {
-  color: #9D5CFF;
 }
 
-.cell-empty { color: var(--cyber-text-secondary); font-size: 13px; }
+.cell-empty { color: var(--cyber-text-muted); font-size: 13px; }
 
 .cell-ellipsis {
   overflow: hidden;
@@ -728,8 +420,7 @@ onMounted(() => {
 .branch-plain {
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 13px;
-  color: #00E5FF;
-  font-weight: 500;
+  color: var(--cyber-text-secondary);
 }
 
 /* Operation buttons */
@@ -738,12 +429,6 @@ onMounted(() => {
   gap: 4px;
   align-items: center;
   justify-content: center;
-}
-.ops-cell :deep(.el-button) {
-  transition: all 0.2s;
-}
-.ops-cell :deep(.el-button:hover) {
-  transform: translateY(-1px);
 }
 
 .pagination-area {
@@ -756,12 +441,6 @@ onMounted(() => {
 .proj-dialog :deep(.el-dialog) {
   border-radius: 14px;
   overflow: hidden;
-  animation: dialog-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes dialog-pop {
-  from { opacity: 0; transform: scale(0.9) translateY(20px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .proj-dialog :deep(.el-dialog__header) {
@@ -794,20 +473,14 @@ onMounted(() => {
 
 .detect-hint {
   margin-top: 4px;
-  animation: hint-in 0.3s ease-out;
-}
-
-@keyframes hint-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .branches-preview {
   padding: 10px 14px;
-  background: rgba(0,229,255,0.04);
+  background: var(--cyber-glass-bg);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 8px;
   margin-top: 4px;
-  animation: hint-in 0.3s ease-out;
 }
 
 .branches-label {
@@ -818,11 +491,6 @@ onMounted(() => {
 
 .branch-tag {
   margin: 2px 4px;
-  transition: all 0.2s;
-}
-.branch-tag:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,229,255,0.15);
 }
 
 .branches-more {

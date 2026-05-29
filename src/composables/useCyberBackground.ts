@@ -7,10 +7,17 @@ export function useCyberBackground(canvasRef: Ref<HTMLCanvasElement | null>) {
   let renderer: THREE.WebGLRenderer | null = null
   let animId = 0
   let twinkleMat: THREE.PointsMaterial | null = null
+  let isLight = false
+
+  function checkTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'light'
+  }
 
   function init() {
     const canvas = canvasRef.value
     if (!canvas) return
+
+    isLight = checkTheme()
 
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -256,6 +263,20 @@ export function useCyberBackground(canvasRef: Ref<HTMLCanvasElement | null>) {
     function animate() {
       animId = requestAnimationFrame(animate)
       const t = clock.getElapsedTime()
+
+      // Theme check — skip rendering entirely in light mode
+      const nowLight = checkTheme()
+      if (nowLight !== isLight) {
+        isLight = nowLight
+        // Hide all objects instantly
+        starMat.opacity = isLight ? 0 : 1.0
+        galaxy.material.opacity = isLight ? 0 : 0.75
+        starRing.material.opacity = isLight ? 0 : 0.85
+        burstMat.opacity = isLight ? 0 : 0.9
+        coreStar.material.opacity = isLight ? 0 : 0.9
+        for (const m of meteors) { m.mesh.visible = false }
+      }
+      if (isLight) return // No rendering at all in light mode
 
       // Star twinkle — random flash + fade back
       {

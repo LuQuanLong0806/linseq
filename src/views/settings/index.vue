@@ -202,16 +202,27 @@ async function handleResetDB() {
   font-size: 15px;
 }
 
+.cyber-panel {
+  :deep(.el-form) {
+    padding: 0 20px 20px;
+  }
+
+  :deep(.el-descriptions) {
+    padding: 0 20px 20px;
+  }
+}
+
 .panel-header {
   padding: 14px 20px;
-  border-bottom: 1px solid rgba(0,229,255,0.08);
-  margin-bottom: 16px;
+  border-bottom: 1px solid var(--cyber-glass-border);
+  margin-bottom: 20px;
 }
 
 .data-actions {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 0 20px 20px;
 }
 
 .action-item {
@@ -228,5 +239,13 @@ async function handleResetDB() {
   margin-top: 4px;
   font-size: 12px;
   color: var(--cyber-text-secondary);
+}
+
+:deep(.el-form-item:last-child) {
+  margin-top: 12px;
+
+  .el-form-item__content {
+    gap: 12px;
+  }
 }
 </style>

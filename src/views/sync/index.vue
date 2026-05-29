@@ -349,7 +349,7 @@ onMounted(() => {
 .config-card, .sync-action-card {
   .panel-header {
     padding: 14px 20px;
-    border-bottom: 1px solid rgba(0,229,255,0.08);
+    border-bottom: 1px solid var(--cyber-glass-border);
     margin-bottom: 16px;
     display: flex;
     align-items: center;
@@ -370,7 +370,7 @@ onMounted(() => {
 
   .user-list-title {
     font-size: 12px;
-    color: #8c8ca1;
+    color: var(--cyber-text-secondary);
     margin-bottom: 8px;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -383,18 +383,18 @@ onMounted(() => {
   justify-content: space-between;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(0,229,255,0.08);
+  border: 1px solid var(--cyber-glass-border);
   margin-bottom: 8px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    border-color: rgba(0,229,255,0.2);
+    border-color: var(--cyber-glass-border-hover);
     background: rgba(0,229,255,0.04);
   }
 
   &.active {
-    border-color: rgba(0,229,255,0.3);
+    border-color: var(--cyber-glass-border-hover);
     background: rgba(0,229,255,0.08);
   }
 
@@ -412,7 +412,7 @@ onMounted(() => {
   .user-name {
     font-size: 13px;
     font-weight: 600;
-    color: #e0e0ef;
+    color: var(--cyber-text-primary);
   }
 
   .user-actions {
@@ -452,7 +452,7 @@ onMounted(() => {
     font-size: 13px;
     color: var(--cyber-text-secondary);
 
-    .new { color: #00E5FF; }
+    .new { color: var(--cyber-cyan); }
     .updated { color: #FF7D00; }
     .unchanged { color: var(--cyber-text-secondary); }
   }
@@ -467,7 +467,7 @@ onMounted(() => {
 
 .empty-records {
   text-align: center;
-  color: #c0c4cc;
+  color: var(--cyber-text-muted);
   padding: 40px 0;
 }
 
@@ -478,7 +478,7 @@ onMounted(() => {
 .agent-key-item {
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(0,229,255,0.08);
+  border: 1px solid var(--cyber-glass-border);
   margin-bottom: 8px;
 
   .key-info {
@@ -490,12 +490,12 @@ onMounted(() => {
     .key-name {
       font-weight: 600;
       font-size: 13px;
-      color: #e0e0ef;
+      color: var(--cyber-text-primary);
     }
 
     .key-time {
       font-size: 11px;
-      color: #8c8ca1;
+      color: var(--cyber-text-secondary);
       margin-left: auto;
     }
   }
@@ -509,7 +509,7 @@ onMounted(() => {
     code {
       flex: 1;
       font-size: 11px;
-      color: #00E5FF;
+      color: var(--cyber-cyan);
       background: rgba(0,229,255,0.06);
       padding: 4px 8px;
       border-radius: 4px;
@@ -528,7 +528,7 @@ onMounted(() => {
 
 .empty-keys {
   text-align: center;
-  color: #c0c4cc;
+  color: var(--cyber-text-muted);
   padding: 20px 0;
   font-size: 13px;
 }

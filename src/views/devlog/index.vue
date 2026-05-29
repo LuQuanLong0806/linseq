@@ -98,7 +98,7 @@ onMounted(() => {
 
 .panel-header {
   padding: 14px 20px;
-  border-bottom: 1px solid rgba(0,229,255,0.08);
+  border-bottom: 1px solid var(--cyber-glass-border);
   margin-bottom: 16px;
 }
 

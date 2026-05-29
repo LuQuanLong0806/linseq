@@ -201,7 +201,7 @@ function initBgCanvas() {
 }
 .login-card {
   position: relative; width: 400px; border-radius: 16px; overflow: hidden;
-  background: rgba(10,16,31,0.85); border: 1px solid rgba(0,229,255,0.12);
+  background: var(--cyber-glass-bg-strong); border: 1px solid var(--cyber-glass-border);
   backdrop-filter: blur(20px); padding: 40px 36px 32px;
   animation: cardIn 0.6s ease-out;
 }
@@ -242,7 +242,7 @@ function initBgCanvas() {
   50% { opacity: 1; transform: scale(1.25); }
 }
 .login-title {
-  font-size: 22px; font-weight: 700; color: #E8F0FF; margin: 0 0 6px;
+  font-size: 22px; font-weight: 700; color: var(--cyber-text-primary); margin: 0 0 6px;
   letter-spacing: 2px;
 }
 .login-subtitle {
@@ -262,13 +262,13 @@ function initBgCanvas() {
   transition: all 0.3s;
   :deep(.el-icon) { color: rgba(140,140,161,0.5); flex-shrink: 0; }
   input {
-    flex: 1; background: none; border: none; outline: none; color: #E8F0FF;
+    flex: 1; background: none; border: none; outline: none; color: var(--cyber-text-primary);
     font-size: 14px; height: 100%; &::placeholder { color: rgba(140,140,161,0.4); }
   }
   &.focused {
     border-color: rgba(0,229,255,0.4);
     box-shadow: 0 0 16px rgba(0,229,255,0.08);
-    :deep(.el-icon) { color: #00E5FF; }
+    :deep(.el-icon) { color: var(--cyber-cyan); }
   }
 }
 
@@ -276,7 +276,7 @@ function initBgCanvas() {
   width: 100%; height: 46px; border: none; border-radius: 8px; cursor: pointer;
   background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(157,92,255,0.15));
   border: 1px solid rgba(0,229,255,0.25);
-  color: #00E5FF; font-size: 15px; font-weight: 600; letter-spacing: 2px;
+  color: var(--cyber-cyan); font-size: 15px; font-weight: 600; letter-spacing: 2px;
   transition: all 0.3s; position: relative; overflow: hidden;
   &:hover:not(:disabled) {
     background: linear-gradient(135deg, rgba(0,229,255,0.25), rgba(157,92,255,0.25));

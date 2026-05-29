@@ -316,50 +316,55 @@
         </Transition>
       </Teleport>
 
-      <!-- 右侧手风琴编辑面板 -->
-      <Transition name="drawer-slide">
-        <div v-if="drawerTask" class="task-drawer" @click.stop>
-          <div class="drawer-header">
-            <div class="drawer-title-area">
-              <el-tag :type="getPriorityType(drawerTask.priority)" size="small">{{ getPriorityLabel(drawerTask.priority) }}</el-tag>
-              <span class="drawer-id">#{{ drawerTask.sourceId }}</span>
-            </div>
-            <el-button link size="small" @click="drawerTask = null" class="drawer-close">✕</el-button>
-          </div>
-          <h3 class="drawer-task-title">{{ drawerTask.title }}</h3>
-
-          <el-form label-width="80px" label-position="top" class="drawer-form">
-            <el-form-item label="项目名称">
-              <div class="drawer-field">{{ drawerTask.project || drawerTask.customer || '-' }}</div>
-            </el-form-item>
-            <el-form-item label="本地地址">
-              <el-input v-model="drawerForm.projectPath" placeholder="如 F:\your-project" />
-            </el-form-item>
-            <el-form-item label="Git 分支">
-              <el-input v-model="drawerForm.gitBranch" placeholder="如 feature/xxx" />
-            </el-form-item>
-            <el-form-item label="补充说明">
-              <el-input v-model="drawerForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明，给 Agent 参考..." resize="none" />
-            </el-form-item>
-            <el-form-item label="需求文档" v-if="drawerTask.reqDocName">
-              <div class="drawer-field doc-link">
-                <span>{{ drawerTask.reqDocName }}</span>
-                <el-button v-if="drawerTask.reqDocUrl" type="primary" link size="small" @click="openUrl(drawerTask.reqDocUrl)">查看</el-button>
+      <!-- 配置弹窗 -->
+      <Teleport to="body">
+        <Transition name="fade-mask">
+          <div v-if="drawerTask" class="config-modal-mask" @click.self="drawerTask = null">
+            <div class="config-modal">
+              <div class="config-modal-header">
+                <div class="config-modal-title">
+                  <el-tag :type="getPriorityType(drawerTask.priority)" size="small">{{ getPriorityLabel(drawerTask.priority) }}</el-tag>
+                  <span class="config-modal-id">#{{ drawerTask.sourceId }}</span>
+                  <span class="config-modal-name">{{ drawerTask.title }}</span>
+                </div>
+                <el-button link size="small" @click="drawerTask = null" class="config-modal-close">✕</el-button>
               </div>
-            </el-form-item>
-          </el-form>
-
-          <div class="drawer-footer">
-            <el-button @click="drawerTask = null">取消</el-button>
-            <el-button type="primary" @click="saveDrawer" :loading="drawerSaving">保存</el-button>
+              <div class="config-modal-body">
+                <el-form label-width="80px" label-position="top" class="config-form">
+                  <el-form-item label="项目名称">
+                    <div class="config-field">{{ drawerTask.project || drawerTask.customer || '-' }}</div>
+                  </el-form-item>
+                  <el-row :gutter="16">
+                    <el-col :span="12">
+                      <el-form-item label="本地路径">
+                        <el-input v-model="drawerForm.projectPath" placeholder="如 F:\your-project" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="Git 分支">
+                        <el-input v-model="drawerForm.gitBranch" placeholder="如 feature/xxx" />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-form-item label="补充说明">
+                    <el-input v-model="drawerForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明，给 Agent 参考..." resize="none" />
+                  </el-form-item>
+                  <el-form-item label="需求文档" v-if="drawerTask.reqDocName">
+                    <div class="config-field doc-link">
+                      <span>{{ drawerTask.reqDocName }}</span>
+                      <el-button v-if="drawerTask.reqDocUrl" type="primary" link size="small" @click="openUrl(drawerTask.reqDocUrl)">查看</el-button>
+                    </div>
+                  </el-form-item>
+                </el-form>
+              </div>
+              <div class="config-modal-footer">
+                <el-button @click="drawerTask = null">取消</el-button>
+                <el-button type="primary" @click="saveDrawer" :loading="drawerSaving">保存</el-button>
+              </div>
+            </div>
           </div>
-        </div>
-      </Transition>
-
-      <!-- 遮罩层 -->
-      <Transition name="fade-mask">
-        <div v-if="drawerTask" class="drawer-mask" @click="drawerTask = null"></div>
-      </Transition>
+        </Transition>
+      </Teleport>
 
       <!-- 新建分组弹窗 -->
       <el-dialog v-model="showGroupDialog" title="新建分组" width="var(--dialog-sm)" :close-on-click-modal="false">
@@ -982,8 +987,8 @@ async function syncTodoFromBackend() {
   box-shadow: 0 0 8px #00E5FF; animation: pulse 2s ease-in-out infinite;
   &.dev-pulse { background: #FF7D00; box-shadow: 0 0 8px #FF7D00; animation: pulse-red 1.5s ease-in-out infinite; }
 }
-.stat-num { font-size: 24px; font-weight: 800; color: #e0e0ef; font-variant-numeric: tabular-nums; }
-.stat-label { font-size: 12px; color: #8c8ca1; text-transform: uppercase; letter-spacing: 1px; }
+.stat-num { font-size: 24px; font-weight: 800; color: var(--cyber-text-primary); font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 12px; color: var(--cyber-text-secondary); text-transform: uppercase; letter-spacing: 1px; }
 .stat-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.08); }
 
 @keyframes pulse { 0%,100%{ opacity:0.6; transform:scale(1); } 50%{ opacity:1; transform:scale(1.3); } }
@@ -1000,7 +1005,7 @@ async function syncTodoFromBackend() {
   animation: gradientShift 6s ease infinite;
 }
 @keyframes gradientShift { 0%,100%{background-position:0% 50%} 33%{background-position:100% 50%} 66%{background-position:50% 100%} }
-.page-desc { color: #8c8ca1; font-size: 13px; margin: 0; }
+.page-desc { color: var(--cyber-text-secondary); font-size: 13px; margin: 0; }
 
 // Dual panel
 .dual-panel {
@@ -1013,8 +1018,8 @@ async function syncTodoFromBackend() {
 }
 
 .panel {
-  background: rgba(10,16,31,0.15);
-  border: 1px solid rgba(0,229,255,0.12);
+  background: var(--cyber-glass-bg);
+  border: 1px solid var(--cyber-glass-border);
   border-radius: 14px;
   backdrop-filter: blur(2px);
   padding: 20px;
@@ -1022,7 +1027,7 @@ async function syncTodoFromBackend() {
   overflow: hidden;
 }
 
-.todo-panel { border-color: rgba(0,229,255,0.15); }
+.todo-panel { border-color: var(--cyber-glass-border); }
 .dev-panel { border-color: rgba(255,125,0,0.2); }
 
 .todo-panel::before {
@@ -1045,9 +1050,9 @@ async function syncTodoFromBackend() {
   display: flex; align-items: center; justify-content: center;
 }
 .icon-ring {
-  position: absolute; inset: 0; border: 2px solid #00E5FF; border-radius: 50%;
+  position: absolute; inset: 0; border: 2px solid var(--cyber-cyan); border-radius: 50%;
   animation: ringPulse 2s ease-in-out infinite;
-  &.dev-ring { border-color: #FF7D00; animation-duration: 1.2s; }
+  &.dev-ring { border-color: var(--cyber-orange); animation-duration: 1.2s; }
 }
 .icon-dot {
   width: 8px; height: 8px; border-radius: 50%; background: #00E5FF;
@@ -1055,8 +1060,8 @@ async function syncTodoFromBackend() {
 }
 @keyframes ringPulse { 0%,100%{transform:scale(1);opacity:0.6} 50%{transform:scale(1.2);opacity:0.2} }
 
-.panel-title { margin: 0; font-size: 16px; font-weight: 600; color: #e0e0ef; flex: 1; }
-.dev-title { color: #FF7D00; }
+.panel-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--cyber-text-primary); flex: 1; }
+.dev-title { color: var(--cyber-orange); }
 
 .engine-indicator {
   display: flex; align-items: center; gap: 6px;
@@ -1064,10 +1069,10 @@ async function syncTodoFromBackend() {
   background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.2);
 }
 .engine-pulse { width: 6px; height: 6px; border-radius: 50%; background: #FF7D00; animation: pulse-red 1s ease-in-out infinite; }
-.engine-text { font-size: 10px; font-weight: 700; color: #FF7D00; letter-spacing: 2px; }
+.engine-text { font-size: 10px; font-weight: 700; color: var(--cyber-orange); letter-spacing: 2px; }
 
 .panel-empty {
-  text-align: center; padding: 40px 0; color: #8c8ca1;
+  text-align: center; padding: 40px 0; color: var(--cyber-text-secondary);
   p { margin: 12px 0 0; font-size: 14px; }
 }
 .empty-pulse {
@@ -1078,11 +1083,11 @@ async function syncTodoFromBackend() {
   width: 40px; height: 40px; margin: 0 auto; border-radius: 50%;
   border: 2px solid rgba(255,107,107,0.15); background: rgba(255,107,107,0.03);
 }
-.dev-empty p { color: #606266; }
+.dev-empty p { color: var(--cyber-text-muted); }
 
 // Group cards (inside todo panel)
 .group-card {
-  background: rgba(10,16,31,0.15);
+  background: var(--cyber-glass-bg);
   border: 1px solid rgba(157,92,255,0.15);
   border-radius: 10px;
   margin-bottom: 10px;
@@ -1094,29 +1099,29 @@ async function syncTodoFromBackend() {
   &:hover { background: rgba(157,92,255,0.08); }
 }
 .group-left { display: flex; align-items: center; gap: 8px; }
-.group-arrow { color: #9D5CFF; font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
-.group-name { font-size: 14px; font-weight: 600; color: #e0e0ef; }
+.group-arrow { color: var(--cyber-purple); font-size: 13px; transition: transform 0.2s; &.expanded { transform: rotate(90deg); } }
+.group-name { font-size: 14px; font-weight: 600; color: var(--cyber-text-primary); }
 .group-right { display: flex; align-items: center; gap: 8px; }
 .group-desc { padding: 0 14px 8px; }
-.group-desc-text { font-size: 11px; color: #9D5CFF; line-height: 1.5; opacity: 0.85; }
+.group-desc-text { font-size: 11px; color: var(--cyber-purple); line-height: 1.5; opacity: 0.85; }
 .group-tasks { border-top: 1px solid rgba(157,92,255,0.1); }
-.group-empty { padding: 12px; text-align: center; color: #8c8ca1; font-size: 12px; }
+.group-empty { padding: 12px; text-align: center; color: var(--cyber-text-secondary); font-size: 12px; }
 .sub-task {
   display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px;
   border-bottom: 1px solid rgba(157,92,255,0.05); transition: background 0.2s; cursor: grab;
   &:last-child { border-bottom: none; }
   &:hover { background: rgba(157,92,255,0.06); }
 }
-.sub-rank { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(157,92,255,0.15); border-radius: 5px; font-size: 10px; font-weight: 700; color: #9D5CFF; flex-shrink: 0; margin-top: 2px; }
+.sub-rank { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: rgba(157,92,255,0.15); border-radius: 5px; font-size: 10px; font-weight: 700; color: var(--cyber-purple); flex-shrink: 0; margin-top: 2px; }
 .sub-body { flex: 1; min-width: 0; }
 .sub-top { display: flex; align-items: center; gap: 6px; }
-.sub-title { flex: 1; font-size: 12px; color: #e0e0ef; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sub-desc { margin-top: 4px; font-size: 11px; color: #00E5FF; opacity: 0.8; cursor: pointer; display: flex; align-items: flex-start; gap: 4px;
+.sub-title { flex: 1; font-size: 12px; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-desc { margin-top: 4px; font-size: 11px; color: var(--cyber-cyan); opacity: 0.8; cursor: pointer; display: flex; align-items: flex-start; gap: 4px;
   span:first-child { flex: 1; line-height: 1.4; }
   &:hover { opacity: 1; }
 }
 .sub-desc-edit { font-size: 10px; opacity: 0.5; flex-shrink: 0; }
-.sub-desc-add { margin-top: 4px; font-size: 11px; color: #9D5CFF; cursor: pointer; opacity: 0.6; &:hover { opacity: 1; } }
+.sub-desc-add { margin-top: 4px; font-size: 11px; color: var(--cyber-purple); cursor: pointer; opacity: 0.6; &:hover { opacity: 1; } }
 .sub-desc-editor { margin-top: 6px; }
 .sub-desc-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .sub-actions { display: flex; gap: 4px; flex-shrink: 0; margin-top: 2px; }
@@ -1131,10 +1136,10 @@ async function syncTodoFromBackend() {
 // Todo card
 .todo-card {
   position: relative; display: flex; align-items: stretch;
-  background: rgba(10,16,31,0.15); border: 1px solid rgba(0,229,255,0.12);
+  background: var(--cyber-glass-bg); border: 1px solid var(--cyber-glass-border);
   border-radius: 10px; transition: all 0.3s ease; cursor: grab; overflow: hidden;
   backdrop-filter: blur(2px);
-  &:hover { border-color: rgba(0,229,255,0.35); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
+  &:hover { border-color: var(--cyber-glass-border-hover); box-shadow: 0 0 20px rgba(0,229,255,0.1); transform: translateY(-1px); }
   &.dragging { opacity: 0.4; transform: scale(0.97); }
   &.is-editing { cursor: default; }
 }
@@ -1150,14 +1155,14 @@ async function syncTodoFromBackend() {
 .card-rank {
   display: flex; align-items: center; justify-content: center; width: 40px; flex-shrink: 0;
   font-size: 16px; font-weight: 800;
-  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: #00E5FF;
-  border-right: 1px solid rgba(0,229,255,0.08);
+  background: linear-gradient(180deg, rgba(0,229,255,0.12), rgba(0,229,255,0.03)); color: var(--cyber-cyan);
+  border-right: 1px solid var(--cyber-glass-border);
 }
 .card-body { flex: 1; padding: 12px 14px; min-width: 0; }
-.card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; .card-id { color: #8c8ca1; font-size: 11px; margin-left: auto; } }
-.card-title { margin: 0; font-size: 14px; font-weight: 600; color: #e0e0ef; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: #8c8ca1; .overdue { color: #f56c6c; font-weight: 600; } }
-.card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: #00E5FF; opacity: 0.8;
+.card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; .card-id { color: var(--cyber-text-secondary); font-size: 11px; margin-left: auto; } }
+.card-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--cyber-text-primary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--cyber-text-secondary); .overdue { color: #f56c6c; font-weight: 600; } }
+.card-config { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: var(--cyber-cyan); opacity: 0.8;
   .config-item { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .card-actions { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 10px; }
@@ -1165,51 +1170,64 @@ async function syncTodoFromBackend() {
 // Card desc preview (read-only in card)
 .card-desc-preview {
   margin-top: 8px; padding: 5px 10px; border-radius: 6px;
-  background: rgba(0,229,255,0.06); border: 1px solid rgba(0,229,255,0.08);
+  background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border);
   display: flex; align-items: flex-start; gap: 6px;
 }
-.desc-label { font-size: 10px; color: #00E5FF; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
-.desc-text { flex: 1; font-size: 11px; color: #cfd3dc; line-height: 1.4;
+.desc-label { font-size: 10px; color: var(--cyber-cyan); white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+.desc-text { flex: 1; font-size: 11px; color: var(--cyber-text-muted); line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 // Card active state
 .todo-card.is-active { border-color: rgba(0,229,255,0.4); box-shadow: 0 0 20px rgba(0,229,255,0.15); }
 
-// ===== Right Drawer =====
-.drawer-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; backdrop-filter: blur(2px);
+// ===== Config Modal =====
+.config-modal-mask {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
 }
-.task-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width); z-index: 100;
-  background: rgba(10,16,31,0.92); border-left: 1px solid rgba(0,229,255,0.2);
-  backdrop-filter: blur(20px); padding: 24px; overflow-y: auto;
+.config-modal {
+  width: var(--dialog-lg); max-height: 80vh; border-radius: 14px; overflow: hidden;
+  background: var(--cyber-glass-bg-strong); border: 1px solid var(--cyber-glass-border);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
   display: flex; flex-direction: column;
+  animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.drawer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.drawer-title-area { display: flex; align-items: center; gap: 8px; }
-.drawer-id { color: #8c8ca1; font-size: 12px; }
-.drawer-close { font-size: 18px; color: #8c8ca1; &:hover { color: #00E5FF; } }
-.drawer-task-title { margin: 0 0 20px; font-size: 16px; font-weight: 600; color: #e0e0ef; line-height: 1.4; }
-.drawer-form { flex: 1; }
-.drawer-field { font-size: 13px; color: #cfd3dc; padding: 6px 0; line-height: 1.5; }
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.config-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px; border-bottom: 1px solid var(--cyber-glass-border);
+}
+.config-modal-title {
+  display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;
+}
+.config-modal-id { color: var(--cyber-text-secondary); font-size: 12px; }
+.config-modal-name {
+  font-size: 15px; font-weight: 600; color: var(--cyber-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.config-modal-close { font-size: 18px; color: var(--cyber-text-secondary); &:hover { color: var(--cyber-cyan); } }
+.config-modal-body {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+}
+.config-form :deep(.el-form-item__label) { font-weight: 500; }
+.config-field { font-size: 13px; color: var(--cyber-text-primary); padding: 6px 0; line-height: 1.5; }
 .doc-link { display: flex; align-items: center; justify-content: space-between; }
-.drawer-footer {
-  padding-top: 16px; border-top: 1px solid rgba(0,229,255,0.1);
+.config-modal-footer {
+  padding: 16px 24px; border-top: 1px solid var(--cyber-glass-border);
   display: flex; justify-content: flex-end; gap: 10px;
 }
 
-// Drawer transition
-.drawer-slide-enter-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.drawer-slide-leave-active { transition: transform 0.2s ease-in; }
-.drawer-slide-enter-from { transform: translateX(100%); }
-.drawer-slide-leave-to { transform: translateX(100%); }
-.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.25s ease; }
+.fade-mask-enter-active, .fade-mask-leave-active { transition: opacity 0.2s ease; }
 .fade-mask-enter-from, .fade-mask-leave-to { opacity: 0; }
 
 // Dev card
 .dev-card {
   position: relative; display: flex; flex-direction: column;
-  background: rgba(10,16,31,0.15); border: 1px solid rgba(255,125,0,0.15);
+  background: var(--cyber-glass-bg); border: 1px solid rgba(255,125,0,0.15);
   border-radius: 10px; overflow: hidden; transition: all 0.3s ease;
   backdrop-filter: blur(2px);
   &:hover { border-color: rgba(255,125,0,0.35); box-shadow: 0 0 24px rgba(255,125,0,0.1); transform: translateY(-1px); }
@@ -1300,7 +1318,7 @@ async function syncTodoFromBackend() {
 }
 .chat-terminal {
   position: relative; width: var(--chat-terminal-width); max-height: 80vh; border-radius: 16px; overflow: hidden;
-  background: rgba(10,16,31,0.96); border: 1px solid rgba(0,229,255,0.25);
+  background: rgba(10,16,31,0.96); border: 1px solid var(--cyber-glass-border-hover);
   box-shadow: 0 0 60px rgba(0,229,255,0.12), 0 0 120px rgba(157,92,255,0.06);
   display: flex; flex-direction: column; animation: terminal-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1314,7 +1332,7 @@ async function syncTodoFromBackend() {
 .terminal-header {
   position: relative; z-index: 1; padding: 14px 20px;
   display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid rgba(0,229,255,0.1);
+  border-bottom: 1px solid var(--cyber-glass-border);
   background: linear-gradient(180deg, rgba(0,229,255,0.04), transparent);
 }
 .terminal-title-area {
@@ -1325,13 +1343,13 @@ async function syncTodoFromBackend() {
   box-shadow: 0 0 8px #FF7D00; animation: pulse 1.5s ease-in-out infinite;
 }
 .terminal-task-name {
-  font-size: 14px; font-weight: 600; color: #e0e0ef;
+  font-size: 14px; font-weight: 600; color: var(--cyber-text-primary);
   max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .terminal-tag { flex-shrink: 0; }
 .terminal-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.terminal-link { color: rgba(0,229,255,0.6); &:hover { color: #00E5FF; } }
-.terminal-close { font-size: 16px; color: #8c8ca1; &:hover { color: #00E5FF; } }
+.terminal-link { color: rgba(0,229,255,0.6); &:hover { color: var(--cyber-cyan); } }
+.terminal-close { font-size: 16px; color: var(--cyber-text-secondary); &:hover { color: var(--cyber-cyan); } }
 
 .terminal-messages {
   position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 16px 20px;
@@ -1343,7 +1361,7 @@ async function syncTodoFromBackend() {
 .chat-empty {
   text-align: center; padding: 50px 0;
   .empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
-  p { font-size: 14px; color: #e0e0ef; margin: 0 0 6px; }
+  p { font-size: 14px; color: var(--cyber-text-primary); margin: 0 0 6px; }
   span { font-size: 12px; color: rgba(140,140,161,0.4); }
 }
 .chat-bubble {
@@ -1353,7 +1371,7 @@ async function syncTodoFromBackend() {
 }
 .bubble-user {
   align-self: flex-end;
-  background: rgba(0,229,255,0.1); border: 1px solid rgba(0,229,255,0.2);
+  background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border-hover);
   border-bottom-right-radius: 3px;
 }
 .bubble-agent {
@@ -1363,7 +1381,7 @@ async function syncTodoFromBackend() {
 }
 .bubble-reply {
   align-self: flex-start;
-  background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2);
+  background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border-hover);
   border-bottom-left-radius: 3px;
   .bubble-role { color: rgba(0,229,255,0.85) !important; }
 }
@@ -1405,19 +1423,19 @@ async function syncTodoFromBackend() {
   30% { transform: translateY(-8px); opacity: 1; }
 }
 .terminal-input {
-  position: relative; z-index: 1; padding: 14px 20px; border-top: 1px solid rgba(0,229,255,0.08);
+  position: relative; z-index: 1; padding: 14px 20px; border-top: 1px solid var(--cyber-glass-border);
   background: rgba(0,15,30,0.5); position: relative;
   &.drag-over { border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.04); }
   :deep(.el-textarea__inner) {
     background: rgba(0,20,40,0.6) !important;
-    border-color: rgba(0,229,255,0.12) !important;
-    color: #cfd3dc !important; font-size: 12px;
+    border-color: var(--cyber-glass-border) !important;
+    color: var(--cyber-text-muted) !important; font-size: 12px;
     &:focus { border-color: rgba(0,229,255,0.3) !important; }
   }
 }
 .drop-overlay {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(0,229,255,0.08); color: #00E5FF; font-size: 13px; z-index: 1;
+  background: var(--cyber-glass-border); color: var(--cyber-cyan); font-size: 13px; z-index: 1;
   border: 2px dashed rgba(0,229,255,0.3); border-radius: 6px; margin: 6px;
 }
 .terminal-input-actions {
@@ -1441,16 +1459,16 @@ async function syncTodoFromBackend() {
 .mode-tabs {
   display: flex; justify-content: center; gap: 4px;
   margin-top: 14px; padding: 3px; border-radius: 10px;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(0,229,255,0.08);
+  background: rgba(255,255,255,0.03); border: 1px solid var(--cyber-glass-border);
   width: fit-content; margin-left: auto; margin-right: auto;
 }
 .mode-tab {
   padding: 6px 24px; border-radius: 8px; border: none;
-  background: transparent; color: #8c8ca1; font-size: 13px; font-weight: 500;
+  background: transparent; color: var(--cyber-text-secondary); font-size: 13px; font-weight: 500;
   cursor: pointer; transition: all 0.25s;
-  &:hover { color: #e0e0ef; background: rgba(0,229,255,0.05); }
+  &:hover { color: var(--cyber-text-primary); background: rgba(0,229,255,0.05); }
   &.active {
-    color: #00E5FF; background: rgba(0,229,255,0.1);
+    color: var(--cyber-cyan); background: var(--cyber-glass-border);
     box-shadow: 0 0 12px rgba(0,229,255,0.15);
   }
 }
@@ -1467,22 +1485,22 @@ async function syncTodoFromBackend() {
   transition: box-shadow 0.3s, transform 0.2s;
   &:hover { box-shadow: 0 0 36px rgba(0,229,255,0.4); transform: translateY(-2px); }
 }
-.wake-hint { font-size: 12px; color: #8c8ca1; }
+.wake-hint { font-size: 12px; color: var(--cyber-text-secondary); }
 
 // ===== Chat Panel =====
 .chat-panel {
   max-width: var(--container-sm); margin: 0 auto;
   display: flex; flex-direction: column; height: calc(100vh - 220px);
-  background: rgba(10,16,31,0.2); border: 1px solid rgba(0,229,255,0.1);
+  background: rgba(10,16,31,0.2); border: 1px solid var(--cyber-glass-border);
   border-radius: 14px; overflow: hidden;
 }
 .chat-messages {
   flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px;
 }
 .chat-empty-state {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #8c8ca1;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--cyber-text-secondary);
   .chat-empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
-  p { font-size: 16px; font-weight: 600; color: #e0e0ef; margin: 0 0 4px; }
+  p { font-size: 16px; font-weight: 600; color: var(--cyber-text-primary); margin: 0 0 4px; }
   span { font-size: 12px; }
 }
 .chat-bubble-item {
@@ -1493,20 +1511,20 @@ async function syncTodoFromBackend() {
 .cb-role {
   width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
   font-size: 16px; flex-shrink: 0;
-  .cb-user & { background: rgba(0,229,255,0.12); border: 1px solid rgba(0,229,255,0.2); }
+  .cb-user & { background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border-hover); }
   .cb-agent & { background: rgba(157,92,255,0.12); border: 1px solid rgba(157,92,255,0.2); }
 }
 .cb-content {
   padding: 10px 14px; border-radius: 12px; line-height: 1.5;
-  .cb-user & { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.15); }
+  .cb-user & { background: var(--cyber-glass-border); border: 1px solid var(--cyber-glass-border); }
   .cb-agent & { background: rgba(157,92,255,0.06); border: 1px solid rgba(157,92,255,0.12); }
 }
-.cb-text { font-size: 13px; color: #e0e0ef; white-space: pre-wrap; word-break: break-word; }
-.cb-time { font-size: 10px; color: #8c8ca1; margin-top: 4px; }
+.cb-text { font-size: 13px; color: var(--cyber-text-primary); white-space: pre-wrap; word-break: break-word; }
+.cb-time { font-size: 10px; color: var(--cyber-text-secondary); margin-top: 4px; }
 .cb-typing {
   display: flex; gap: 4px; padding: 4px 0;
   span {
-    width: 6px; height: 6px; border-radius: 50%; background: #9D5CFF;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyber-purple);
     animation: typingBounce 1.2s ease-in-out infinite;
     &:nth-child(2) { animation-delay: 0.2s; }
     &:nth-child(3) { animation-delay: 0.4s; }
@@ -1515,7 +1533,7 @@ async function syncTodoFromBackend() {
 @keyframes typingBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
 .chat-input-bar {
   display: flex; gap: 10px; padding: 14px 16px;
-  border-top: 1px solid rgba(0,229,255,0.08);
+  border-top: 1px solid var(--cyber-glass-border);
   background: rgba(10,16,31,0.4);
 }
 </style>

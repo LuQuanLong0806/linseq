@@ -16,4 +16,8 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn as any })
 
+// Init theme before mount
+const savedTheme = localStorage.getItem('linesequence-theme') || 'dark'
+document.documentElement.setAttribute('data-theme', savedTheme)
+
 app.mount('#app')
