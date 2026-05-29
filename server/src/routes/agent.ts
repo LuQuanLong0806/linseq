@@ -20,6 +20,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { getDb } from '../db/index.js'
 import { mapDbRowToTask, addDevLog } from './tasks.js'
+import { broadcastToTask } from '../websocket.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const screenshotsDir = path.resolve(__dirname, '../../data/screenshots')
@@ -261,6 +262,7 @@ router.post('/task/:id/log', (req, res) => {
     }
 
     const logId = addDevLog(db, id, action, content, 'agent', false)
+    broadcastToTask(id, 'devlog', { logId, action, content, author: 'agent' })
     res.json({ code: 0, message: 'success', data: { logId } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })

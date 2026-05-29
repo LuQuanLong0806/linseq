@@ -6,18 +6,49 @@
       <div class="logo-area">
         <div class="logo-icon">
           <div class="logo-glow"></div>
-          <svg viewBox="0 0 40 40" fill="none" width="28" height="28" class="logo-svg">
-            <path class="hex-outer" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="#00E5FF" stroke-width="1.5" fill="rgba(0,229,255,0.06)" />
-            <path class="hex-inner" d="M20 10L30 15V25L20 30L10 25V15L20 10Z" stroke="#9D5CFF" stroke-width="1" fill="rgba(157,92,255,0.04)" />
-            <circle class="hex-core" cx="20" cy="20" r="3" fill="#00E5FF" />
-            <path class="hex-sweep" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#sweepGrad)" stroke-width="2" fill="none" stroke-dasharray="120" stroke-dashoffset="120" />
+          <svg viewBox="0 0 40 40" fill="none" width="30" height="30" class="logo-svg">
             <defs>
-              <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="transparent" />
-                <stop offset="50%" stop-color="#00E5FF" />
-                <stop offset="100%" stop-color="transparent" />
+              <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#E8D5FF"/>
+                <stop offset="100%" stop-color="#9D5CFF"/>
               </linearGradient>
+              <filter id="boltGlow">
+                <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
             </defs>
+            <!-- 电流环绕：外圈 -->
+            <circle cx="20" cy="20" r="18" stroke="#D4B5FF" stroke-width="1.8" fill="none" stroke-dasharray="6 8" opacity="0.8">
+              <animate attributeName="stroke-dashoffset" from="0" to="-56" dur="2.5s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite"/>
+            </circle>
+            <!-- 电流环绕：内圈反方向 -->
+            <circle cx="20" cy="20" r="15" stroke="#00E5FF" stroke-width="1.2" fill="none" stroke-dasharray="3 10" opacity="0.6">
+              <animate attributeName="stroke-dashoffset" from="0" to="52" dur="3s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.4;1;0.4" dur="2.5s" repeatCount="indefinite"/>
+            </circle>
+            <!-- 闪电主体 -->
+            <g filter="url(#boltGlow)">
+              <polygon points="23,3 10,20 20,20 16,38 32,18 22,18" fill="url(#boltGrad)">
+                <animate attributeName="opacity" values="0.9;1;0.9" dur="1.8s" repeatCount="indefinite"/>
+              </polygon>
+            </g>
+            <!-- 闪电内部高光 -->
+            <polygon points="22,6 14,19 20,19 18,32 29,19 23,19" fill="#FFFFFF" opacity="0.5">
+              <animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite"/>
+            </polygon>
+            <!-- 微光粒子1：沿外圈飘 -->
+            <circle r="2.2" fill="#D4B5FF">
+              <animate attributeName="cx" values="38;20;2;20;38" dur="4s" repeatCount="indefinite"/>
+              <animate attributeName="cy" values="20;2;20;38;20" dur="4s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;1;0" dur="4s" repeatCount="indefinite"/>
+            </circle>
+            <!-- 微光粒子2：反方向飘 -->
+            <circle r="1.8" fill="#00E5FF">
+              <animate attributeName="cx" values="2;20;38;20;2" dur="3.5s" repeatCount="indefinite"/>
+              <animate attributeName="cy" values="20;38;20;2;20" dur="3.5s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;1;0" dur="3.5s" repeatCount="indefinite"/>
+            </circle>
           </svg>
         </div>
         <transition name="fade">
@@ -43,7 +74,10 @@
         </el-menu-item>
         <el-menu-item index="/ai-todo">
           <el-icon><MagicStick /></el-icon>
-          <template #title>AI 待办</template>
+          <template #title>
+            <span>AI 待办</span>
+            <span v-if="hasAgentReply && !agentReplySeen" class="agent-reply-dot"></span>
+          </template>
         </el-menu-item>
         <el-menu-item index="/review">
           <el-icon><Checked /></el-icon>
@@ -88,9 +122,6 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
-          <el-badge :value="syncBadge" :hidden="syncBadge === 0" class="sync-badge">
-            <el-button :icon="Refresh" circle size="small" @click="handleSync" :loading="taskStore.syncing" />
-          </el-badge>
           <el-tag effect="dark" type="info" size="small" class="time-tag">
             {{ currentTime }}
           </el-tag>
@@ -116,8 +147,10 @@ import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, 
 import dayjs from 'dayjs'
 import { useCyberAnimations } from '@/composables/useCyberAnimations'
 import { useCyberBackground } from '@/composables/useCyberBackground'
+import { useDesktop } from '@/composables/useDesktop'
 
 useCyberAnimations('.cyber-glass')
+const { isDesktop, sendNotification } = useDesktop()
 
 const route = useRoute()
 const taskStore = useTaskStore()
@@ -130,16 +163,44 @@ let timer: ReturnType<typeof setInterval> | null = null
 
 const currentRoute = computed(() => route.path)
 const currentTitle = computed(() => (route.meta.title as string) || '灵序')
-const syncBadge = computed(() => taskStore.stats.pending + taskStore.stats.overdue)
 const reviewCount = computed(() => taskStore.tasks.filter(t => t.aiStatus === 'ai_review').length)
+const hasAgentReply = computed(() => {
+  return taskStore.tasks.some(t => {
+    if (t.aiStatus !== 'ai_dev') return false
+    const logs = t.devLog || []
+    return logs.some(l => l.action === '回复' &&
+      dayjs(l.time).isAfter(dayjs().subtract(5, 'minute')))
+  })
+})
+const agentReplySeen = ref(false)
+
+watch(() => route.path, (path) => {
+  if (path === '/ai-todo') agentReplySeen.value = true
+})
 
 const BASE_TITLE = '灵序 LineSequence'
 let titleFlashTimer: ReturnType<typeof setInterval> | null = null
 let titleFlashOn = false
+let lastNotifiedAgent = false
 
-watch(reviewCount, (count) => {
+watch([reviewCount, hasAgentReply, agentReplySeen], ([count, hasReply, seen]) => {
   if (titleFlashTimer) { clearInterval(titleFlashTimer); titleFlashTimer = null }
-  if (count > 0) {
+  const showAgent = hasReply && !seen
+  // Agent 回复首次出现时发桌面通知
+  if (showAgent && !lastNotifiedAgent) {
+    lastNotifiedAgent = true
+    sendNotification('Agent 回复', '收到 Agent 开发回复，请查看')
+  }
+  if (!showAgent) lastNotifiedAgent = false
+  if (count > 0 && showAgent) {
+    let tick = 0
+    titleFlashTimer = setInterval(() => {
+      tick = (tick + 1) % 4
+      document.title = tick < 2
+        ? `🔴 (${count}) 待审核 ${BASE_TITLE}`
+        : `🟣 Agent 回复 ${BASE_TITLE}`
+    }, 800)
+  } else if (count > 0) {
     titleFlashOn = false
     titleFlashTimer = setInterval(() => {
       titleFlashOn = !titleFlashOn
@@ -147,21 +208,23 @@ watch(reviewCount, (count) => {
         ? `🔴 (${count}) 待审核 ${BASE_TITLE}`
         : `　 (${count}) ${BASE_TITLE}`
     }, 800)
+  } else if (showAgent) {
+    titleFlashOn = false
+    titleFlashTimer = setInterval(() => {
+      titleFlashOn = !titleFlashOn
+      document.title = titleFlashOn
+        ? `🟣 Agent 回复 ${BASE_TITLE}`
+        : `　 ${BASE_TITLE}`
+    }, 800)
   } else {
     document.title = BASE_TITLE
   }
 }, { immediate: true })
 
-function handleSync() {
-  taskStore.syncTasks()
-}
-
 onMounted(async () => {
-  await taskStore.fetchTasks()
   startBg()
   timer = setInterval(() => {
     currentTime.value = dayjs().format('HH:mm')
-    taskStore.fetchTasks()
   }, 30000)
 })
 
@@ -213,31 +276,15 @@ onUnmounted(() => {
   }
 
   .logo-svg {
-    filter: drop-shadow(0 0 6px rgba(0,229,255,0.3));
+    filter: drop-shadow(0 0 10px rgba(157,92,255,0.7)) drop-shadow(0 0 20px rgba(0,229,255,0.3));
     animation: logoBreathe 3s ease-in-out infinite;
-  }
-
-  .hex-outer {
-    animation: hexGlow 3s ease-in-out infinite alternate;
-  }
-
-  .hex-inner {
-    animation: hexGlow 3s ease-in-out infinite alternate-reverse;
-  }
-
-  .hex-core {
-    animation: corePulse 2s ease-in-out infinite;
-  }
-
-  .hex-sweep {
-    animation: sweepStroke 4s linear infinite;
   }
 
   .logo-glow {
     position: absolute;
-    inset: -8px;
+    inset: -12px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(0,229,255,0.12) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(157,92,255,0.35) 0%, rgba(0,229,255,0.1) 50%, transparent 75%);
     animation: glowPulse 3s ease-in-out infinite;
     pointer-events: none;
   }
@@ -247,24 +294,9 @@ onUnmounted(() => {
     50% { transform: scale(1.05); }
   }
 
-  @keyframes hexGlow {
-    0% { stroke-opacity: 0.5; filter: drop-shadow(0 0 2px currentColor); }
-    100% { stroke-opacity: 1; filter: drop-shadow(0 0 8px currentColor); }
-  }
-
-  @keyframes corePulse {
-    0%, 100% { opacity: 0.8; }
-    50% { opacity: 1; filter: drop-shadow(0 0 6px #00E5FF); }
-  }
-
-  @keyframes sweepStroke {
-    0% { stroke-dashoffset: 120; }
-    100% { stroke-dashoffset: -120; }
-  }
-
   @keyframes glowPulse {
-    0%, 100% { opacity: 0.4; transform: scale(1); }
-    50% { opacity: 0.8; transform: scale(1.15); }
+    0%, 100% { opacity: 0.6; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.25); }
   }
 
   .logo-text {
@@ -427,5 +459,15 @@ onUnmounted(() => {
 }
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
+}
+
+.agent-reply-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #9D5CFF;
+  box-shadow: 0 0 8px #9D5CFF; display: inline-block; margin-left: 6px; vertical-align: middle;
+  animation: agentPulse 1.2s ease-in-out infinite;
+}
+@keyframes agentPulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
 </style>

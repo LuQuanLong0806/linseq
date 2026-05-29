@@ -335,7 +335,6 @@ function resize() {
 }
 
 onMounted(async () => {
-  await taskStore.fetchTasks()
   await loadVersionData()
   await nextTick()
   initThree()

@@ -6,6 +6,7 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { createServer } from 'http'
 import { initDatabase } from './db/index.js'
 import { currentUser } from './middleware/auth.js'
 import taskRoutes from './routes/tasks.js'
@@ -18,6 +19,7 @@ import projectRoutes from './routes/projects.js'
 import settingsRoutes from './routes/settings.js'
 import userRoutes from './routes/users.js'
 import { startCookieRefresh, stopCookieRefresh } from './scraper/intranet.js'
+import { initWebSocket } from './websocket.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -65,7 +67,9 @@ async function start() {
   try {
     await initDatabase()
     startCookieRefresh()
-    app.listen(PORT, () => {
+    const server = createServer(app)
+    initWebSocket(server)
+    server.listen(PORT, () => {
       console.log(`\n⚡ 灵序 LINSEQ Server running at http://localhost:${PORT}`)
       console.log(`   API: http://localhost:${PORT}/api`)
       console.log(`   Health: http://localhost:${PORT}/api/health\n`)

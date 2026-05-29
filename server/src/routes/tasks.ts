@@ -4,6 +4,7 @@
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { getDb } from '../db/index.js'
+import { broadcastToTask } from '../websocket.js'
 import type { Task, TaskStatus } from './types.js'
 
 const router = Router()
@@ -289,6 +290,7 @@ router.post('/:id/supplements', (req, res) => {
     ).run(id, taskId, content.trim())
     addDevLog(db, taskId, '补充说明', `用户追加了补充说明: ${content.trim().substring(0, 50)}${content.trim().length > 50 ? '...' : ''}`, 'user', false)
     const row = db.prepare('SELECT * FROM task_supplements WHERE id = ?').get(id)
+    broadcastToTask(taskId, 'supplement', { id, taskId, content: content.trim(), type: 'user' })
     res.json({ code: 0, message: 'success', data: row })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })

@@ -8,17 +8,42 @@
           <div class="logo-icon">
             <div class="logo-glow-ring"></div>
             <svg viewBox="0 0 40 40" fill="none" class="login-logo-svg">
-              <path class="login-hex-outer" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="#00E5FF" stroke-width="1.5" fill="rgba(0,229,255,0.06)" />
-              <path class="login-hex-inner" d="M20 10L30 15V25L20 30L10 25V15L20 10Z" stroke="#9D5CFF" stroke-width="1" fill="rgba(157,92,255,0.04)" />
-              <circle class="login-hex-core" cx="20" cy="20" r="3" fill="#00E5FF" />
-              <path class="login-hex-sweep" d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="url(#loginSweepGrad)" stroke-width="2" fill="none" stroke-dasharray="120" stroke-dashoffset="120" />
               <defs>
-                <linearGradient id="loginSweepGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="transparent" />
-                  <stop offset="50%" stop-color="#00E5FF" />
-                  <stop offset="100%" stop-color="transparent" />
+                <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#E8D5FF"/>
+                  <stop offset="100%" stop-color="#9D5CFF"/>
                 </linearGradient>
+                <filter id="boltGlow">
+                  <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
               </defs>
+              <circle cx="20" cy="20" r="18" stroke="#D4B5FF" stroke-width="1.8" fill="none" stroke-dasharray="6 8" opacity="0.8">
+                <animate attributeName="stroke-dashoffset" from="0" to="-56" dur="2.5s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite"/>
+              </circle>
+              <circle cx="20" cy="20" r="15" stroke="#00E5FF" stroke-width="1.2" fill="none" stroke-dasharray="3 10" opacity="0.6">
+                <animate attributeName="stroke-dashoffset" from="0" to="52" dur="3s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.4;1;0.4" dur="2.5s" repeatCount="indefinite"/>
+              </circle>
+              <g filter="url(#boltGlow)">
+                <polygon points="23,3 10,20 20,20 16,38 32,18 22,18" fill="url(#boltGrad)">
+                  <animate attributeName="opacity" values="0.9;1;0.9" dur="1.8s" repeatCount="indefinite"/>
+                </polygon>
+              </g>
+              <polygon points="22,6 14,19 20,19 18,32 29,19 23,19" fill="#FFFFFF" opacity="0.5">
+                <animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite"/>
+              </polygon>
+              <circle r="2.2" fill="#D4B5FF">
+                <animate attributeName="cx" values="38;20;2;20;38" dur="4s" repeatCount="indefinite"/>
+                <animate attributeName="cy" values="20;2;20;38;20" dur="4s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0;1;0" dur="4s" repeatCount="indefinite"/>
+              </circle>
+              <circle r="1.8" fill="#00E5FF">
+                <animate attributeName="cx" values="2;20;38;20;2" dur="3.5s" repeatCount="indefinite"/>
+                <animate attributeName="cy" values="20;38;20;2;20" dur="3.5s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0;1;0" dur="3.5s" repeatCount="indefinite"/>
+              </circle>
             </svg>
           </div>
           <h1 class="login-title">灵序 LineSequence</h1>
@@ -197,44 +222,24 @@ function initBgCanvas() {
 
 .logo-glow-ring {
   position: absolute; inset: -12px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle, rgba(0,229,255,0.15) 0%, rgba(157,92,255,0.05) 50%, transparent 70%);
+  background: radial-gradient(circle, rgba(157,92,255,0.35) 0%, rgba(0,229,255,0.1) 50%, transparent 75%);
   animation: glowRing 3s ease-in-out infinite;
 }
 
 .login-logo-svg {
   width: 100%; height: 100%;
-  filter: drop-shadow(0 0 12px rgba(0,229,255,0.3));
+  filter: drop-shadow(0 0 10px rgba(157,92,255,0.7)) drop-shadow(0 0 20px rgba(0,229,255,0.3));
   animation: loginLogoBreathe 3s ease-in-out infinite;
 }
 
-.login-hex-outer { animation: hexGlow 3s ease-in-out infinite alternate; }
-.login-hex-inner { animation: hexGlow 3s ease-in-out infinite alternate-reverse; }
-.login-hex-core { animation: corePulse 2s ease-in-out infinite; }
-.login-hex-sweep { animation: sweepStroke 4s linear infinite; }
-
 @keyframes loginLogoBreathe {
-  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 12px rgba(0,229,255,0.3)); }
-  50% { transform: scale(1.08); filter: drop-shadow(0 0 20px rgba(0,229,255,0.5)); }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
 }
 
 @keyframes glowRing {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.9; transform: scale(1.2); }
-}
-
-@keyframes hexGlow {
-  0% { stroke-opacity: 0.5; filter: drop-shadow(0 0 2px currentColor); }
-  100% { stroke-opacity: 1; filter: drop-shadow(0 0 8px currentColor); }
-}
-
-@keyframes corePulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; filter: drop-shadow(0 0 8px #00E5FF); }
-}
-
-@keyframes sweepStroke {
-  0% { stroke-dashoffset: 120; }
-  100% { stroke-dashoffset: -120; }
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
 }
 .login-title {
   font-size: 22px; font-weight: 700; color: #E8F0FF; margin: 0 0 6px;

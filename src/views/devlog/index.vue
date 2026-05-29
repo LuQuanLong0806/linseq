@@ -80,7 +80,6 @@ function getActionType(action: string): 'success' | 'primary' | 'warning' | 'dan
 }
 
 onMounted(() => {
-  taskStore.fetchTasks()
 })
 </script>
 

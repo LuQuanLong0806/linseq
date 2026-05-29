@@ -176,7 +176,7 @@
                     <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
                     <span class="card-id">#{{ task.sourceId }}</span>
                   </div>
-                  <h3 class="card-title" @click="toggleDevExpand(task)" style="cursor:pointer">{{ task.title }}</h3>
+                  <h3 class="card-title">{{ task.title }}</h3>
                   <div class="card-meta">
                     <span v-if="task.project || task.customer">{{ task.project || task.customer }}</span>
                     <span v-if="task.module">{{ task.module }}</span>
@@ -187,54 +187,91 @@
                   </div>
                 </div>
                 <div class="card-actions">
-                  <el-button type="primary" link size="small" @click="toggleDevExpand(task)">
-                    {{ expandedDevTask === task.id ? '收起' : '对话' }}
-                  </el-button>
+                  <el-button type="primary" link size="small" @click="openChatDrawer(task)">对话</el-button>
                   <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
                 </div>
               </div>
-              <!-- 聊天式对话面板 -->
-              <Transition name="collapse">
-                <div v-if="expandedDevTask === task.id" class="supplement-panel">
-                  <div class="supplement-chat" :data-task="task.id">
-                    <!-- 时间线混排：开发日志 + 用户补充说明 -->
-                    <template v-if="supplementMap[task.id]?.length">
-                      <div v-for="msg in supplementMap[task.id]" :key="msg.id"
-                        class="chat-bubble"
-                        :class="msg.type === 'user' ? 'bubble-user' : (msg.action === '回复' ? 'bubble-reply' : 'bubble-agent')">
-                        <div class="bubble-header">
-                          <span class="bubble-role">
-                            {{ msg.type === 'user' ? '👤 指令' : (msg.action === '回复' ? '💬 回复' : `🤖 ${msg.action || '日志'}`) }}
-                          </span>
-                          <span class="bubble-time">{{ formatSupplementTime(msg.created_at) }}</span>
-                        </div>
-                        <div class="bubble-content">{{ msg.content }}</div>
-                        <span v-if="msg.type === 'user' && !msg.read_by_agent" class="bubble-unread">待读取</span>
-                      </div>
-                    </template>
-                    <div v-else class="chat-empty">暂无对话记录，发送补充说明给 Agent</div>
-                  </div>
-                  <!-- 输入区 -->
-                  <div class="supplement-input-area">
-                    <el-input
-                      v-model="supplementInput"
-                      type="textarea"
-                      :rows="2"
-                      placeholder="输入补充说明或新需求，Agent 下次检查时会读取..."
-                      resize="none"
-                      @keydown.enter.ctrl="sendSupplement(task)"
-                    />
-                    <div class="supplement-input-actions">
-                      <span class="input-hint">Ctrl+Enter 发送</span>
-                      <el-button type="primary" size="small" @click="sendSupplement(task)" :loading="supplementSending" :disabled="!supplementInput.trim()">发送</el-button>
-                    </div>
-                  </div>
-                </div>
-              </Transition>
             </div>
           </TransitionGroup>
         </div>
       </div>
+
+      <!-- 聊天终端 Modal -->
+      <Teleport to="body">
+        <Transition name="fade-mask">
+          <div v-if="chatTask" class="chat-modal-mask" @click.self="chatTask = null">
+            <div class="chat-terminal">
+              <canvas ref="rainCanvas" class="terminal-rain"></canvas>
+              <!-- 顶栏：任务信息 + 状态 -->
+              <div class="terminal-header">
+                <div class="terminal-title-area">
+                  <span class="terminal-status-dot"></span>
+                  <span class="terminal-task-name">{{ chatTask.title }}</span>
+                  <el-tag type="warning" size="small" effect="dark" class="terminal-tag">开发中</el-tag>
+                </div>
+                <div class="terminal-actions">
+                  <el-button link size="small" @click="$router.push(`/tasks/${chatTask.id}`)" class="terminal-link">详情</el-button>
+                  <el-button link size="small" @click="chatTask = null" class="terminal-close">✕</el-button>
+                </div>
+              </div>
+
+              <!-- 消息区 -->
+              <div class="terminal-messages" :data-task="chatTask.id">
+                <div v-if="!supplementMap[chatTask.id]?.length && !waitingAgentReply" class="chat-empty">
+                  <div class="empty-icon">💬</div>
+                  <p>暂无对话记录</p>
+                  <span>发送补充说明给 Agent，实时修正开发方向</span>
+                </div>
+                <template v-if="supplementMap[chatTask.id]?.length">
+                  <div v-for="msg in supplementMap[chatTask.id]" :key="msg.id"
+                    class="chat-bubble"
+                    :class="msg.type === 'user' ? 'bubble-user' : (msg.action === '回复' ? 'bubble-reply' : 'bubble-agent')">
+                    <div class="bubble-header">
+                      <span class="bubble-role">
+                        {{ msg.type === 'user' ? '👤 指令' : (msg.action === '回复' ? '💬 回复' : `🤖 ${msg.action || '日志'}`) }}
+                      </span>
+                      <span class="bubble-time">{{ formatSupplementTime(msg.created_at) }}</span>
+                    </div>
+                    <div class="bubble-content">{{ msg.content }}</div>
+                    <span v-if="msg.type === 'user' && !msg.read_by_agent" class="bubble-unread">待读取</span>
+                  </div>
+                </template>
+                <!-- Loading 占位：等待 Agent 回复 -->
+                <div v-if="waitingAgentReply" class="chat-bubble bubble-waiting">
+                  <div class="bubble-header">
+                    <span class="bubble-role">💬 Agent</span>
+                  </div>
+                  <div class="waiting-dots">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 输入区 -->
+              <div class="terminal-input" :class="{ 'drag-over': chatDragOver }"
+                @dragover.prevent="onFileDragOver"
+                @dragleave="onFileDragLeave"
+                @drop.prevent="onFileDrop">
+                <div v-if="chatDragOver" class="drop-overlay">拖拽文件到此处获取路径</div>
+                <el-input
+                  v-model="supplementInput"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="输入补充说明或新需求…"
+                  resize="none"
+                  @keydown.enter.ctrl="chatTask && sendSupplement(chatTask)"
+                />
+                <div class="terminal-input-actions">
+                  <span class="input-hint">Ctrl+Enter 发送 · 支持拖拽文件</span>
+                  <el-button type="primary" size="small" @click="chatTask && sendSupplement(chatTask)" :loading="supplementSending" :disabled="!supplementInput.trim()">发送</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <!-- 右侧手风琴编辑面板 -->
       <Transition name="drawer-slide">
@@ -383,7 +420,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { agentApi } from '@/api/agent'
 import { projectApi, type ProjectConfig } from '@/api/project'
@@ -391,6 +428,7 @@ import { taskApi } from '@/api/task'
 import type { Task, TaskGroup } from '@/types'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useChatWs } from '@/composables/useChatWs'
 
 const taskStore = useTaskStore()
 
@@ -599,6 +637,7 @@ const drawerSaving = ref(false)
 const drawerForm = reactive({ projectPath: '', gitBranch: '', customDescription: '' })
 
 function openDrawer(task: Task) {
+  chatTask.value = null
   drawerTask.value = task
   drawerForm.projectPath = task.projectPath || ''
   drawerForm.gitBranch = task.gitBranch || ''
@@ -659,32 +698,93 @@ interface SupplementMsg {
 const supplementMap = reactive<Record<string, SupplementMsg[]>>({})
 const supplementInput = ref('')
 const supplementSending = ref(false)
-const expandedDevTask = ref<string | null>(null)
+const chatTask = ref<Task | null>(null)
+const chatDragOver = ref(false)
+const rainCanvas = ref<HTMLCanvasElement | null>(null)
+let rainAnimId = 0
 
-async function toggleDevExpand(task: Task) {
-  if (expandedDevTask.value === task.id) {
-    expandedDevTask.value = null
-    return
+function startDigitalRain() {
+  const canvas = rainCanvas.value
+  if (!canvas) return
+  const parent = canvas.parentElement!
+  canvas.width = parent.clientWidth
+  canvas.height = parent.clientHeight
+  const ctx = canvas.getContext('2d')!
+  const chars = '01灵序LINSEQ.QCLAW开发代码调试'
+  const fontSize = 12
+  const cols = Math.floor(canvas.width / fontSize)
+  const drops = Array.from({ length: cols }, () => Math.random() * -50)
+
+  function draw() {
+    ctx.fillStyle = 'rgba(10,16,31,0.12)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.font = `${fontSize}px monospace`
+    for (let i = 0; i < cols; i++) {
+      const ch = chars[Math.floor(Math.random() * chars.length)]
+      const alpha = 0.06 + Math.random() * 0.08
+      ctx.fillStyle = `rgba(0,229,255,${alpha})`
+      ctx.fillText(ch, i * fontSize, drops[i] * fontSize)
+      if (drops[i] * fontSize > canvas.height && Math.random() > 0.98) drops[i] = 0
+      drops[i] += 0.4 + Math.random() * 0.3
+    }
+    rainAnimId = requestAnimationFrame(draw)
   }
-  expandedDevTask.value = task.id
+  draw()
+}
+
+function stopDigitalRain() {
+  if (rainAnimId) { cancelAnimationFrame(rainAnimId); rainAnimId = 0 }
+}
+const waitingAgentReply = ref(false)
+
+async function openChatDrawer(task: Task) {
+  if (chatTask.value?.id === task.id) { chatTask.value = null; waitingAgentReply.value = false; return }
+  drawerTask.value = null
+  chatTask.value = task
+  waitingAgentReply.value = false
   await loadSupplementHistory(task.id)
+  await nextTick()
+  const el = document.querySelector(`.terminal-messages[data-task="${task.id}"]`)
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function onFileDragOver() { chatDragOver.value = true }
+function onFileDragLeave() { chatDragOver.value = false }
+function onFileDrop(e: DragEvent) {
+  chatDragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (file && (file as any).path) {
+    supplementInput.value += (supplementInput.value ? '\n' : '') + (file as any).path
+  } else {
+    const text = e.dataTransfer?.getData('text')
+    if (text) supplementInput.value += (supplementInput.value ? '\n' : '') + text
+  }
 }
 
 async function loadSupplementHistory(taskId: string) {
   try {
     const res = await taskApi.getSupplements(taskId)
     const task = taskStore.tasks.find(t => t.id === taskId)
-    const logs = (task?.devLog || []).map(l => ({
-      id: l.id, content: l.content, created_at: l.time, read_by_agent: 1, type: 'agent' as const, action: l.action
-    }))
+    // 过滤掉 "补充说明" 类型的 devLog，因为 supplement 已经代表了同一条消息
+    const logs = (task?.devLog || [])
+      .filter(l => l.action !== '补充说明')
+      .map(l => ({
+        id: l.id, content: l.content, created_at: l.time, read_by_agent: 1, type: 'agent' as const, action: l.action
+      }))
     const sups = (res.data || []).map(s => ({
       ...s, type: 'user' as const
     }))
-    // 合并按时间排序：补充说明 + 开发日志混排
     const merged = [...logs, ...sups].sort((a, b) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     )
     supplementMap[taskId] = merged
+    // 检测 Agent 回复：最后一条消息是 agent 且 action === '回复' → 取消 loading
+    if (chatTask.value?.id === taskId && waitingAgentReply.value) {
+      const lastAgentMsg = [...merged].reverse().find(m => m.type === 'agent')
+      if (lastAgentMsg && lastAgentMsg.action === '回复') {
+        waitingAgentReply.value = false
+      }
+    }
   } catch { /* ignore */ }
 }
 
@@ -695,12 +795,10 @@ async function sendSupplement(task: Task) {
   try {
     await taskApi.addSupplement(task.id, text)
     supplementInput.value = ''
+    waitingAgentReply.value = true
     await loadSupplementHistory(task.id)
-    // 同时刷新任务数据（因为 addSupplement 会添加 devLog）
-    await taskStore.fetchTasks()
-    // 滚动到底部
     await nextTick()
-    const el = document.querySelector(`.supplement-chat[data-task="${task.id}"]`)
+    const el = document.querySelector(`.terminal-messages[data-task="${task.id}"]`)
     if (el) el.scrollTop = el.scrollHeight
   } catch { ElMessage.error('发送失败') }
   finally { supplementSending.value = false }
@@ -711,24 +809,42 @@ function formatSupplementTime(t: string) {
   return d.format('MM-DD HH:mm')
 }
 
+// ========== WebSocket 实时消息 ==========
+const { connected: wsConnected, startWs, updateSubscription } = useChatWs((event, taskId, data) => {
+  if (event === 'devlog' && chatTask.value?.id === taskId) {
+    // Agent 上报了新的 devLog → 刷新聊天记录
+    loadSupplementHistory(taskId)
+    waitingAgentReply.value = false
+    nextTick(() => {
+      const el = document.querySelector(`.terminal-messages[data-task="${taskId}"]`)
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }
+  if (event === 'supplement') {
+    // 自己发的补充说明通过 HTTP 已处理，这里只处理其他客户端
+  }
+})
+
+// 聊天终端打开时订阅 WebSocket + 启动数字雨
+watch(chatTask, (task) => {
+  if (task) {
+    updateSubscription([task.id])
+    nextTick(() => startDigitalRain())
+  } else {
+    updateSubscription([])
+    stopDigitalRain()
+  }
+})
+
 onMounted(async () => {
-  await Promise.all([taskStore.fetchTasks(), taskStore.fetchGroups()])
-  // Sync todoList from backend (Agent may have completed/removed tasks)
   syncTodoFromBackend()
-  // Auto-refresh every 15s to pick up Agent status changes
-  pollTimer = setInterval(async () => {
-    await taskStore.fetchTasks()
-    syncTodoFromBackend()
-    // 刷新展开的开发卡片补充说明历史
-    if (expandedDevTask.value) {
-      await loadSupplementHistory(expandedDevTask.value)
-    }
-  }, 3000)
+  startWs()
   await nextTick()
 })
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  stopDigitalRain()
 })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -1074,98 +1190,138 @@ async function syncTodoFromBackend() {
   padding: 4px 0 2px; font-style: italic;
 }
 
-// ========== 补充说明 - 聊天式对话面板 ==========
-.supplement-panel {
-  border-top: 1px solid rgba(0,229,255,0.1);
-  background: rgba(0,10,20,0.4);
+// ========== 聊天终端 Modal ==========
+.chat-modal-mask {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
 }
-.supplement-chat {
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.chat-terminal {
+  position: relative; width: 560px; max-height: 80vh; border-radius: 16px; overflow: hidden;
+  background: rgba(10,16,31,0.96); border: 1px solid rgba(0,229,255,0.25);
+  box-shadow: 0 0 60px rgba(0,229,255,0.12), 0 0 120px rgba(157,92,255,0.06);
+  display: flex; flex-direction: column; animation: terminal-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.terminal-rain {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.5;
+}
+@keyframes terminal-in {
+  from { opacity: 0; transform: scale(0.92) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.terminal-header {
+  position: relative; z-index: 1; padding: 14px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(0,229,255,0.1);
+  background: linear-gradient(180deg, rgba(0,229,255,0.04), transparent);
+}
+.terminal-title-area {
+  display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;
+}
+.terminal-status-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #FF7D00; flex-shrink: 0;
+  box-shadow: 0 0 8px #FF7D00; animation: pulse 1.5s ease-in-out infinite;
+}
+.terminal-task-name {
+  font-size: 14px; font-weight: 600; color: #e0e0ef;
+  max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.terminal-tag { flex-shrink: 0; }
+.terminal-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.terminal-link { color: rgba(0,229,255,0.6); &:hover { color: #00E5FF; } }
+.terminal-close { font-size: 16px; color: #8c8ca1; &:hover { color: #00E5FF; } }
+
+.terminal-messages {
+  position: relative; z-index: 1; flex: 1; overflow-y: auto; padding: 16px 20px;
+  min-height: 300px; max-height: 50vh;
+  display: flex; flex-direction: column; gap: 10px;
   &::-webkit-scrollbar { width: 3px; }
   &::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.15); border-radius: 3px; }
 }
 .chat-empty {
-  text-align: center; font-size: 11px; color: rgba(140,140,161,0.35);
-  padding: 20px 0; font-style: italic;
+  text-align: center; padding: 50px 0;
+  .empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+  p { font-size: 14px; color: #e0e0ef; margin: 0 0 6px; }
+  span { font-size: 12px; color: rgba(140,140,161,0.4); }
 }
 .chat-bubble {
-  max-width: 85%;
-  padding: 8px 10px;
-  border-radius: 10px;
-  font-size: 12px;
-  line-height: 1.5;
-  position: relative;
-  animation: bubble-in 0.2s ease-out;
+  max-width: 85%; padding: 10px 14px; border-radius: 12px;
+  font-size: 12px; line-height: 1.6; position: relative;
+  animation: bubble-in 0.25s ease-out;
 }
 .bubble-user {
   align-self: flex-end;
-  background: rgba(0,229,255,0.08);
-  border: 1px solid rgba(0,229,255,0.15);
-  border-bottom-right-radius: 2px;
+  background: rgba(0,229,255,0.1); border: 1px solid rgba(0,229,255,0.2);
+  border-bottom-right-radius: 3px;
 }
 .bubble-agent {
   align-self: flex-start;
-  background: rgba(157,92,255,0.06);
-  border: 1px solid rgba(157,92,255,0.1);
-  border-bottom-left-radius: 2px;
+  background: rgba(157,92,255,0.08); border: 1px solid rgba(157,92,255,0.15);
+  border-bottom-left-radius: 3px;
 }
 .bubble-reply {
   align-self: flex-start;
-  background: rgba(0,229,255,0.06);
-  border: 1px solid rgba(0,229,255,0.15);
-  border-bottom-left-radius: 2px;
-  .bubble-role { color: rgba(0,229,255,0.8) !important; }
+  background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2);
+  border-bottom-left-radius: 3px;
+  .bubble-role { color: rgba(0,229,255,0.85) !important; }
 }
-.bubble-header {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+.bubble-waiting {
+  align-self: flex-start;
+  background: rgba(157,92,255,0.06); border: 1px solid rgba(157,92,255,0.12);
+  border-bottom-left-radius: 3px;
 }
+.bubble-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .bubble-role {
   font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
   .bubble-user & { color: rgba(0,229,255,0.7); }
   .bubble-agent & { color: rgba(157,92,255,0.7); }
+  .bubble-waiting & { color: rgba(157,92,255,0.6); }
 }
-.bubble-time {
-  font-size: 9px; color: rgba(140,140,161,0.4); font-family: 'Courier New', monospace;
-}
-.bubble-content {
-  color: rgba(207,211,220,0.85);
-  word-break: break-word;
-  white-space: pre-wrap;
-}
+.bubble-time { font-size: 9px; color: rgba(140,140,161,0.4); font-family: 'Courier New', monospace; }
+.bubble-content { color: rgba(207,211,220,0.85); word-break: break-word; white-space: pre-wrap; }
 .bubble-unread {
   position: absolute; top: 6px; right: 8px;
   font-size: 9px; color: rgba(245,108,108,0.7);
-  background: rgba(245,108,108,0.08); padding: 1px 5px;
-  border-radius: 6px;
+  background: rgba(245,108,108,0.08); padding: 1px 5px; border-radius: 6px;
 }
 @keyframes bubble-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.supplement-input-area {
-  padding: 10px 14px;
-  border-top: 1px solid rgba(0,229,255,0.06);
-  background: rgba(0,15,30,0.5);
+// Loading 等待动画
+.waiting-dots {
+  display: flex; gap: 5px; padding: 4px 0;
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: rgba(157,92,255,0.5);
+    animation: dotBounce 1.4s ease-in-out infinite;
+    &:nth-child(2) { animation-delay: 0.15s; }
+    &:nth-child(3) { animation-delay: 0.3s; }
+  }
+}
+@keyframes dotBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-8px); opacity: 1; }
+}
+.terminal-input {
+  position: relative; z-index: 1; padding: 14px 20px; border-top: 1px solid rgba(0,229,255,0.08);
+  background: rgba(0,15,30,0.5); position: relative;
+  &.drag-over { border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.04); }
   :deep(.el-textarea__inner) {
     background: rgba(0,20,40,0.6) !important;
     border-color: rgba(0,229,255,0.12) !important;
-    color: #cfd3dc !important;
-    font-size: 12px;
+    color: #cfd3dc !important; font-size: 12px;
     &:focus { border-color: rgba(0,229,255,0.3) !important; }
   }
 }
-.supplement-input-actions {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 6px;
+.drop-overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,229,255,0.08); color: #00E5FF; font-size: 13px; z-index: 1;
+  border: 2px dashed rgba(0,229,255,0.3); border-radius: 6px; margin: 6px;
 }
-.input-hint {
-  font-size: 10px; color: rgba(140,140,161,0.3);
+.terminal-input-actions {
+  display: flex; align-items: center; justify-content: space-between; margin-top: 8px;
 }
+.input-hint { font-size: 10px; color: rgba(140,140,161,0.3); }
 
 // Manual task tag
 .manual-tag {

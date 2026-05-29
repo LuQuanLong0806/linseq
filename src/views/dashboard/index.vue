@@ -311,10 +311,8 @@ function onResize() {
 }
 
 onMounted(() => {
-  taskStore.fetchTasks().then(() => {
-    initPieChart()
-    initBarChart()
-  })
+  initPieChart()
+  initBarChart()
   window.addEventListener('resize', onResize)
 })
 
