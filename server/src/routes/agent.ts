@@ -935,29 +935,37 @@ router.post('/chat/action', (req, res) => {
         if (!message?.trim()) return res.status(400).json({ code: 400, message: '消息不能为空', data: null })
         const active = getActiveSession(db, req.userId)
         const sId = active?.id || ''
-        insertChatLog(db, req.userId, sId, 'user', 'text', message.trim(), taskId || '')
+        // 构建引用上下文
+        const replyToContent = (payload?.replyTo as string) || ''
+        const replyToType = (payload?.replyToType as string) || ''
+        const chatMetadata: Record<string, unknown> = {}
+        if (replyToContent) chatMetadata.replyTo = replyToContent
+        insertChatLog(db, req.userId, sId, 'user', 'text', message.trim(), taskId || '', chatMetadata)
+
+        // 拼接带引用的指令文本
+        const fullInstruction = replyToContent
+          ? `[回复 Agent「${replyToType ? replyToType + ': ' : ''}${replyToContent.substring(0, 100)}」]\n${message.trim()}`
+          : message.trim()
 
         // 先存补充说明（确保 resolve 时能查到未读消息）
         if (taskId) {
-          db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, message.trim())
-          addDevLog(db, taskId, '补充说明', message.trim(), 'user', false)
+          db.prepare('INSERT INTO task_supplements (id, task_id, content) VALUES (?, ?, ?)').run(uuidv4(), taskId, fullInstruction)
+          addDevLog(db, taskId, '补充说明', fullInstruction, 'user', false)
         }
 
         // 解析 pending /report（带 taskId 或找当前用户任意 pending 的）
         if (taskId) {
-          resolvePendingReport(taskId, { action: 'redirect', instruction: message.trim() })
+          resolvePendingReport(taskId, { action: 'redirect', instruction: fullInstruction })
         } else {
-          // 没有 taskId 时，检查是否有该用户的 pending report，作为 redirect 解析
           for (const [, pending] of pendingReports) {
             if (pending.userId === req.userId) {
-              resolvePendingReport(pending.taskId, { action: 'redirect', instruction: message.trim() })
+              resolvePendingReport(pending.taskId, { action: 'redirect', instruction: fullInstruction })
               break
             }
           }
         }
 
-        // 补充说明已在上面存储
-        wakeAgent(db, message.trim())
+        wakeAgent(db, fullInstruction)
         res.json({ code: 0, message: 'success', data: null })
         break
       }

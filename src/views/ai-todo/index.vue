@@ -307,8 +307,13 @@
                           <span v-else-if="msg.type === 'question'" class="fc-badge question">疑问</span>
                           <span v-else-if="msg.type === 'progress'" class="fc-badge progress">进度</span>
                           <span class="fc-msg-time">{{ formatMsgTime(msg.time) }}</span>
+                          <button v-if="msg.role !== 'user'" class="fc-reply-btn" @click="setReplyTo(msg)" title="引用回复">↩</button>
                         </div>
                         <div class="fc-msg-bubble" :class="[msg.role, msg.type]">
+                          <div v-if="msg.metadata?.replyTo" class="fc-quote-preview">
+                            <span class="fc-quote-label">引用 Agent 消息：</span>
+                            <span class="fc-quote-text">{{ msg.metadata.replyTo }}</span>
+                          </div>
                           <p>{{ msg.content }}</p>
                         </div>
                       </div>
@@ -340,10 +345,18 @@
                 <div v-if="chatTask && (chatTask.aiStatus === 'ai_dev' || chatTask.aiStatus === 'ai_question')" class="fc-input-area" :style="{ height: inputAreaHeight + 'px' }">
                   <div class="fc-input-resizer" @mousedown="onInputResizeStart"></div>
                   <div class="fc-input-inner">
+                    <!-- 引用回复预览 -->
+                    <div v-if="replyToMsg" class="fc-reply-bar">
+                      <div class="fc-reply-bar-inner">
+                        <span class="fc-reply-bar-label">↩ 引用：</span>
+                        <span class="fc-reply-bar-text">{{ replyToMsg.content.substring(0, 60) }}{{ replyToMsg.content.length > 60 ? '...' : '' }}</span>
+                      </div>
+                      <button class="fc-reply-bar-close" @click="replyToMsg = null">✕</button>
+                    </div>
                     <textarea
                       v-model="chatInput"
                       class="fc-textarea"
-                      :placeholder="chatTask.aiStatus === 'ai_question' ? '回复 Agent 疑问，Ctrl+Enter 发送...' : '输入消息，Ctrl+Enter 发送...'"
+                      :placeholder="replyToMsg ? '回复引用的消息，Ctrl+Enter 发送...' : chatTask.aiStatus === 'ai_question' ? '回复 Agent 疑问，Ctrl+Enter 发送...' : '输入消息，Ctrl+Enter 发送...'"
                       @keydown.ctrl.enter="handleChatSend"
                       @input="onChatInput"
                     ></textarea>
@@ -825,6 +838,7 @@ async function saveDescEdit(task: Task) {
 const chatTaskId = ref<string | null>(null)
 const chatInput = ref('')
 const chatMessagesRef = ref<HTMLElement | null>(null)
+const replyToMsg = ref<{ id: string; content: string; time: string; type: string } | null>(null)
 
 const { chatOpen, closeChat } = useChatPanel()
 const agentChat = useAgentChat()
@@ -923,18 +937,26 @@ function onInputResizeStart(e: MouseEvent) {
 
 function switchChatTask(task: Task) {
   chatTaskId.value = task.id
+  replyToMsg.value = null
   nextTick(() => scrollToBottom())
+}
+
+function setReplyTo(msg: { id: string; content: string; time: string; type: string }) {
+  replyToMsg.value = { id: msg.id, content: msg.content, time: msg.time, type: msg.type }
 }
 
 async function handleChatSend() {
   if (!chatInput.value.trim() || agentChat.sending.value) return
   if (!chatTaskId.value) { ElMessage.warning('请先选择一个任务'); return }
   const text = chatInput.value.trim()
+  const replyTo = replyToMsg.value
   chatInput.value = ''
+  replyToMsg.value = null
   stopTyping()
   await agentChat.executeAction('send_message', {
     message: text,
     taskId: chatTaskId.value,
+    payload: replyTo ? { replyTo: replyTo.content.substring(0, 200), replyToType: replyTo.type, replyToTime: replyTo.time } : undefined,
   })
   scrollToBottom()
 }
@@ -1439,6 +1461,30 @@ async function syncTodoFromBackend() {
 .fc-msg-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .fc-msg-role { font-size: 11px; font-weight: 600; color: var(--cyber-text-secondary); }
 .fc-msg-time { font-size: 10px; color: var(--cyber-text-muted); margin-left: auto; font-family: 'Cascadia Code', Consolas, monospace; }
+.fc-reply-btn {
+  opacity: 0; font-size: 12px; color: var(--cyber-text-muted); background: none; border: none;
+  cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: all .15s;
+  &:hover { color: var(--cyber-cyan); background: rgba(0,229,255,0.08); }
+}
+.fc-msg:hover .fc-reply-btn { opacity: 1; }
+.fc-quote-preview {
+  font-size: 11px; padding: 4px 8px; margin-bottom: 6px; border-radius: 6px;
+  background: rgba(157,92,255,0.06); border-left: 2px solid rgba(157,92,255,0.3);
+  color: var(--cyber-text-secondary);
+}
+.fc-quote-label { font-weight: 600; margin-right: 4px; }
+.fc-quote-text { opacity: 0.7; }
+.fc-reply-bar {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px;
+  background: rgba(157,92,255,0.06); border-left: 2px solid var(--cyber-purple);
+  border-radius: 0 6px 6px 0; margin-bottom: 4px;
+}
+.fc-reply-bar-inner { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--cyber-text-secondary); }
+.fc-reply-bar-label { font-weight: 600; color: var(--cyber-purple); flex-shrink: 0; }
+.fc-reply-bar-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; }
+.fc-reply-bar-close { background: none; border: none; color: var(--cyber-text-muted); cursor: pointer; font-size: 12px; padding: 2px; border-radius: 4px;
+  &:hover { color: #f56c6c; background: rgba(245,108,108,0.1); }
+}
 .fc-badge {
   font-size: 10px; padding: 1px 8px; border-radius: 6px; font-weight: 600;
   &.plan { background: rgba(0,229,255,0.1); color: var(--cyber-cyan); border: 1px solid rgba(0,229,255,0.15); }
