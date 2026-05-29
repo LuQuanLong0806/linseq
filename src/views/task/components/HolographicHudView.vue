@@ -21,7 +21,7 @@
 
       <h3 class="card-project" v-if="task.project || task.customer">{{ task.project || task.customer }}</h3>
       <div class="card-title">{{ task.title }}</div>
-      <div class="card-desc" v-if="task.customDescription || task.description">{{ task.customDescription || task.description }}</div>
+      <div class="card-desc" v-if="task.customDescription && task.customDescription !== task.title">{{ task.customDescription }}</div>
 
       <div class="card-bottom">
         <div class="card-meta">
