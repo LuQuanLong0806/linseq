@@ -49,6 +49,7 @@
             <div class="panel-icon todo-icon"><div class="icon-ring"></div><span class="icon-dot"></span></div>
             <h3 class="panel-title">待办队列</h3>
             <el-tag size="small" effect="dark" type="info" round>{{ todoQueueTasks.length }}</el-tag>
+            <el-button v-if="todoQueueTasks.length > 0" type="danger" size="small" plain @click="handleClearQueue" class="panel-action-btn">清空队列</el-button>
           </div>
           <div class="panel-scroll">
             <div v-if="todoQueueTasks.length === 0" class="panel-empty">
@@ -152,6 +153,7 @@
               <span class="engine-pulse"></span>
               <span class="engine-text">RUNNING</span>
             </div>
+            <el-button v-if="devQueueTasks.length > 0" type="danger" size="small" plain @click="handleTerminateDevTask" class="panel-action-btn">终止任务</el-button>
           </div>
           <div class="panel-scroll">
             <div v-if="devQueueTasks.length === 0" class="panel-empty dev-empty">
@@ -215,6 +217,9 @@
                           <span>{{ getPriorityLabel(task.priority) }}</span>
                         </div>
                       </div>
+                      <a v-if="task.projectPath" class="fc-vscode-btn" :href="'vscode://file/' + encodeURIComponent(task.projectPath)" target="_blank" @click.stop title="在 VSCode 中打开项目">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>
+                      </a>
                     </div>
                   </div>
                   <div v-if="doneChatTasks.length > 0" class="fc-sidebar-group">
@@ -968,6 +973,38 @@ async function handleCancelTask() {
   } catch { /* 取消 */ }
 }
 
+// ========== 队列与任务操作 ==========
+async function handleClearQueue() {
+  if (todoQueueTasks.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定清空待办队列？共 ${todoQueueTasks.value.length} 个任务将被移出。`,
+      '清空队列',
+      { type: 'warning' }
+    )
+    // 保存空队列到后端
+    await agentApi.saveTodoOrder([])
+    // 清空本地状态
+    taskStore.todoList.splice(0, taskStore.todoList.length)
+    localStorage.setItem('linesequence-todo-list', '[]')
+    ElMessage.success('队列已清空')
+  } catch { /* 取消 */ }
+}
+
+async function handleTerminateDevTask() {
+  const devTask = devQueueTasks.value[0]
+  if (!devTask) return
+  try {
+    await ElMessageBox.confirm(
+      `确定终止任务「${devTask.title}」？Agent 将跳过此任务执行下一个。`,
+      '终止任务',
+      { type: 'warning' }
+    )
+    await agentChat.executeAction('cancel_task', { taskId: devTask.id, message: '人工终止任务' })
+    ElMessage.success('任务已终止')
+  } catch { /* 取消 */ }
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (chatMessagesRef.value) {
@@ -1096,6 +1133,7 @@ async function syncTodoFromBackend() {
 @keyframes scanLine { 0%{opacity:0.3} 50%{opacity:1} 100%{opacity:0.3} }
 
 .panel-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-shrink: 0; }
+.panel-action-btn { margin-left: auto; }
 .panel-scroll {
   flex: 1; overflow-y: auto; min-height: 0;
   &::-webkit-scrollbar { width: 4px; }
@@ -1310,6 +1348,10 @@ async function syncTodoFromBackend() {
   &.dot-done { background: #67c23a; box-shadow: 0 0 4px rgba(103,194,58,0.3); }
 }
 .fc-contact-info { flex: 1; min-width: 0; }
+.fc-vscode-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; color: var(--cyber-text-muted); cursor: pointer; opacity: 0; transition: all .15s; text-decoration: none; flex-shrink: 0;
+  &:hover { background: rgba(0,229,255,0.1); color: #00E5FF; opacity: 1 !important; }
+}
+.fc-contact:hover .fc-vscode-btn { opacity: 0.6; }
 .fc-contact-name { font-size: 13px; font-weight: 500; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fc-contact-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--cyber-text-secondary); }
 .fc-sidebar-empty { text-align: center; padding: 40px 12px; font-size: 13px; color: var(--cyber-text-muted); }
