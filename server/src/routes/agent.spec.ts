@@ -22,6 +22,13 @@ vi.mock('../scraper/intranet.js', () => ({
 vi.mock('./tasks.js', () => ({
   mapDbRowToTask: vi.fn((_db: unknown, row: Record<string, unknown>) => row),
   addDevLog: vi.fn((_db: unknown, taskId: string, action: string, content: string) => 'log-id'),
+  wakeAgent: vi.fn(),
+}))
+
+// Mock websocket
+vi.mock('../websocket.js', () => ({
+  broadcastToTask: vi.fn(),
+  initWebSocket: vi.fn(),
 }))
 
 let app: express.Express
@@ -30,6 +37,8 @@ async function createApp() {
   const agentModule = await import('./agent.js')
   app = express()
   app.use(express.json())
+  // Mock auth: 所有请求视为已登录用户 test-user
+  app.use((req: any, _res: any, next: any) => { req.userId = 'test-user'; next() })
   app.use('/api/agent', agentModule.default)
 }
 
@@ -70,7 +79,7 @@ describe('Agent API Routes', () => {
       .send({ todoList: ['a', 'b', 'c'] })
     expect(res.status).toBe(200)
     expect(res.body.code).toBe(0)
-    expect(runMock).toHaveBeenCalledWith(JSON.stringify(['a', 'b', 'c']))
+    expect(runMock).toHaveBeenCalledWith('todoList_test-user', JSON.stringify(['a', 'b', 'c']))
   })
 
   it('POST /todo-order 拒绝非数组', async () => {
@@ -264,7 +273,7 @@ describe('Agent API Routes', () => {
       review_comment: '请修复空指针', group_id: '',
     }
     mockPrepare.mockImplementation((sql: string) => {
-      if (sql.includes('sync_config') && sql.includes('todoList')) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
+      if (sql.includes('sync_config')) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
       if (sql.includes('SELECT ai_status FROM tasks') && !sql.includes('ai_review')) return { get: vi.fn().mockReturnValue({ ai_status: 'ai_rework' }) }
       if (sql.includes('SELECT * FROM tasks WHERE id =')) return { get: vi.fn().mockReturnValue(mockTask) }
       if (sql.includes('MAX(iteration)')) return { get: vi.fn().mockReturnValue({ max_iter: 0 }) }
@@ -346,5 +355,125 @@ describe('Agent API Routes', () => {
       .post('/api/agent/task/nonexist/question')
       .send({ question: '不明白需求' })
     expect(res.status).toBe(404)
+  })
+
+  // ===== chat/action: cancel_task =====
+  it('POST /chat/action cancel_task 任务不存在返回 404', async () => {
+    mockPrepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn() })
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'cancel_task', taskId: 'nonexist' })
+    expect(res.status).toBe(404)
+    expect(res.body.code).toBe(404)
+  })
+
+  it('POST /chat/action cancel_task 非开发中任务返回 400', async () => {
+    mockPrepare.mockReturnValue({
+      get: vi.fn().mockReturnValue({ id: 't1', ai_status: 'ai_review' }),
+      run: vi.fn(),
+    })
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'cancel_task', taskId: 't1' })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('开发中')
+  })
+
+  it('POST /chat/action cancel_task 成功终止开发中任务', async () => {
+    const runMock = vi.fn()
+    mockPrepare.mockImplementation((sql: string) => {
+      if (sql.includes('SELECT id, ai_status FROM tasks WHERE id = ?')) return { get: vi.fn().mockReturnValue({ id: 't1', ai_status: 'ai_dev' }) }
+      if (sql.includes('chat_sessions') && sql.includes('active')) return { get: vi.fn().mockReturnValue(undefined) }
+      if (sql.includes('UPDATE tasks')) return { run: runMock }
+      if (sql.includes('sync_config')) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: runMock }
+      return { get: vi.fn().mockReturnValue(undefined), run: runMock, all: vi.fn().mockReturnValue([]) }
+    })
+
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'cancel_task', taskId: 't1', message: '不需要了' })
+    expect(res.status).toBe(200)
+    expect(res.body.code).toBe(0)
+    expect(res.body.data.taskId).toBe('t1')
+  })
+
+  // ===== chat/action: typing =====
+  it('POST /chat/action typing 设置输入状态', async () => {
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'typing', taskId: 't1' })
+    expect(res.status).toBe(200)
+    expect(res.body.code).toBe(0)
+  })
+
+  it('POST /chat/action typing_stop 清除输入状态', async () => {
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'typing_stop', taskId: 't1' })
+    expect(res.status).toBe(200)
+    expect(res.body.code).toBe(0)
+  })
+
+  // ===== chat/action: send_message =====
+  it('POST /chat/action send_message 带 replyTo 拼接引用前缀', async () => {
+    const { wakeAgent } = await import('./tasks.js')
+    mockPrepare.mockImplementation((sql: string) => {
+      if (sql.includes('chat_sessions') && sql.includes('active')) return { get: vi.fn().mockReturnValue(undefined) }
+      if (sql.includes('INSERT INTO agent_chat_logs')) return { run: vi.fn() }
+      if (sql.includes('INSERT INTO task_supplements')) return { run: vi.fn() }
+      if (sql.includes('sync_config')) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
+      return { get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) }
+    })
+
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({
+        action: 'send_message',
+        taskId: 't1',
+        message: '请检查一下',
+        payload: { replyTo: '进度上报：已完成50%', replyToType: 'progress' },
+      })
+    expect(res.status).toBe(200)
+    expect(wakeAgent).toHaveBeenCalled()
+    const calls = (wakeAgent as ReturnType<typeof vi.fn>).mock.calls
+    const lastCall = calls[calls.length - 1]
+    expect(lastCall[1]).toContain('[回复 Agent「progress: 进度上报：已完成50%」]')
+    expect(lastCall[1]).toContain('请检查一下')
+  })
+
+  it('POST /chat/action send_message 无 replyTo 发送原始消息', async () => {
+    const { wakeAgent } = await import('./tasks.js')
+    mockPrepare.mockImplementation((sql: string) => {
+      if (sql.includes('chat_sessions') && sql.includes('active')) return { get: vi.fn().mockReturnValue(undefined) }
+      if (sql.includes('INSERT INTO agent_chat_logs')) return { run: vi.fn() }
+      if (sql.includes('INSERT INTO task_supplements')) return { run: vi.fn() }
+      if (sql.includes('sync_config')) return { get: vi.fn().mockReturnValue({ value: JSON.stringify(['t1']) }), run: vi.fn() }
+      return { get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) }
+    })
+
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'send_message', taskId: 't1', message: '你好' })
+    expect(res.status).toBe(200)
+    expect(wakeAgent).toHaveBeenCalled()
+    const calls = (wakeAgent as ReturnType<typeof vi.fn>).mock.calls
+    const lastCall = calls[calls.length - 1]
+    expect(lastCall[1]).toBe('你好')
+  })
+
+  it('POST /chat/action send_message 缺少消息返回 400', async () => {
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'send_message', taskId: 't1' })
+    expect(res.status).toBe(400)
+  })
+
+  // ===== chat/action: unknown =====
+  it('POST /chat/action 未知操作返回 400', async () => {
+    const res = await request(app)
+      .post('/api/agent/chat/action')
+      .send({ action: 'unknown_action' })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('未知操作')
   })
 })
