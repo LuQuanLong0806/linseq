@@ -7,7 +7,8 @@
         {{ level }}
         <template v-if="level !== 'L1'">{{ levelLabel }}</template>
       </span>
-      <span v-if="showActions && countdown > 0" class="countdown">{{ countdown }}s</span>
+      <span v-if="showActions && !expired && countdown > 0" class="countdown">{{ countdown }}s</span>
+      <span v-if="expired" class="expired-tag">已自动通过</span>
       <span class="plan-time">{{ formatTime(msg.time) }}</span>
     </div>
     <div class="plan-content">
@@ -16,7 +17,7 @@
         <span class="step-text">{{ line }}</span>
       </div>
     </div>
-    <div v-if="showActions" class="plan-actions">
+    <div v-if="showActions && !expired" class="plan-actions">
       <button class="act-btn act-approve" @click="$emit('approve', msg)">批准计划</button>
       <button class="act-btn act-redirect" @click="$emit('redirect', msg)">调整方向</button>
       <button v-if="level === 'L4'" class="act-btn act-abort" @click="$emit('abort', msg)">拒绝</button>
@@ -29,8 +30,17 @@ import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import type { ChatMessage } from '@/api/agent'
 import dayjs from 'dayjs'
 
-const props = defineProps<{ msg: ChatMessage; showActions?: boolean }>()
-defineEmits<{ approve: [msg: ChatMessage]; redirect: [msg: ChatMessage]; abort: [msg: ChatMessage] }>()
+const props = defineProps<{
+  msg: ChatMessage
+  showActions?: boolean
+  serverCreatedAt?: number
+}>()
+const emit = defineEmits<{
+  approve: [msg: ChatMessage]
+  redirect: [msg: ChatMessage]
+  abort: [msg: ChatMessage]
+  timedOut: [msg: ChatMessage]
+}>()
 
 const planLines = computed(() => props.msg.content.split('\n').filter(l => l.trim()))
 
@@ -50,19 +60,48 @@ const levelLabel = computed(() => {
   }
 })
 
-const levelTimeouts: Record<string, number> = { L1: 0, L2: 10, L3: 30, L4: 300 }
+// 与后端 ATEP_TIMEOUTS 一致（秒）
+const LEVEL_TIMEOUTS: Record<string, number> = { L1: 0, L2: 10, L3: 30, L4: 120 }
+const TYPING_EXTEND_S = 15
+const TYPING_MAX_EXTEND_S = 300
+
 const countdown = ref(0)
+const expired = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
+let typingExtensions = 0
+
+function getBaseSeconds(): number {
+  if (!level.value || level.value === 'L1') return 0
+  return LEVEL_TIMEOUTS[level.value] || 10
+}
+
+function getElapsed(): number {
+  const createdAt = props.serverCreatedAt || new Date(props.msg.time).getTime()
+  return Math.floor((Date.now() - createdAt) / 1000)
+}
 
 function startCountdown() {
   stopCountdown()
-  if (!props.showActions || !level.value || level.value === 'L1') return
-  const seconds = levelTimeouts[level.value] || 0
-  if (seconds <= 0) return
-  countdown.value = seconds
+  if (!props.showActions) return
+  const base = getBaseSeconds()
+  if (base <= 0) return
+
+  const elapsed = getElapsed()
+  const remaining = base - elapsed
+  if (remaining <= 0) {
+    expired.value = true
+    emit('timedOut', props.msg)
+    return
+  }
+
+  countdown.value = remaining
   timer = setInterval(() => {
     countdown.value--
-    if (countdown.value <= 0) stopCountdown()
+    if (countdown.value <= 0) {
+      expired.value = true
+      stopCountdown()
+      emit('timedOut', props.msg)
+    }
   }, 1000)
 }
 
@@ -71,9 +110,19 @@ function stopCountdown() {
   countdown.value = 0
 }
 
+function extendByTyping() {
+  if (expired.value || !props.showActions) return
+  typingExtensions++
+  const totalExtended = typingExtensions * TYPING_EXTEND_S
+  if (totalExtended > TYPING_MAX_EXTEND_S) return
+  countdown.value += TYPING_EXTEND_S
+}
+
 watch(() => props.showActions, (v) => { v ? startCountdown() : stopCountdown() })
 onMounted(() => { if (props.showActions) startCountdown() })
 onUnmounted(stopCountdown)
+
+defineExpose({ extendByTyping })
 
 function formatTime(t: string) { return dayjs(t).format('HH:mm') }
 </script>
@@ -132,6 +181,14 @@ function formatTime(t: string) { return dayjs(t).format('HH:mm') }
   font-weight: 600;
   font-family: 'Cascadia Code', Consolas, monospace;
   animation: pulse 1s ease-in-out infinite;
+}
+
+.expired-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cyber-text-muted);
 }
 
 @keyframes pulse {

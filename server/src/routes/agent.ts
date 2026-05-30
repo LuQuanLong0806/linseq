@@ -378,6 +378,7 @@ router.post('/task/:id/complete', upload.array('screenshots', 10), async (req, r
       insertChatLog(db, req.userId, completeSession.id, 'agent', 'completion', summary || `完成开发，生成版本 ${versionNumber}`, id, {
         versionNumber, screenshots: screenshotFiles, filesChanged,
       })
+      insertChatLog(db, req.userId, completeSession.id, 'system', 'status_change', 'Agent 提交审核', id)
     }
 
     // 异步生成 Word 自测报告（不阻塞响应）
@@ -789,6 +790,7 @@ router.get('/chat/context', (req, res) => {
     if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
     const sessionId = req.query.session_id as string | undefined
+    const taskId = req.query.task_id as string | undefined
     const cursor = req.query.cursor as string | undefined
     const limit = Math.min(Number(req.query.limit) || 50, 100)
 
@@ -803,7 +805,44 @@ router.get('/chat/context', (req, res) => {
     let nextCursor = ''
     let hasMore = false
 
-    if (session) {
+    if (taskId) {
+      // 按任务加载：跨 session 加载该任务的所有消息
+      const cursorFilter = cursor ? " AND created_at < ?" : ''
+      const params = cursor ? [taskId, req.userId, cursor, String(limit + 1)] : [taskId, req.userId, String(limit + 1)]
+      messages = db.prepare(`
+        SELECT * FROM (
+          SELECT id, role, content, created_at AS time, session_id, type, task_id, metadata, 'chat' AS source
+          FROM agent_chat_logs
+          WHERE task_id = ? AND user_id = ?${cursorFilter}
+          UNION ALL
+          SELECT id,
+            CASE WHEN action IN ('补充说明') THEN 'user'
+                 WHEN action IN ('开始开发') THEN 'system'
+                 ELSE 'agent' END AS role,
+            content, time, '' AS session_id,
+            CASE WHEN action = '开始开发' THEN 'status_change'
+                 WHEN action = 'plan' THEN 'plan'
+                 WHEN action IN ('开发','调试','重构','自测') THEN 'progress'
+                 WHEN action = '回复' THEN 'text'
+                 WHEN action = '开发完成' THEN 'completion'
+                 WHEN action = '疑问' THEN 'question'
+                 WHEN action = '补充说明' THEN 'text'
+                 ELSE 'text' END AS type,
+            task_id, '{}' AS metadata, 'devlog' AS source
+          FROM dev_logs
+          WHERE task_id = ?
+            AND action IN ('开始开发','plan','开发','调试','重构','自测','回复','开发完成','疑问','补充说明')
+            ${cursorFilter}
+        )
+        ORDER BY time ASC
+        LIMIT ?
+      `).all(...params) as Record<string, unknown>[]
+      if (messages.length > limit) {
+        hasMore = true
+        nextCursor = messages[messages.length - 1].time as string
+        messages = messages.slice(0, limit)
+      }
+    } else if (session) {
       const taskIds: string[] = JSON.parse(session.task_ids || '[]')
 
       // 统一消息流：agent_chat_logs + dev_logs（UNION ALL）
@@ -1489,6 +1528,23 @@ router.get('/task/:id/supplements', (req, res) => {
     }
 
     res.json({ code: 0, message: 'success', data: rows })
+  } catch (err) {
+    res.status(500).json({ code: 500, message: String(err), data: null })
+  }
+})
+
+// ========== Pending Report 状态查询 ==========
+
+router.get('/pending-reports', (req, res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
+    const reports: { taskId: string; level: string; reportAction: string; createdAt: number }[] = []
+    for (const [, p] of pendingReports) {
+      if (p.userId === req.userId) {
+        reports.push({ taskId: p.taskId, level: p.level, reportAction: p.reportAction, createdAt: p.createdAt })
+      }
+    }
+    res.json({ code: 0, message: 'success', data: { reports } })
   } catch (err) {
     res.status(500).json({ code: 500, message: String(err), data: null })
   }

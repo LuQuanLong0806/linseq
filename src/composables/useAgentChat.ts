@@ -77,10 +77,10 @@ export function useAgentChat() {
     panelOpen.value = false
   }
 
-  async function loadContext(sessionId?: string) {
+  async function loadContext(sessionId?: string, taskId?: string) {
     loading.value = true
     try {
-      const res = await agentApi.getChatContext(sessionId, undefined, 50)
+      const res = await agentApi.getChatContext(sessionId, undefined, 50, taskId)
       const data = res.data
       currentSession.value = data.session
       messages.value = data.messages

@@ -182,6 +182,9 @@
                     </div>
                   </div>
                   <div class="card-actions">
+                    <a v-if="task.projectPath" class="fc-vscode-btn" :href="'vscode://file/' + encodeURIComponent(task.projectPath)" target="_blank" @click.stop title="在 VSCode 中打开项目">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>
+                    </a>
                     <el-button type="primary" link size="small" @click="openFullscreenChat(task)">对话</el-button>
                     <el-button type="primary" link size="small" @click="$router.push(`/tasks/${task.id}`)">详情</el-button>
                   </div>
@@ -209,7 +212,7 @@
                     <div v-for="task in devChatTasks" :key="task.id"
                       class="fc-contact" :class="{ active: chatTaskId === task.id }"
                       @click="switchChatTask(task)">
-                      <div class="fc-contact-dot dot-dev"></div>
+                      <div class="fc-contact-dot dot-ai_dev"></div>
                       <div class="fc-contact-info">
                         <div class="fc-contact-name">{{ task.title }}</div>
                         <div class="fc-contact-meta">
@@ -227,7 +230,7 @@
                     <div v-for="task in doneChatTasks" :key="task.id"
                       class="fc-contact" :class="{ active: chatTaskId === task.id }"
                       @click="switchChatTask(task)">
-                      <div class="fc-contact-dot dot-done"></div>
+                      <div class="fc-contact-dot" :class="'dot-' + task.aiStatus"></div>
                       <div class="fc-contact-info">
                         <div class="fc-contact-name">{{ task.title }}</div>
                         <div class="fc-contact-meta">
@@ -851,28 +854,32 @@ const chatTask = computed(() => {
   return taskStore.tasks.find(t => t.id === chatTaskId.value) || null
 })
 
-// 会话列表：开发中 + 已完成/审核/疑问的任务（只要有过开发记录的都展示）
+// 会话列表：所有有过 AI 交互的任务（ai_status 非空），始终显示
 const chatTaskList = computed(() => {
-  const devIds = new Set(devQueueTasks.value.map(t => t.id))
-  // 从 session 消息中提取出现过 taskId 的任务
+  const result = taskStore.tasks.filter(t => t.aiStatus && t.aiStatus !== '')
+  // 从 session 消息中补充出现过的任务（防止 store 数据延迟）
   const msgTaskIds = new Set<string>()
   for (const m of agentChat.messages.value) {
     if (m.taskId) msgTaskIds.add(m.taskId)
   }
-  // 当前开发中的 + 消息流中出现过的（可能是已审核/已完成/疑问）
-  const result = [...devQueueTasks.value]
+  const existingIds = new Set(result.map(t => t.id))
   for (const tid of msgTaskIds) {
-    if (!devIds.has(tid)) {
+    if (!existingIds.has(tid)) {
       const task = taskStore.tasks.find(t => t.id === tid)
       if (task) result.push(task)
     }
   }
-  // 开发中排前面
-  return result.sort((a, b) => (a.aiStatus === 'ai_dev' ? 0 : 1) - (b.aiStatus === 'ai_dev' ? 0 : 1))
+  // 开发中排前面，其余按更新时间倒序
+  return result.sort((a, b) => {
+    const aDev = a.aiStatus === 'ai_dev' || a.aiStatus === 'ai_question' ? 0 : 1
+    const bDev = b.aiStatus === 'ai_dev' || b.aiStatus === 'ai_question' ? 0 : 1
+    if (aDev !== bDev) return aDev - bDev
+    return (b.updateTime || '').localeCompare(a.updateTime || '')
+  })
 })
 
-const devChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus === 'ai_dev'))
-const doneChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus !== 'ai_dev'))
+const devChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus === 'ai_dev' || t.aiStatus === 'ai_question'))
+const doneChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus !== 'ai_dev' && t.aiStatus !== 'ai_question'))
 
 const currentTaskMessages = computed(() => {
   if (!chatTaskId.value) return []
@@ -894,6 +901,7 @@ const activeSessionStatus = computed(() => {
 async function openFullscreenChat(task: Task) {
   chatTaskId.value = task.id
   chatOpen.value = true
+  await taskStore.fetchTasks()
   await agentChat.loadContext()
   nextTick(() => scrollToBottom())
 }
@@ -938,6 +946,7 @@ function onInputResizeStart(e: MouseEvent) {
 function switchChatTask(task: Task) {
   chatTaskId.value = task.id
   replyToMsg.value = null
+  agentChat.loadContext(undefined, task.id)
   nextTick(() => scrollToBottom())
 }
 
@@ -992,6 +1001,9 @@ async function handleCancelTask() {
     await ElMessageBox.confirm('确定终止当前任务？Agent 将跳过此任务执行下一个。', '终止任务', { type: 'warning' })
     await agentChat.executeAction('cancel_task', { taskId: chatTaskId.value, message: '人工终止任务' })
     ElMessage.success('任务已终止')
+    taskStore.fetchTasks()
+    syncTodoFromBackend()
+    agentChat.loadContext()
   } catch { /* 取消 */ }
 }
 
@@ -1024,14 +1036,19 @@ async function handleTerminateDevTask() {
     )
     await agentChat.executeAction('cancel_task', { taskId: devTask.id, message: '人工终止任务' })
     ElMessage.success('任务已终止')
+    taskStore.fetchTasks()
+    syncTodoFromBackend()
+    agentChat.loadContext()
   } catch { /* 取消 */ }
 }
 
 function scrollToBottom() {
   nextTick(() => {
-    if (chatMessagesRef.value) {
-      chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
-    }
+    setTimeout(() => {
+      if (chatMessagesRef.value) {
+        chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
+      }
+    }, 50)
   })
 }
 
@@ -1055,9 +1072,24 @@ async function handleWakeAgent() {
 }
 
 // ========== WebSocket 实时消息 ==========
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleRefresh() {
+  if (refreshTimer) return
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null
+    taskStore.fetchTasks()
+    syncTodoFromBackend()
+  }, 500)
+}
+
 const { connected: wsConnected, startWs, subscribeGlobal } = useChatWs((event, _taskId, data) => {
   if (event === 'chat') {
     agentChat.handleWsMessage(event, data)
+    scrollToBottom()
+    // 状态变更类消息触发任务列表和待办队列刷新
+    if (data?.type === 'status_change' || data?.type === 'approval' || data?.type === 'completion') {
+      scheduleRefresh()
+    }
   }
 })
 
@@ -1366,8 +1398,12 @@ async function syncTodoFromBackend() {
 }
 .fc-contact-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  &.dot-dev { background: #FF7D00; box-shadow: 0 0 8px rgba(255,125,0,0.5); animation: pulse-red 1.5s ease-in-out infinite; }
-  &.dot-done { background: #67c23a; box-shadow: 0 0 4px rgba(103,194,58,0.3); }
+  &.dot-ai_dev { background: #FF7D00; box-shadow: 0 0 8px rgba(255,125,0,0.5); animation: pulse-red 1.5s ease-in-out infinite; }
+  &.dot-ai_review { background: #409EFF; box-shadow: 0 0 6px rgba(64,158,255,0.4); }
+  &.dot-ai_done { background: #67c23a; box-shadow: 0 0 4px rgba(103,194,58,0.3); }
+  &.dot-ai_rework { background: #E6A23C; box-shadow: 0 0 6px rgba(230,162,60,0.4); }
+  &.dot-ai_question { background: #F56C6C; box-shadow: 0 0 6px rgba(245,108,108,0.4); }
+  &.dot-ai_cancelled { background: #909399; }
 }
 .fc-contact-info { flex: 1; min-width: 0; }
 .fc-vscode-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; color: var(--cyber-text-muted); cursor: pointer; opacity: 0; transition: all .15s; text-decoration: none; flex-shrink: 0;

@@ -77,9 +77,9 @@
 
               <template v-for="msg in (collapsed && gi === 0 ? group.msgs.slice(Math.max(0, group.msgs.length - 40)) : group.msgs)" :key="msg.id">
                 <ChatMsgText v-if="msg.type === 'text'" :msg="msg" />
-                <ChatMsgPlan v-else-if="msg.type === 'plan'" :msg="msg" :show-actions="isActive(msg)" @approve="handleApprovePlan" @redirect="handleRedirect" @abort="handleAbortPlan" />
+                <ChatMsgPlan v-else-if="msg.type === 'plan'" ref="cardRefs" :msg="msg" :show-actions="isActive(msg) && !timedOutMsgs.has(msg.id)" :server-created-at="getServerCreatedAt(msg)" @approve="handleApprovePlan" @redirect="handleRedirect" @abort="handleAbortPlan" @timed-out="handleTimedOut" />
                 <ChatMsgProgress v-else-if="msg.type === 'progress'" :msg="msg" />
-                <ChatMsgCompletion v-else-if="msg.type === 'completion'" :msg="msg" :show-actions="isActive(msg)" @approve="handleApprove" @reject="handleReject" />
+                <ChatMsgCompletion v-else-if="msg.type === 'completion'" ref="cardRefs" :msg="msg" :show-actions="isActive(msg) && !timedOutMsgs.has(msg.id)" :server-created-at="getServerCreatedAt(msg)" @approve="handleApprove" @reject="handleReject" @timed-out="handleTimedOut" />
                 <ChatMsgQuestion v-else-if="msg.type === 'question'" :msg="msg" :show-actions="isActive(msg)" @answer="handleAnswerQuestion" />
                 <ChatMsgStatus v-else-if="msg.type === 'status_change' || msg.type === 'approval'" :msg="msg" />
                 <ChatMsgText v-else :msg="msg" />
@@ -138,6 +138,9 @@
               placeholder="输入消息... (Ctrl+Enter 发送)"
               rows="2"
               @keydown.ctrl.enter="handleSend"
+              @focus="startTypingHeartbeat"
+              @blur="stopTypingHeartbeat"
+              @input="startTypingHeartbeat"
             />
             <button class="send-btn" @click="handleSend" :disabled="!inputText.trim() || sending">
               {{ sending ? '...' : '发送' }}
@@ -150,9 +153,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, reactive } from 'vue'
 import { useAgentChat } from '@/composables/useAgentChat'
-import type { ChatMessage } from '@/api/agent'
+import { agentApi, type ChatMessage } from '@/api/agent'
 import ChatMsgText from './chat/ChatMsgText.vue'
 import ChatMsgPlan from './chat/ChatMsgPlan.vue'
 import ChatMsgProgress from './chat/ChatMsgProgress.vue'
@@ -172,18 +175,78 @@ const inputText = ref('')
 const showRejectInput = ref(false)
 const rejectComment = ref('')
 const showSupplementHint = ref(false)
+const cardRefs = ref<any[]>([])
+
+// 超时已过的消息 ID 集合
+const timedOutMsgs = reactive(new Set<string>())
+// pending report 的 serverCreatedAt 映射: taskId → createdAt
+const pendingCreatedAts = reactive(new Map<string, number>())
+
+let typingTimer: ReturnType<typeof setInterval> | null = null
+let isTyping = false
 
 function isActive(msg: ChatMessage) {
   if (!currentSession.value || currentSession.value.status !== 'active') return false
-  // 最后一条 completion/question/plan 消息才显示操作按钮
   const lastActionable = [...messages.value].reverse().find(m =>
     m.type === 'completion' || m.type === 'question' || m.type === 'plan'
   )
   return lastActionable?.id === msg.id
 }
 
+function getServerCreatedAt(msg: ChatMessage): number | undefined {
+  return pendingCreatedAts.get(msg.taskId)
+}
+
+function handleTimedOut(msg: ChatMessage) {
+  timedOutMsgs.add(msg.id)
+}
+
+// 加载 pending reports 状态
+async function syncPendingReports() {
+  try {
+    const res = await agentApi.getPendingReports()
+    const reports = res.data?.reports || []
+    pendingCreatedAts.clear()
+    for (const r of reports) {
+      pendingCreatedAts.set(r.taskId, r.createdAt)
+    }
+  } catch { /* ignore */ }
+}
+
+// typing 心跳
+function startTypingHeartbeat() {
+  if (typingTimer) return
+  isTyping = true
+  const taskId = getActiveTaskId()
+  if (taskId) executeAction('typing', { taskId })
+  typingTimer = setInterval(() => {
+    if (!isTyping) return
+    const tid = getActiveTaskId()
+    if (tid) executeAction('typing', { taskId: tid })
+    // 通知卡片延长倒计时
+    for (const card of cardRefs.value) {
+      card?.extendByTyping?.()
+    }
+  }, 5000)
+}
+
+function stopTypingHeartbeat() {
+  isTyping = false
+  if (typingTimer) { clearInterval(typingTimer); typingTimer = null }
+  const taskId = getActiveTaskId()
+  if (taskId) executeAction('typing_stop', { taskId })
+}
+
+function getActiveTaskId(): string | undefined {
+  const lastActionable = [...messages.value].reverse().find(m =>
+    m.type === 'completion' || m.type === 'plan'
+  )
+  return lastActionable?.taskId || currentTask.value?.id
+}
+
 async function handleWake() {
   await executeAction('wake', { message: '开始工作' })
+  await syncPendingReports()
   scrollToBottom()
 }
 
@@ -195,6 +258,7 @@ async function handleSend() {
   if (!inputText.value.trim() || sending.value) return
   const text = inputText.value.trim()
   inputText.value = ''
+  stopTypingHeartbeat()
   await executeAction('send_message', { message: text })
   scrollToBottom()
 }
@@ -270,7 +334,18 @@ function scrollToBottom() {
 }
 
 watch(panelOpen, (open) => {
-  if (open) scrollToBottom()
+  if (open) {
+    scrollToBottom()
+    syncPendingReports()
+  }
+})
+
+// 新 plan/completion 消息到达时同步 pending 状态
+watch(messages, (msgs) => {
+  const last = msgs[msgs.length - 1]
+  if (last && (last.type === 'plan' || last.type === 'completion')) {
+    syncPendingReports()
+  }
 })
 </script>
 

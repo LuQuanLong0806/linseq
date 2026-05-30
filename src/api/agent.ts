@@ -83,16 +83,21 @@ export const agentApi = {
 
   // ========== 聊天会话 API ==========
 
-  getChatContext(sessionId?: string, cursor?: string, limit?: number): Promise<ApiResponse<ChatContext>> {
+  getChatContext(sessionId?: string, cursor?: string, limit?: number, taskId?: string): Promise<ApiResponse<ChatContext>> {
     const params: Record<string, string | number> = {}
     if (sessionId) params.session_id = sessionId
     if (cursor) params.cursor = cursor
     if (limit) params.limit = limit
+    if (taskId) params.task_id = taskId
     return http.get('/agent/chat/context', { params })
   },
 
   chatAction(action: string, opts?: { sessionId?: string; taskId?: string; message?: string; payload?: Record<string, unknown> }): Promise<ApiResponse<unknown>> {
     return http.post('/agent/chat/action', { action, ...opts })
+  },
+
+  getPendingReports(): Promise<ApiResponse<{ reports: { taskId: string; level: string; reportAction: string; createdAt: number }[] }>> {
+    return http.get('/agent/pending-reports')
   },
 
   getChatSessions(page?: number, pageSize?: number): Promise<ApiResponse<ChatSessionsResponse>> {

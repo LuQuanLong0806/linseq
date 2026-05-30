@@ -23,10 +23,10 @@ fn start_server() {
 
     // Windows 上使用 npx.cmd / cmd /c
     let (cmd, args) = if cfg!(windows) {
-        ("cmd", vec!["/C".to_string(), "npx".to_string(), "tsx".to_string(),
+        ("cmd", vec!["/C".to_string(), "npx".to_string(), "tsx".to_string(), "watch".to_string(),
                      server_dir.join("src/index.ts").to_str().unwrap().to_string()])
     } else {
-        ("npx", vec!["tsx".to_string(), server_dir.join("src/index.ts").to_str().unwrap().to_string()])
+        ("npx", vec!["tsx".to_string(), "watch".to_string(), server_dir.join("src/index.ts").to_str().unwrap().to_string()])
     };
 
     match Command::new(cmd)

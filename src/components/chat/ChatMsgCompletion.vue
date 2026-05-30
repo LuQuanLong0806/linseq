@@ -4,6 +4,8 @@
       <span class="comp-icon">✓</span>
       <span class="comp-label">开发完成</span>
       <span v-if="version" class="comp-version">{{ version }}</span>
+      <span v-if="showActions && !expired && countdown > 0" class="countdown">{{ countdown }}s</span>
+      <span v-if="expired" class="expired-tag">已自动通过</span>
       <span class="comp-time">{{ formatTime(msg.time) }}</span>
     </div>
 
@@ -18,7 +20,7 @@
       <div v-if="files.length > 5" class="file-more">...等 {{ files.length }} 个文件</div>
     </div>
 
-    <div v-if="showActions" class="comp-actions">
+    <div v-if="showActions && !expired" class="comp-actions">
       <button class="act-btn act-approve" @click="$emit('approve', msg)">批准</button>
       <button class="act-btn act-reject" @click="$emit('reject', msg)">拒绝</button>
     </div>
@@ -26,12 +28,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import type { ChatMessage } from '@/api/agent'
 import dayjs from 'dayjs'
 
-const props = defineProps<{ msg: ChatMessage; showActions?: boolean }>()
-defineEmits<{ approve: [msg: ChatMessage]; reject: [msg: ChatMessage] }>()
+const COMPLETION_TIMEOUT_S = 60
+const TYPING_EXTEND_S = 15
+const TYPING_MAX_EXTEND_S = 300
+
+const props = defineProps<{
+  msg: ChatMessage
+  showActions?: boolean
+  serverCreatedAt?: number
+}>()
+const emit = defineEmits<{
+  approve: [msg: ChatMessage]
+  reject: [msg: ChatMessage]
+  timedOut: [msg: ChatMessage]
+}>()
 
 const meta = computed(() => {
   const m = props.msg.metadata
@@ -45,6 +59,58 @@ const meta = computed(() => {
 const version = computed(() => meta.value.versionNumber)
 const summary = computed(() => props.msg.content)
 const files = computed(() => meta.value.filesChanged)
+
+const countdown = ref(0)
+const expired = ref(false)
+let timer: ReturnType<typeof setInterval> | null = null
+let typingExtensions = 0
+
+function getElapsed(): number {
+  const createdAt = props.serverCreatedAt || new Date(props.msg.time).getTime()
+  return Math.floor((Date.now() - createdAt) / 1000)
+}
+
+function startCountdown() {
+  stopCountdown()
+  if (!props.showActions) return
+
+  const elapsed = getElapsed()
+  const remaining = COMPLETION_TIMEOUT_S - elapsed
+  if (remaining <= 0) {
+    expired.value = true
+    emit('timedOut', props.msg)
+    return
+  }
+
+  countdown.value = remaining
+  timer = setInterval(() => {
+    countdown.value--
+    if (countdown.value <= 0) {
+      expired.value = true
+      stopCountdown()
+      emit('timedOut', props.msg)
+    }
+  }, 1000)
+}
+
+function stopCountdown() {
+  if (timer) { clearInterval(timer); timer = null }
+  countdown.value = 0
+}
+
+function extendByTyping() {
+  if (expired.value || !props.showActions) return
+  typingExtensions++
+  const totalExtended = typingExtensions * TYPING_EXTEND_S
+  if (totalExtended > TYPING_MAX_EXTEND_S) return
+  countdown.value += TYPING_EXTEND_S
+}
+
+watch(() => props.showActions, (v) => { v ? startCountdown() : stopCountdown() })
+onMounted(() => { if (props.showActions) startCountdown() })
+onUnmounted(stopCountdown)
+
+defineExpose({ extendByTyping })
 
 function formatTime(t: string) { return dayjs(t).format('HH:mm') }
 </script>
@@ -90,6 +156,27 @@ function formatTime(t: string) { return dayjs(t).format('HH:mm') }
   background: rgba(157, 92, 255, 0.1);
   padding: 2px 8px;
   border-radius: 4px;
+}
+
+.countdown {
+  font-size: 11px;
+  color: var(--cyber-orange);
+  font-weight: 600;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.expired-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cyber-text-muted);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .comp-time {
