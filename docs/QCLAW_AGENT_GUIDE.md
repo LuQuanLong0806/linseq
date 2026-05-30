@@ -1,7 +1,7 @@
 # QClaw Agent 开发指南 — 灵序 LineSequence
 
 > 本文档供 AI Agent（QClaw）存储到记忆中，用于自动化任务开发调度。
-> 当前版本：v9 | 最后更新：2026-05-30
+> 当前版本：v10 | 最后更新：2026-05-30
 
 ---
 
@@ -32,8 +32,13 @@
 | v7 | 2026-05-26 | **崩溃恢复**。Agent 重启后恢复流程、git 工作区检查、未提交改动处理、保守恢复原则 |
 | v8 | 2026-05-27 | **Webhook 唤醒**。OpenClaw Gateway 对接、唤醒场景与消息格式、typing/cancel_task 实时动作、未配置唤醒时的降级方案 |
 | v9 | 2026-05-29 | **引用回复机制**。人类可指定回复 Agent 历史消息、instruction 中引用标记格式 `[回复 Agent「类型: 摘要」]`、上下文定位规则 |
+| v10 | 2026-05-30 | **VS Code 预检查**。开发前自动检查本地项目地址、检测 VS Code 是否已打开项目、未打开则自动唤起 VS Code |
 
 ### 版本更新要点（仅列最新 3 个版本的新增/变更内容）
+
+**v10 新增：**
+- VS Code 预检查：开发前检查 task 是否有本地项目地址，有则检查 VS Code 是否已打开该项目，未打开则自动用 `code -n <path>` 唤起
+- 环境准备增加 ⑦ 步骤，在 cd 到项目路径之后、切换分支之前执行
 
 **v9 新增：**
 - 引用回复：instruction 中 `[回复 Agent「plan: 准备创建 login.vue」]` 格式，Agent 需先定位到对应消息再处理
@@ -43,10 +48,6 @@
 - Webhook 唤醒：7 种唤醒场景（开始工作/补充说明/批准/拒绝/终止/回答问题/聊天消息）
 - `POST /report` 支持 `typing` 和 `cancel_task` action
 - 未配置唤醒地址时 ATEP 阻塞模型仍正常工作
-
-**v7 新增：**
-- 13.4 崩溃恢复流程：GET /stats 检查 → git 工作区检查 → 保守恢复
-- 恢复原则：不猜测、先查后做、保守处理、系统兜底
 
 ---
 
@@ -835,18 +836,25 @@ POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问
 ① cd 到 project.path
    - 目录不存在 → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：项目路径不存在: xxx" } → 取下一个任务
 
-② 检查工作区
+② VS Code 预检查
+   检查当前任务是否有本地项目地址（project.path），如果有：
+   - 检测 VS Code 是否已打开该项目（通过 tasklist 或 ps 检查 code 进程的工作目录）
+   - 如果 VS Code 未打开该项目 → 执行 code -n <project.path> 唤起新窗口打开项目
+   - 如果 VS Code 已打开该项目 → 跳过，继续后续步骤
+   - 如果 project.path 为空 → 跳过，继续后续步骤
+
+③ 检查工作区
    git status
    - 有未提交改动（别人或上次遗留）→ POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：当前分支有未提交代码，无法切换分支" } → 取下一个任务，不要 stash 别人的代码
    - 干净 → 继续
 
-③ 拉取最新主分支代码
+④ 拉取最新主分支代码
    git fetch origin
    git checkout main（或 master）
    git pull origin main
    - pull 失败 → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：主分支 git pull 失败: [错误信息]" } → 取下一个任务
 
-④ 切换到项目配置的开发分支（project.gitBranch）
+⑤ 切换到项目配置的开发分支（project.gitBranch）
    git checkout <branch>       # 分支已存在
    git checkout -b <branch>    # 分支不存在，从 main 创建
 
@@ -856,12 +864,12 @@ POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问
      → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：分支 <branch> 合并 main 时有冲突，文件: [冲突文件列表]" } → 取下一个任务
    - merge 成功 → 继续
 
-⑤ 最终确认
+⑥ 最终确认
    git branch --show-current
    - 输出 != project.gitBranch → POST /report { action: "question", aiStatus: "ai_question", content: "❓ 疑问：分支切换失败，当前在 xxx，期望 xxx" } → 取下一个任务
    - 输出 == project.gitBranch → 环境就绪，可以开发
 
-⑥ 上报日志
+⑦ 上报日志
    "已就绪，项目 [path]，分支 [branch]，技术栈 [xxx]"
 ```
 
