@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { agentApi, type ChatSession, type ChatMessage, type ChatSessionSummary, type AgentStats } from '@/api/agent'
+import { useNotification } from './useNotification'
 
 const panelOpen = ref(false)
 const currentSession = ref<ChatSession | null>(null)
@@ -11,6 +12,7 @@ const loading = ref(false)
 const cursor = ref('')
 const hasMore = ref(false)
 const collapsed = ref(true)
+const { unreadCount, notify, clearUnread } = useNotification()
 
 export function useAgentChat() {
   const currentTask = computed(() => stats.value?.currentTask ?? null)
@@ -70,6 +72,7 @@ export function useAgentChat() {
 
   async function openPanel() {
     panelOpen.value = true
+    clearUnread()
     await loadContext()
   }
 
@@ -144,6 +147,10 @@ export function useAgentChat() {
     if (!messages.value.find(m => m.id === msg.id)) {
       messages.value.push(msg)
     }
+    // Agent 消息触发通知
+    if (data.role === 'agent' && msg.type !== 'status_change') {
+      notify(msg.type as any, msg.content, panelOpen.value)
+    }
   }
 
   function expandMessages() {
@@ -165,6 +172,7 @@ export function useAgentChat() {
     todoCount,
     inDev,
     inReview,
+    unreadCount,
     activeSessionStatus,
     messagesByTask,
     visibleMessages,

@@ -109,22 +109,36 @@ router.get('/next-task', (req, res) => {
       return res.json({ code: 0, message: '待办队列为空', data: null })
     }
 
-    // 优先取 ai_rework 状态的
-    let taskId: string | undefined
-    for (const id of todoList) {
-      const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ? AND user_id = ?").get(id, req.userId) as { ai_status: string } | undefined
-      if (r?.ai_status === 'ai_rework') { taskId = id; break }
-    }
-    // 没有返工任务，取第一个非 ai_question 的
-    if (!taskId) {
+    // 项目级锁：查询当前用户正在开发中的任务所属项目
+    const lockedRows = db.prepare(
+      "SELECT DISTINCT project_path FROM tasks WHERE user_id = ? AND ai_status = 'ai_dev' AND project_path != ''"
+    ).all(req.userId) as { project_path: string }[]
+    const lockedProjects = new Set(lockedRows.map(r => r.project_path))
+
+    // 在事务内完成：选任务 + 原子认领
+    const claimTask = db.transaction(() => {
+      // 优先取 ai_rework 状态的（排除已锁项目）
+      let taskId: string | undefined
       for (const id of todoList) {
-        const r = db.prepare("SELECT ai_status FROM tasks WHERE id = ? AND user_id = ?").get(id, req.userId) as { ai_status: string } | undefined
-        if (r?.ai_status !== 'ai_question') { taskId = id; break }
+        const r = db.prepare("SELECT ai_status, project_path FROM tasks WHERE id = ? AND user_id = ?").get(id, req.userId) as { ai_status: string; project_path: string } | undefined
+        if (r?.ai_status === 'ai_rework' && !lockedProjects.has(r.project_path || '')) { taskId = id; break }
       }
-    }
-    // 全部都在疑问中，队列为空
+      // 没有返工任务，取第一个非 ai_question 的（排除已锁项目）
+      if (!taskId) {
+        for (const id of todoList) {
+          const r = db.prepare("SELECT ai_status, project_path FROM tasks WHERE id = ? AND user_id = ?").get(id, req.userId) as { ai_status: string; project_path: string } | undefined
+          if (r?.ai_status !== 'ai_question' && !lockedProjects.has(r?.project_path || '')) { taskId = id; break }
+        }
+      }
+      if (!taskId) return null
+      // 原子认领：立即标记为 ai_dev，锁定项目
+      db.prepare("UPDATE tasks SET ai_status = 'ai_dev' WHERE id = ? AND user_id = ?").run(taskId, req.userId)
+      return taskId
+    })
+
+    const taskId = claimTask()
     if (!taskId) {
-      return res.json({ code: 0, message: '所有任务都在等待人工回复', data: null })
+      return res.json({ code: 0, message: lockedProjects.size > 0 ? '当前项目正在开发中，暂无可用任务' : '所有任务都在等待人工回复', data: null })
     }
 
     const row = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(taskId, req.userId) as Record<string, unknown> | undefined

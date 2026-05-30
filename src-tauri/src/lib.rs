@@ -4,8 +4,6 @@ use tauri::Manager;
 static mut SERVER_PROCESS: Option<Child> = None;
 
 fn find_project_root() -> std::path::PathBuf {
-    // 打包后 exe 旁边有 _up_/ 指向项目根目录
-    // dev 模式直接用相对路径
     if cfg!(debug_assertions) {
         std::path::PathBuf::from("..")
     } else {
@@ -21,7 +19,6 @@ fn start_server() {
     let root = find_project_root();
     let server_dir = root.join("server");
 
-    // Windows 上使用 npx.cmd / cmd /c
     let (cmd, args) = if cfg!(windows) {
         ("cmd", vec!["/C".to_string(), "npx".to_string(), "tsx".to_string(), "watch".to_string(),
                      server_dir.join("src/index.ts").to_str().unwrap().to_string()])
@@ -49,7 +46,6 @@ fn stop_server() {
     unsafe {
         if let Some(ref mut child) = SERVER_PROCESS {
             let _ = child.kill();
-            // Windows 上还需要 kill 子进程树
             #[cfg(windows)]
             {
                 let _ = Command::new("taskkill")
@@ -87,7 +83,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 stop_server();
             }
