@@ -182,7 +182,7 @@
                     </div>
                   </div>
                   <div class="card-actions">
-                    <a v-if="task.projectPath" class="fc-vscode-btn" :href="'vscode://file/' + encodeURIComponent(task.projectPath)" target="_blank" @click.stop title="在 VSCode 中打开项目">
+                    <a v-if="task.projectPath" class="fc-vscode-btn" @click.stop.prevent="openVscode(task.projectPath)" title="在 VSCode 中打开项目">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>
                     </a>
                     <el-button type="primary" link size="small" @click="openFullscreenChat(task)">对话</el-button>
@@ -211,16 +211,19 @@
                     <div class="fc-group-label">开发中</div>
                     <div v-for="task in devChatTasks" :key="task.id"
                       class="fc-contact" :class="{ active: chatTaskId === task.id }"
-                      @click="switchChatTask(task)">
-                      <div class="fc-contact-dot dot-ai_dev"></div>
+                      @click="switchChatTask(task)"
+                      @contextmenu.prevent="showChatCtxMenu($event, task)">
+                      <div class="fc-contact-dot" :class="'dot-' + task.aiStatus"></div>
                       <div class="fc-contact-info">
                         <div class="fc-contact-name">{{ task.title }}</div>
                         <div class="fc-contact-meta">
-                          <el-tag type="warning" size="small" effect="dark" class="fc-mini-tag">开发中</el-tag>
+                          <el-tag v-if="task.aiStatus === 'ai_dev'" type="warning" size="small" effect="dark" class="fc-mini-tag">开发中</el-tag>
+                          <el-tag v-else-if="task.aiStatus === 'ai_question'" type="danger" size="small" effect="dark" class="fc-mini-tag">疑问</el-tag>
+                          <el-tag v-else-if="task.aiStatus === 'ai_rework'" type="warning" size="small" effect="dark" class="fc-mini-tag">返工中</el-tag>
                           <span>{{ getPriorityLabel(task.priority) }}</span>
                         </div>
                       </div>
-                      <a v-if="task.projectPath" class="fc-vscode-btn" :href="'vscode://file/' + encodeURIComponent(task.projectPath)" target="_blank" @click.stop title="在 VSCode 中打开项目">
+                      <a v-if="task.projectPath" class="fc-vscode-btn" @click.stop.prevent="openVscode(task.projectPath)" title="在 VSCode 中打开项目">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>
                       </a>
                     </div>
@@ -229,7 +232,8 @@
                     <div class="fc-group-label">已完成 / 审核中</div>
                     <div v-for="task in doneChatTasks" :key="task.id"
                       class="fc-contact" :class="{ active: chatTaskId === task.id }"
-                      @click="switchChatTask(task)">
+                      @click="switchChatTask(task)"
+                      @contextmenu.prevent="showChatCtxMenu($event, task)">
                       <div class="fc-contact-dot" :class="'dot-' + task.aiStatus"></div>
                       <div class="fc-contact-info">
                         <div class="fc-contact-name">{{ task.title }}</div>
@@ -237,15 +241,18 @@
                           <el-tag v-if="task.aiStatus === 'ai_review'" type="success" size="small" effect="dark" class="fc-mini-tag">审核中</el-tag>
                           <el-tag v-else-if="task.aiStatus === 'ai_done'" type="info" size="small" effect="dark" class="fc-mini-tag">已完成</el-tag>
                           <el-tag v-else-if="task.aiStatus === 'ai_cancelled'" type="danger" size="small" effect="dark" class="fc-mini-tag">已终止</el-tag>
-                          <el-tag v-else-if="task.aiStatus === 'ai_question'" type="danger" size="small" effect="dark" class="fc-mini-tag">疑问</el-tag>
                           <span>{{ getPriorityLabel(task.priority) }}</span>
                         </div>
                       </div>
+                      <a v-if="task.projectPath" class="fc-vscode-btn" @click.stop.prevent="openVscode(task.projectPath)" title="在 VSCode 中打开项目">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>
+                      </a>
                     </div>
                   </div>
                   <div v-if="chatTaskList.length === 0" class="fc-sidebar-empty">暂无会话记录</div>
                 </div>
               </div>
+
 
               <!-- 拖拽分隔条 -->
               <div class="fc-resizer" @mousedown="onSidebarResizeStart"></div>
@@ -253,19 +260,16 @@
               <!-- 右侧：聊天窗口 -->
               <div class="fc-main">
                 <!-- 头部 -->
-                <div class="fc-header" v-if="chatTask">
-                  <div class="fc-header-left">
+                <div class="fc-header">
+                  <div v-if="chatTask" class="fc-header-left">
                     <div class="fc-header-dot" :class="'priority-' + chatTask.priority"></div>
-                    <div class="fc-header-info">
-                      <h3>{{ chatTask.title }}</h3>
-                      <div class="fc-header-meta">
-                        <el-tag :type="getPriorityType(chatTask.priority)" size="small" effect="dark">{{ getPriorityLabel(chatTask.priority) }}</el-tag>
-                        <el-tag v-if="chatTask.aiStatus === 'ai_dev'" type="warning" size="small">开发中</el-tag>
-                        <el-tag v-else-if="chatTask.aiStatus === 'ai_review'" type="success" size="small">审核中</el-tag>
-                        <el-tag v-else-if="chatTask.aiStatus === 'ai_cancelled'" type="danger" size="small">已终止</el-tag>
-                        <span class="fc-task-id">#{{ chatTask.sourceId }}</span>
-                      </div>
-                    </div>
+                    <h3>{{ chatTask.title }}</h3>
+                    <el-tag v-if="chatTask.aiStatus === 'ai_dev'" type="warning" size="small">开发中</el-tag>
+                    <el-tag v-else-if="chatTask.aiStatus === 'ai_review'" type="success" size="small">审核中</el-tag>
+                    <el-tag v-else-if="chatTask.aiStatus === 'ai_rework'" type="warning" size="small">返工中</el-tag>
+                    <el-tag v-else-if="chatTask.aiStatus === 'ai_question'" type="danger" size="small">疑问</el-tag>
+                    <el-tag v-else-if="chatTask.aiStatus === 'ai_cancelled'" type="danger" size="small">已终止</el-tag>
+                    <span class="fc-task-id">#{{ chatTask.sourceId }}</span>
                   </div>
                   <div class="fc-header-right">
                     <el-select
@@ -381,6 +385,20 @@
           </div>
         </Transition>
       </Teleport>
+
+
+              <!-- 右键菜单 -->
+              <Teleport to="body">
+                <div v-if="chatCtxMenu.show" class="fc-ctx-mask" @click="chatCtxMenu.show = false" @contextmenu.prevent="chatCtxMenu.show = false"></div>
+                <div v-if="chatCtxMenu.show" class="fc-ctx-menu" :style="{ left: chatCtxMenu.x + 'px', top: chatCtxMenu.y + 'px' }">
+                  <div class="fc-ctx-item" :class="{ disabled: !chatCtxMenu.task?.projectPath }" @click="openInVsCode">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>
+                    在 VS Code 中打开
+                  </div>
+                  <div class="fc-ctx-divider"></div>
+                  <div class="fc-ctx-item fc-ctx-danger" @click="removeFromChatList">从会话列表移出</div>
+                </div>
+              </Teleport>
 
       <!-- 配置弹窗 -->
       <Teleport to="body">
@@ -848,15 +866,16 @@ const agentChat = useAgentChat()
 
 const sidebarWidth = ref(260)
 const inputAreaHeight = ref(120)
+const hiddenChatTasks = reactive(new Set<string>())
 
 const chatTask = computed(() => {
   if (!chatTaskId.value) return null
   return taskStore.tasks.find(t => t.id === chatTaskId.value) || null
 })
 
-// 会话列表：所有有过 AI 交互的任务（ai_status 非空），始终显示
+// 会话列表：所有有过 AI 交互的任务（ai_status 非空），始终显示（排除手动隐藏的）
 const chatTaskList = computed(() => {
-  const result = taskStore.tasks.filter(t => t.aiStatus && t.aiStatus !== '')
+  const result = taskStore.tasks.filter(t => t.aiStatus && t.aiStatus !== '' && !hiddenChatTasks.has(t.id))
   // 从 session 消息中补充出现过的任务（防止 store 数据延迟）
   const msgTaskIds = new Set<string>()
   for (const m of agentChat.messages.value) {
@@ -871,15 +890,15 @@ const chatTaskList = computed(() => {
   }
   // 开发中排前面，其余按更新时间倒序
   return result.sort((a, b) => {
-    const aDev = a.aiStatus === 'ai_dev' || a.aiStatus === 'ai_question' ? 0 : 1
-    const bDev = b.aiStatus === 'ai_dev' || b.aiStatus === 'ai_question' ? 0 : 1
+    const aDev = a.aiStatus === 'ai_dev' || a.aiStatus === 'ai_question' || a.aiStatus === 'ai_rework' ? 0 : 1
+    const bDev = b.aiStatus === 'ai_dev' || b.aiStatus === 'ai_question' || b.aiStatus === 'ai_rework' ? 0 : 1
     if (aDev !== bDev) return aDev - bDev
     return (b.updateTime || '').localeCompare(a.updateTime || '')
   })
 })
 
-const devChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus === 'ai_dev' || t.aiStatus === 'ai_question'))
-const doneChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus !== 'ai_dev' && t.aiStatus !== 'ai_question'))
+const devChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus === 'ai_dev' || t.aiStatus === 'ai_question' || t.aiStatus === 'ai_rework'))
+const doneChatTasks = computed(() => chatTaskList.value.filter(t => t.aiStatus !== 'ai_dev' && t.aiStatus !== 'ai_question' && t.aiStatus !== 'ai_rework'))
 
 const currentTaskMessages = computed(() => {
   if (!chatTaskId.value) return []
@@ -901,18 +920,22 @@ const activeSessionStatus = computed(() => {
 async function openFullscreenChat(task: Task) {
   chatTaskId.value = task.id
   chatOpen.value = true
-  await taskStore.fetchTasks()
-  await agentChat.loadContext()
+  try {
+    await taskStore.fetchTasks()
+    await agentChat.loadContext(undefined, task.id)
+  } catch { /* ignore */ }
   nextTick(() => scrollToBottom())
 }
 
-// 全局 chatOpen 时自动加载上下文
+// 全局 chatOpen 时自动加载上下文（仅从 header 按钮打开时触发）
 watch(chatOpen, async (v) => {
   if (v) {
     if (!chatTaskId.value && chatTaskList.value.length > 0) {
       chatTaskId.value = chatTaskList.value[0].id
     }
-    await agentChat.loadContext()
+    try {
+      await agentChat.loadContext(undefined, chatTaskId.value || undefined)
+    } catch { /* ignore */ }
     nextTick(() => scrollToBottom())
   }
 })
@@ -948,6 +971,42 @@ function switchChatTask(task: Task) {
   replyToMsg.value = null
   agentChat.loadContext(undefined, task.id)
   nextTick(() => scrollToBottom())
+}
+
+// 右键菜单
+const chatCtxMenu = reactive({ show: false, x: 0, y: 0, task: null as Task | null })
+function showChatCtxMenu(e: MouseEvent, task: Task) {
+  chatCtxMenu.x = e.clientX
+  chatCtxMenu.y = e.clientY
+  chatCtxMenu.task = task
+  chatCtxMenu.show = true
+}
+function removeFromChatList() {
+  if (chatCtxMenu.task) {
+    hiddenChatTasks.add(chatCtxMenu.task.id)
+    if (chatTaskId.value === chatCtxMenu.task.id) {
+      const next = chatTaskList.value[0]
+      chatTaskId.value = next?.id || ''
+      if (next) agentChat.loadContext(undefined, next.id)
+    }
+  }
+  chatCtxMenu.show = false
+}
+
+async function openInVsCode() {
+  const path = chatCtxMenu.task?.projectPath
+  chatCtxMenu.show = false
+  if (!path) return
+  openVscode(path)
+}
+
+async function openVscode(path: string) {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_in_vscode', { path })
+  } catch {
+    window.open('vscode://file/' + path, '_blank')
+  }
 }
 
 function setReplyTo(msg: { id: string; content: string; time: string; type: string }) {
@@ -1079,6 +1138,7 @@ function scheduleRefresh() {
     refreshTimer = null
     taskStore.fetchTasks()
     syncTodoFromBackend()
+    if (chatOpen.value) agentChat.loadContext(undefined, chatTaskId.value || undefined)
   }, 500)
 }
 
@@ -1398,7 +1458,7 @@ async function syncTodoFromBackend() {
 }
 .fc-contact-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  &.dot-ai_dev { background: #FF7D00; box-shadow: 0 0 8px rgba(255,125,0,0.5); animation: pulse-red 1.5s ease-in-out infinite; }
+  &.dot-ai_dev { background: #E6A23C; box-shadow: 0 0 8px rgba(230,162,60,0.5); animation: pulse-red 1.5s ease-in-out infinite; }
   &.dot-ai_review { background: #409EFF; box-shadow: 0 0 6px rgba(64,158,255,0.4); }
   &.dot-ai_done { background: #67c23a; box-shadow: 0 0 4px rgba(103,194,58,0.3); }
   &.dot-ai_rework { background: #E6A23C; box-shadow: 0 0 6px rgba(230,162,60,0.4); }
@@ -1413,6 +1473,24 @@ async function syncTodoFromBackend() {
 .fc-contact-name { font-size: 13px; font-weight: 500; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fc-contact-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--cyber-text-secondary); }
 .fc-sidebar-empty { text-align: center; padding: 40px 12px; font-size: 13px; color: var(--cyber-text-muted); }
+
+// 右键菜单
+.fc-ctx-mask { position: fixed; inset: 0; z-index: 3000; }
+.fc-ctx-menu {
+  position: fixed; z-index: 3001; min-width: 140px;
+  background: var(--cyber-bg, #0A101F); border: 1px solid var(--cyber-glass-border);
+  border-radius: 8px; padding: 4px; backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+.fc-ctx-item {
+  padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  color: var(--cyber-text-secondary); transition: all 0.15s;
+  display: flex; align-items: center; gap: 8px;
+  &:hover { background: var(--cyber-hover, rgba(0,0,0,0.04)); color: var(--cyber-text-primary); }
+  &.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+}
+.fc-ctx-danger:hover { background: rgba(245,108,108,0.1); color: #f56c6c; }
+.fc-ctx-divider { height: 1px; margin: 4px 8px; background: var(--cyber-glass-border); }
 
 // 拖拽分隔条
 .fc-resizer {
@@ -1429,25 +1507,23 @@ async function syncTodoFromBackend() {
 // 聊天头部
 .fc-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 24px; border-bottom: 1px solid var(--cyber-glass-border); flex-shrink: 0;
+  padding: 8px 16px; border-bottom: 1px solid var(--cyber-glass-border); flex-shrink: 0;
   background: rgba(128,128,128,0.04);
 }
-.fc-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+.fc-header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;
+  h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
 .fc-header-dot {
-  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   &.priority-urgent { background: #f56c6c; box-shadow: 0 0 6px #f56c6c; }
   &.priority-high { background: #e6a23c; box-shadow: 0 0 6px #e6a23c; }
   &.priority-medium { background: #409eff; }
   &.priority-low { background: #67c23a; }
 }
-.fc-header-info { min-width: 0; flex: 1;
-  h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--cyber-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-}
-.fc-header-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.fc-task-id { font-size: 11px; color: var(--cyber-text-secondary); font-family: 'Cascadia Code', Consolas, monospace; }
-.fc-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.fc-task-id { font-size: 10px; color: var(--cyber-text-secondary); font-family: 'Cascadia Code', Consolas, monospace; }
+.fc-header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .fc-close-btn {
-  width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--cyber-glass-border);
+  width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--cyber-glass-border);
   background: transparent; color: var(--cyber-text-secondary); cursor: pointer;
   display: flex; align-items: center; justify-content: center; transition: all 0.2s;
   &:hover { background: rgba(245,108,108,0.08); border-color: rgba(245,108,108,0.3); color: #f56c6c; }

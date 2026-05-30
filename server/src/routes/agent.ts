@@ -808,7 +808,10 @@ router.get('/chat/context', (req, res) => {
     if (taskId) {
       // 按任务加载：跨 session 加载该任务的所有消息
       const cursorFilter = cursor ? " AND created_at < ?" : ''
-      const params = cursor ? [taskId, req.userId, cursor, String(limit + 1)] : [taskId, req.userId, String(limit + 1)]
+      const devCursorFilter = cursor ? " AND time < ?" : ''
+      const params = cursor
+        ? [taskId, req.userId, cursor, taskId, cursor, String(limit + 1)]
+        : [taskId, req.userId, taskId, String(limit + 1)]
       messages = db.prepare(`
         SELECT * FROM (
           SELECT id, role, content, created_at AS time, session_id, type, task_id, metadata, 'chat' AS source
@@ -832,7 +835,7 @@ router.get('/chat/context', (req, res) => {
           FROM dev_logs
           WHERE task_id = ?
             AND action IN ('开始开发','plan','开发','调试','重构','自测','回复','开发完成','疑问','补充说明')
-            ${cursorFilter}
+            ${devCursorFilter}
         )
         ORDER BY time ASC
         LIMIT ?

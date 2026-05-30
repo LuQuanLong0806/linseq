@@ -1,31 +1,55 @@
 <template>
   <div class="projects-page">
-    <!-- Header -->
-    <div class="page-header">
-      <h2 class="page-title"><span class="glow-text">项目配置</span></h2>
-      <div class="page-header-bar">
-        <div class="stats-row">
-          <div class="stat-chip"><span class="stat-num">{{ projects.length }}</span>已配置</div>
-          <div class="stat-divider"></div>
-          <div class="stat-chip"><span class="stat-num">{{ projects.filter(p => p.localPath).length }}</span>已关联路径</div>
-          <div class="stat-divider"></div>
-          <div class="stat-chip"><span class="stat-num">{{ projects.filter(p => p.branches?.length > 0).length }}</span>已获取分支</div>
+    <!-- 筛选栏 -->
+    <div class="cyber-panel filter-card">
+      <div class="filter-row">
+        <div class="filter-fields">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="搜索项目名称/路径/Git地址..."
+            :prefix-icon="Search"
+            clearable
+            style="min-width: 150px; max-width: 260px; flex: 1"
+            @clear="currentPage = 1"
+            @keyup.enter="currentPage = 1"
+          />
         </div>
-        <el-button type="success" size="small" @click="openDialog()">+ 新建项目</el-button>
+        <div class="filter-actions">
+          <el-button type="primary" :icon="Search" @click="currentPage = 1">搜索</el-button>
+          <el-button :icon="RefreshRight" @click="searchKeyword = ''; currentPage = 1">重置</el-button>
+          <el-button type="success" :icon="Plus" @click="openDialog()">新建项目</el-button>
+        </div>
       </div>
     </div>
 
-    <!-- Table Card -->
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span v-if="selectedProjects.length > 0" class="selected-count">已选 {{ selectedProjects.length }} 项</span>
+      <div class="toolbar-right">
+        <el-button
+          type="danger"
+          size="small"
+          :disabled="selectedProjects.length === 0"
+          @click="handleBatchDelete"
+        >批量删除</el-button>
+      </div>
+    </div>
+
+    <!-- Table -->
     <div class="cyber-panel table-card">
       <el-table
+        ref="tableRef"
         :data="paginatedProjects"
         v-loading="loading"
+        stripe
         border
         style="width:100%"
         :header-cell-style="{ fontWeight: 600 }"
         empty-text="暂无项目配置，点击上方按钮新建"
         row-class-name="table-row"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="45" fixed="left" />
         <el-table-column prop="name" label="项目名称" min-width="140" align="center">
           <template #default="{ row }">
             <el-tooltip :content="row.name" placement="top" :show-after="300">
@@ -68,12 +92,16 @@
             <span v-else class="cell-empty">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="160" fixed="right" align="center">
+        <el-table-column label="操作" width="260" :fixed="'right'" align="center">
           <template #default="{ row }">
-            <div class="ops-cell">
-              <el-button type="primary" link size="small" @click="openDialog(row)">编辑</el-button>
-              <el-button type="success" link size="small" @click="handleFetchBranches(row)" :loading="row._fetching">获取分支</el-button>
-              <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+            <div class="ops">
+              <span class="op" @click.stop="openDialog(row)"><el-icon><Edit /></el-icon>编辑</span>
+              <span class="op op-vscode" @click.stop="openVscode(row.localPath)" :class="{ disabled: !row.localPath }">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>VS Code
+              </span>
+              <span class="op op-fetch" @click.stop="handleFetchBranches(row)" :class="{ disabled: row._fetching }">
+                <el-icon><Refresh /></el-icon>{{ row._fetching ? '获取中' : '获取分支' }}
+              </span>
             </div>
           </template>
         </el-table-column>
@@ -82,7 +110,7 @@
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
-          :total="projects.length"
+          :total="filteredProjects.length"
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
           background
@@ -118,7 +146,6 @@
           </el-select>
         </el-form-item>
 
-        <!-- Step 1: 本地路径 + 检测Git -->
         <el-form-item label="本地路径">
           <div class="chain-row">
             <el-input v-model="form.localPath" placeholder="粘贴完整路径，如 F:\00_project\my-project" class="chain-input" />
@@ -133,7 +160,6 @@
           </div>
         </el-form-item>
 
-        <!-- Step 2: Git 地址（自动填充） + 获取分支 -->
         <el-form-item label="Git 地址">
           <div class="chain-row">
             <el-input v-model="form.gitUrl" placeholder="自动检测或手动输入 Git 远程地址" class="chain-input" />
@@ -143,7 +169,6 @@
           </div>
         </el-form-item>
 
-        <!-- Step 3: 默认分支（搜索下拉） -->
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="默认分支">
@@ -186,6 +211,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { projectApi, type ProjectConfig } from '@/api/project'
 import { taskApi } from '@/api/task'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, RefreshRight, Plus, Edit, Refresh, Delete } from '@element-plus/icons-vue'
+import type { ElTable } from 'element-plus'
 
 const projects = ref<(ProjectConfig & { _fetching?: boolean })[]>([])
 const loading = ref(false)
@@ -193,6 +220,9 @@ const showDialog = ref(false)
 const saving = ref(false)
 const editingId = ref('')
 const availableProjectNames = ref<string[]>([])
+const searchKeyword = ref('')
+const selectedProjects = ref<(ProjectConfig & { _fetching?: boolean })[]>([])
+const tableRef = ref<InstanceType<typeof ElTable> | null>(null)
 
 const detecting = ref(false)
 const fetchingBranches = ref(false)
@@ -200,9 +230,20 @@ const detectResult = ref<{ exists: boolean; isGitRepo: boolean } | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
 
+const filteredProjects = computed(() => {
+  const kw = searchKeyword.value.trim().toLowerCase()
+  if (!kw) return projects.value
+  return projects.value.filter(p =>
+    p.name.toLowerCase().includes(kw) ||
+    (p.localPath || '').toLowerCase().includes(kw) ||
+    (p.gitUrl || '').toLowerCase().includes(kw) ||
+    (p.note || '').toLowerCase().includes(kw)
+  )
+})
+
 const paginatedProjects = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return projects.value.slice(start, start + pageSize.value)
+  return filteredProjects.value.slice(start, start + pageSize.value)
 })
 
 const form = reactive({
@@ -252,6 +293,16 @@ function openDialog(row?: ProjectConfig) {
     form.note = ''
   }
   showDialog.value = true
+}
+
+async function openVscode(path: string) {
+  if (!path) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_in_vscode', { path })
+  } catch {
+    window.open('vscode://file/' + path, '_blank')
+  }
 }
 
 async function handleDetectGit() {
@@ -321,6 +372,29 @@ async function handleDelete(row: ProjectConfig) {
   }
 }
 
+function handleSelectionChange(rows: (ProjectConfig & { _fetching?: boolean })[]) {
+  selectedProjects.value = rows
+}
+
+async function handleBatchDelete() {
+  if (selectedProjects.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${selectedProjects.value.length} 个项目？`,
+      '批量删除确认',
+      { type: 'warning' }
+    )
+    for (const row of selectedProjects.value) {
+      await projectApi.remove(row.id)
+    }
+    ElMessage.success(`已删除 ${selectedProjects.value.length} 个项目`)
+    selectedProjects.value = []
+    await loadProjects()
+  } catch {
+    ElMessage.error('删除项目失败')
+  }
+}
+
 async function handleFetchBranches(row: ProjectConfig & { _fetching?: boolean }) {
   row._fetching = true
   try {
@@ -339,60 +413,68 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .projects-page {
-  max-width: var(--container-lg);
   margin: 0 auto;
+  position: relative;
+  min-height: 100%;
 }
 
-/* ===== Header ===== */
-.page-header {
-  text-align: center;
-  padding: 4px 0 12px;
+.filter-card,
+.table-card,
+.pagination-area,
+.toolbar {
+  position: relative;
+  z-index: 1;
 }
-.page-title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-}
-.glow-text {
-  background: linear-gradient(135deg, #00E5FF, #00E5FF, #FF7D00, #00E5FF);
-  background-size: 300% 300%;
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-  animation: gradientShift 6s ease infinite;
-}
-@keyframes gradientShift { 0%,100%{background-position:0% 50%} 33%{background-position:100% 50%} 66%{background-position:50% 100%} }
 
-.page-header-bar {
+.filter-card {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+}
+
+.filter-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 16px;
-  margin-top: 8px;
 }
-.stats-row {
+
+.filter-fields {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.stat-chip {
-  font-size: 13px;
-  color: var(--cyber-text-secondary);
-  .stat-num {
-    color: var(--cyber-cyan);
-    font-weight: 700;
-    margin-right: 4px;
-    font-size: 15px;
-  }
-}
-.stat-divider {
-  width: 1px;
-  height: 14px;
-  background: var(--cyber-glass-border);
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-/* ===== Table Card ===== */
+.toolbar {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selected-count {
+  color: var(--cyber-cyan, #00E5FF);
+  font-size: 13px;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
 .table-card {
   backdrop-filter: none;
   overflow: hidden;
+  border-radius: 0 !important;
   :deep(.el-table) { --el-table-border-color: var(--cyber-glass-border); }
   :deep(.table-row) {
     cursor: pointer;
@@ -405,109 +487,55 @@ onMounted(() => {
   :deep(.el-table__cell) { text-align: center; }
 }
 
-.name-text {
-  font-weight: 600;
-  color: var(--cyber-text-primary);
-  font-size: 14px;
-}
-
+.name-text { font-weight: 600; color: var(--cyber-text-primary); font-size: 14px; }
 .path-text {
   font-family: 'Cascadia Code', Consolas, monospace;
-  font-size: 13px;
-  color: var(--cyber-text-secondary);
-  word-break: break-all;
-  line-height: 1.5;
+  font-size: 13px; color: var(--cyber-text-secondary);
+  word-break: break-all; line-height: 1.5;
 }
-
 .cell-empty { color: var(--cyber-text-muted); font-size: 13px; }
-
 .cell-ellipsis {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-  display: inline-block;
-  vertical-align: middle;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%; display: inline-block; vertical-align: middle;
 }
-
 .branch-plain {
   font-family: 'Cascadia Code', Consolas, monospace;
-  font-size: 13px;
-  color: var(--cyber-text-secondary);
+  font-size: 13px; color: var(--cyber-text-secondary);
 }
 
-.ops-cell {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  justify-content: center;
+.ops { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.op {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 4px 8px; font-size: 12px; color: var(--cyber-cyan);
+  cursor: pointer; border-radius: 6px; transition: color 0.15s, background 0.15s;
+  .el-icon { font-size: 13px; }
+  &:hover { color: var(--cyber-cyan); background: rgba(0, 229, 255, 0.12); }
+  &.disabled { opacity: 0.5; pointer-events: none; }
 }
+.op-danger { color: #f56c6c; &:hover { background: rgba(245, 108, 108, 0.12); } }
+.op-fetch { color: #67c23a; &:hover { background: rgba(103, 194, 58, 0.12); } }
+.op-vscode { color: #409EFF; &:hover { background: rgba(64, 158, 255, 0.12); } }
 
-.pagination-area {
-  margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
-}
+.pagination-area { margin-top: 16px; display: flex; justify-content: flex-end; }
 
 /* ===== Dialog ===== */
-.proj-dialog :deep(.el-dialog) {
-  border-radius: 14px;
-  overflow: hidden;
-}
-
+.proj-dialog :deep(.el-dialog) { border-radius: 14px; overflow: hidden; }
 .proj-dialog :deep(.el-dialog__header) {
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--cyber-glass-border);
-  margin-right: 0;
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--cyber-glass-border); margin-right: 0;
 }
-
-.proj-dialog :deep(.el-dialog__body) {
-  padding: 24px;
-}
-
+.proj-dialog :deep(.el-dialog__body) { padding: 24px; }
 .proj-dialog :deep(.el-dialog__footer) {
-  padding: 16px 24px;
-  border-top: 1px solid var(--cyber-glass-border);
+  padding: 16px 24px; border-top: 1px solid var(--cyber-glass-border);
 }
-
-.proj-form :deep(.el-form-item__label) {
-  font-weight: 500;
-  color: var(--cyber-text-secondary);
-}
-
-.chain-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
+.proj-form :deep(.el-form-item__label) { font-weight: 500; color: var(--cyber-text-secondary); }
+.chain-row { display: flex; gap: 8px; width: 100%; }
 .chain-input { flex: 1; }
-
-.detect-hint {
-  margin-top: 4px;
-}
-
+.detect-hint { margin-top: 4px; }
 .branches-preview {
-  padding: 10px 14px;
-  background: var(--cyber-glass-bg);
-  border: 1px solid var(--cyber-glass-border);
-  border-radius: 8px;
-  margin-top: 4px;
+  padding: 10px 14px; background: var(--cyber-glass-bg);
+  border: 1px solid var(--cyber-glass-border); border-radius: 8px; margin-top: 4px;
 }
-
-.branches-label {
-  font-size: 12px;
-  color: var(--cyber-text-secondary);
-  margin-right: 8px;
-}
-
-.branch-tag {
-  margin: 2px 4px;
-}
-
-.branches-more {
-  font-size: 12px;
-  color: var(--cyber-text-secondary);
-  margin-left: 4px;
-}
+.branches-label { font-size: 12px; color: var(--cyber-text-secondary); margin-right: 8px; }
+.branch-tag { margin: 2px 4px; }
+.branches-more { font-size: 12px; color: var(--cyber-text-secondary); margin-left: 4px; }
 </style>

@@ -28,18 +28,23 @@
           <span class="meta-hours">{{ task.workHours || 0 }}h</span>
           <span :class="{ 'meta-overdue': isOverdue(task) }">截止 {{ formatDate(task.deadline) }}</span>
         </div>
-        <div class="card-actions" @click.stop>
-          <span class="act" @click="navDetail(task)">详情</span>
-          <span class="act act-config" @click="$emit('config', task)">配置</span>
-          <span class="act act-todo" @click="handleTodo(task)">
-            <template v-if="streamingIds.has(task.id)">
-              <span class="stream-text">传输中</span>
-            </template>
-            <template v-else>
-              {{ taskStore.isInTodoList(task.id) ? 'AI待办' : '入待办' }}
-            </template>
-          </span>
-        </div>
+      </div>
+
+      <!-- 悬浮蒙层操作按钮 -->
+      <div class="card-hover-bar" @click.stop>
+        <span class="act" @click="navDetail(task)">详情</span>
+        <span class="act act-config" @click="$emit('config', task)">配置</span>
+        <span class="act act-todo" @click="handleTodo(task)">
+          <template v-if="streamingIds.has(task.id)">
+            <span class="stream-text">传输中</span>
+          </template>
+          <template v-else>
+            {{ taskStore.isInTodoList(task.id) ? 'AI待办' : '入待办' }}
+          </template>
+        </span>
+        <span class="act act-vscode" :class="{ disabled: !task.projectPath }" @click="openVscode(task.projectPath)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>VS Code
+        </span>
       </div>
     </div>
   </div>
@@ -92,6 +97,16 @@ function navDetail(task: Task) {
   router.push(`/tasks/${task.id}`)
 }
 
+async function openVscode(path: string | undefined) {
+  if (!path) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_in_vscode', { path })
+  } catch {
+    window.open('vscode://file/' + path, '_blank')
+  }
+}
+
 function isOverdue(t: Task) { return t.status !== 'completed' && new Date(t.deadline).getTime() < Date.now() }
 function formatDate(d: string) { return dayjs(d).format('MM-DD') }
 type TagType = 'success' | 'primary' | 'warning' | 'danger' | 'info'
@@ -104,26 +119,28 @@ function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework:
 <style lang="scss" scoped>
 .card-grid-view {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
 }
 
 .task-card {
   position: relative;
-  padding: 14px 16px;
-  border-radius: 10px;
+  padding: 16px 18px 14px;
+  border-radius: 12px;
   background: var(--cyber-glass-bg);
   border: 1px solid var(--cyber-glass-border);
   backdrop-filter: blur(6px);
   cursor: pointer;
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  transition: border-color 0.25s, box-shadow 0.3s, transform 0.25s;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  overflow: hidden;
+  min-height: 140px;
 
   &:hover {
     border-color: var(--cyber-glass-border-hover);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 6px 24px rgba(0, 229, 255, 0.06);
     transform: translateY(-2px);
   }
 
@@ -147,6 +164,7 @@ function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework:
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 2px;
 }
 
 .card-tags {
@@ -165,17 +183,25 @@ function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework:
 
 .card-project {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--cyber-text-primary);
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .card-title {
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--cyber-text-secondary);
   line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .card-desc {
@@ -183,7 +209,7 @@ function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework:
   color: var(--cyber-text-muted);
   line-height: 1.5;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   padding: 6px 10px;
@@ -195,9 +221,9 @@ function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework:
 .card-bottom {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: auto;
   gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
 }
 
 .card-meta {
@@ -207,52 +233,90 @@ function getAiStatusLabel(s: string) { return ({ ai_todo: 'AI待办', ai_rework:
   font-size: 11px;
   color: var(--cyber-text-secondary);
 
-  .meta-overdue {
-    color: #f56c6c;
-    font-weight: 600;
-  }
+  .meta-hours { font-weight: 600; }
+  .meta-overdue { color: #f56c6c; font-weight: 600; }
 }
 
-.card-actions {
+/* 磨玻璃悬浮蒙层 */
+.card-hover-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: rgba(10, 16, 31, 0.55);
+  border-top: 1px solid rgba(0, 229, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 2;
+}
+
+:root[data-theme="light"] .card-hover-bar {
+  background: rgba(255, 255, 255, 0.65);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.task-card:hover .card-hover-bar {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .act {
   font-size: 11px;
-  color: var(--cyber-cyan);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  padding: 3px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--cyber-glass-border);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   transition: all 0.2s;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 
   &:hover {
-    background: rgba(0, 229, 255, 0.1);
-    border-color: rgba(0, 229, 255, 0.3);
+    background: rgba(0, 229, 255, 0.15);
+    border-color: rgba(0, 229, 255, 0.35);
+    color: #00E5FF;
   }
+  &.disabled { opacity: 0.3; pointer-events: none; }
 }
 
-.act-config {
-  color: var(--cyber-purple);
-  border-color: rgba(157, 92, 255, 0.2);
-  &:hover {
-    background: rgba(157, 92, 255, 0.1);
-    border-color: rgba(157, 92, 255, 0.3);
-  }
+:root[data-theme="light"] .act {
+  color: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  &:hover { color: #007AFF; background: rgba(0, 122, 255, 0.08); border-color: rgba(0, 122, 255, 0.25); }
 }
 
-.act-todo {
-  color: var(--cyber-orange);
-  border-color: rgba(255, 125, 0, 0.2);
-  &:hover {
-    background: rgba(255, 125, 0, 0.1);
-    border-color: rgba(255, 125, 0, 0.3);
-  }
+.act-config:hover {
+  background: rgba(157, 92, 255, 0.15);
+  border-color: rgba(157, 92, 255, 0.35);
+  color: #9D5CFF;
 }
+:root[data-theme="light"] .act-config:hover { color: #5856D6; background: rgba(88, 86, 214, 0.08); border-color: rgba(88, 86, 214, 0.25); }
+
+.act-todo:hover {
+  background: rgba(255, 125, 0, 0.15);
+  border-color: rgba(255, 125, 0, 0.35);
+  color: #FF7D00;
+}
+:root[data-theme="light"] .act-todo:hover { color: #FF9500; background: rgba(255, 149, 0, 0.08); border-color: rgba(255, 149, 0, 0.25); }
+
+.act-vscode:hover {
+  background: rgba(64, 158, 255, 0.15);
+  border-color: rgba(64, 158, 255, 0.35);
+  color: #409EFF;
+}
+:root[data-theme="light"] .act-vscode:hover { color: #007AFF; background: rgba(0, 122, 255, 0.08); border-color: rgba(0, 122, 255, 0.25); }
 
 .stream-text {
   animation: streamBlink 0.3s ease-in-out infinite alternate;

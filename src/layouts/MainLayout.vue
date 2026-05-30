@@ -64,20 +64,16 @@
         :text-color="theme === 'dark' ? '#E8F0FF' : '#1D1D1F'"
         :active-text-color="theme === 'dark' ? '#00E5FF' : '#007AFF'"
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><DataBoard /></el-icon>
-          <template #title>任务总览</template>
-        </el-menu-item>
-        <el-menu-item index="/tasks">
-          <el-icon><List /></el-icon>
-          <template #title>任务列表</template>
-        </el-menu-item>
         <el-menu-item index="/ai-todo">
           <el-icon><MagicStick /></el-icon>
           <template #title>
             <span>AI 待办</span>
             <span v-if="hasAgentReply && !agentReplySeen" class="agent-reply-dot"></span>
           </template>
+        </el-menu-item>
+        <el-menu-item index="/tasks">
+          <el-icon><List /></el-icon>
+          <template #title>任务列表</template>
         </el-menu-item>
         <el-menu-item index="/review">
           <el-icon><Checked /></el-icon>
@@ -86,13 +82,17 @@
             <el-tag v-if="reviewCount > 0" size="small" type="danger" effect="dark" round class="menu-count-tag">{{ reviewCount > 99 ? '99+' : reviewCount }}</el-tag>
           </template>
         </el-menu-item>
-        <el-menu-item index="/sync">
-          <el-icon><Refresh /></el-icon>
-          <template #title>同步中心</template>
+        <el-menu-item index="/dashboard">
+          <el-icon><DataBoard /></el-icon>
+          <template #title>任务总览</template>
         </el-menu-item>
         <el-menu-item index="/projects">
           <el-icon><FolderOpened /></el-icon>
           <template #title>项目配置</template>
+        </el-menu-item>
+        <el-menu-item index="/sync">
+          <el-icon><Refresh /></el-icon>
+          <template #title>同步中心</template>
         </el-menu-item>
         <el-menu-item index="/devlog">
           <el-icon><Notebook /></el-icon>
@@ -123,7 +123,7 @@
         </div>
         <div class="header-right">
           <el-tooltip content="AI 会话" placement="bottom">
-            <el-icon class="chat-toggle" @click="openChat()">
+            <el-icon class="chat-toggle" @click="handleChatClick">
               <ChatDotRound />
               <span v-if="chatBadge > 0" class="chat-badge">{{ chatBadge }}</span>
             </el-icon>
@@ -153,7 +153,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { DataBoard, List, Refresh, Notebook, Setting, Fold, Expand, MagicStick, Checked, FolderOpened, Sunny, Moon, ChatDotRound } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
@@ -169,6 +169,7 @@ const { isDesktop, sendNotification } = useDesktop()
 const { theme, toggleTheme, initTheme } = useTheme()
 
 const route = useRoute()
+const router = useRouter()
 const taskStore = useTaskStore()
 const { inReview: chatBadge } = useAgentChat()
 const { openChat } = useChatPanel()
@@ -177,6 +178,14 @@ const { start: startBg, stop: stopBg } = useCyberBackground(bgCanvas)
 
 const isCollapsed = ref(false)
 const currentTime = ref(dayjs().format('HH:mm'))
+
+function handleChatClick() {
+  if (route.path === '/ai-todo') {
+    openChat()
+  } else {
+    router.push('/ai-todo')
+  }
+}
 let timer: ReturnType<typeof setInterval> | null = null
 
 const currentRoute = computed(() => route.path)

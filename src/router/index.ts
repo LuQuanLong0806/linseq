@@ -10,7 +10,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
-    redirect: '/dashboard',
+    redirect: '/ai-todo',
     children: [
       {
         path: 'dashboard',

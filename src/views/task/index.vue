@@ -131,12 +131,12 @@
             <span v-else class="status-idle">未加入</span>
           </template>
         </el-table-column>
-        <el-table-column
+        <!-- <el-table-column
           prop="module"
           label="模块"
           min-width="100"
           show-overflow-tooltip
-        />
+        /> -->
         <el-table-column prop="priority" label="优先级" width="80">
           <template #default="{ row }">
             <el-tag :type="getPriorityType(row.priority)" size="small">{{
@@ -168,7 +168,7 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" :fixed="'right'">
+        <el-table-column label="操作" width="320" :fixed="'right'">
           <template #default="{ row }">
             <div class="ops">
               <span class="op" @click.stop="$router.push(`/tasks/${row.id}`)">
@@ -183,6 +183,13 @@
                 @click.stop="handleToggleTodo(row)"
               >
                 <el-icon><Promotion /></el-icon>{{ taskStore.isInTodoList(row.id) ? 'AI待办' : '入待办' }}
+              </span>
+              <span
+                class="op op-vscode"
+                :class="{ disabled: !row.projectPath }"
+                @click.stop="openVscode(row.projectPath)"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M17.583 2.322l-5.106 4.79L7.4 2.98 2.5 6.407v11.186l4.9 3.427 5.077-4.132 5.106 4.79L21.5 18.17V5.828l-3.917-3.506zm-.353 13.945l-3.763-3.318 3.763-3.555v6.873zM7.09 15.998V8.002l3.26 3.897-3.26 4.099zM7.7 17.15l4.247-5.336L7.7 5.874V17.15z" fill="currentColor"/></svg>VS Code
               </span>
               <el-dropdown trigger="click" @command="(cmd) => handleStatusChange(row, cmd)">
                 <span class="op" @click.stop>
@@ -293,11 +300,9 @@
                     </el-form-item>
                   </el-col>
                 </el-row>
-                <el-form-item v-if="!isBatchMode" label="需求文件路径">
-                  <el-input v-model="projectForm.taskPageUrl" placeholder="如 src/views/login/index.vue" clearable />
-                </el-form-item>
                 <el-form-item v-if="!isBatchMode" label="补充说明">
-                  <el-input v-model="projectForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明..." resize="none" />
+                  <el-input v-model="projectForm.customDescription" type="textarea" :rows="4" placeholder="输入补充需求说明，支持拖拽文件/文件夹获取路径..." resize="none"
+                    @dragover.prevent @drop.prevent="e => handleDrop(e, 'desc')" />
                 </el-form-item>
               </el-form>
 
@@ -312,28 +317,14 @@
                       target="_blank"
                       class="req-doc-link"
                     >查看原文</a>
-                    <el-button
-                      v-if="currentEditTask.reqDocText && !docEditing"
-                      type="primary" link size="small" @click="startDocEdit"
-                    >编辑</el-button>
-                    <el-button
-                      v-if="!currentEditTask.reqDocText && currentEditTask.reqDocName"
-                      type="primary" link size="small" :loading="extractingPdf" @click="handleExtractPdf"
-                    >{{ extractingPdf ? '提取中...' : '提取文字' }}</el-button>
+                    <span v-if="extractingPdf" class="req-doc-hint">正在提取文字...</span>
                   </div>
                 </div>
                 <div v-if="currentEditTask.reqDocName" class="req-doc-name">{{ currentEditTask.reqDocName }}</div>
-                <template v-if="currentEditTask.reqDocText">
-                  <el-input v-if="docEditing" v-model="docEditText" type="textarea" :autosize="{ minRows: 4, maxRows: 20 }" placeholder="编辑需求文档内容" />
-                  <div v-else class="req-doc-content">
-                    <div v-for="(line, i) in currentEditTask.reqDocText.split('\n').filter(l => l.trim())" :key="i" class="req-doc-line">{{ line }}</div>
-                  </div>
-                  <div v-if="docEditing" style="margin-top:8px;display:flex;justify-content:flex-end;gap:8px;">
-                    <el-button size="small" @click="docEditing = false">取消</el-button>
-                    <el-button size="small" type="primary" :loading="docSaving" @click="saveDocEdit">保存</el-button>
-                  </div>
+                <template v-if="docEditText !== null">
+                  <el-input v-model="docEditText" type="textarea" :autosize="{ minRows: 4, maxRows: 20 }" placeholder="编辑需求文档内容，支持拖拽文件/文件夹获取路径..."
+                    @dragover.prevent @drop.prevent="e => handleDrop(e, 'doc')" />
                 </template>
-                <div v-else-if="currentEditTask.reqDocName" class="req-doc-empty">点击上方「提取文字」解析文档内容</div>
                 <div v-else class="req-doc-empty">暂无需求文档</div>
               </div>
             </div>
@@ -410,9 +401,7 @@ const filters = reactive({
 const drawerOpen = ref(false);
 const saving = ref(false);
 const extractingPdf = ref(false);
-const docEditing = ref(false);
-const docEditText = ref('');
-const docSaving = ref(false);
+const docEditText = ref<string | null>(null);
 const currentEditTask = ref<Task | null>(null);
 const isBatchMode = ref(false);
 const batchProjectName = ref('');
@@ -422,7 +411,6 @@ const selectedProjectBranches = ref<string[]>([]);
 const projectForm = reactive({
   projectPath: '',
   gitBranch: '',
-  taskPageUrl: '',
   customDescription: ''
 });
 
@@ -519,31 +507,12 @@ async function handleExtractPdf() {
     const res = await taskApi.extractPdf(currentEditTask.value.id)
     if (res.data?.reqDocText) {
       currentEditTask.value = { ...currentEditTask.value, reqDocText: res.data.reqDocText }
+      docEditText.value = res.data.reqDocText
     }
   } catch {
     ElMessage.error('PDF 文字提取失败')
   } finally {
     extractingPdf.value = false
-  }
-}
-
-function startDocEdit() {
-  docEditText.value = currentEditTask.value?.reqDocText || ''
-  docEditing.value = true
-}
-
-async function saveDocEdit() {
-  if (!currentEditTask.value) return
-  docSaving.value = true
-  try {
-    await taskStore.updateTask(currentEditTask.value.id, { reqDocText: docEditText.value })
-    currentEditTask.value = { ...currentEditTask.value, reqDocText: docEditText.value }
-    docEditing.value = false
-    ElMessage.success('保存成功')
-  } catch {
-    ElMessage.error('保存失败')
-  } finally {
-    docSaving.value = false
   }
 }
 
@@ -616,13 +585,45 @@ function handleProjectSelect(name: string) {
   }
 }
 
+async function openVscode(path: string) {
+  if (!path) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_in_vscode', { path })
+  } catch {
+    window.open('vscode://file/' + path, '_blank')
+  }
+}
+
+function handleDrop(e: DragEvent, target: 'desc' | 'doc') {
+  const files = e.dataTransfer?.files
+  if (!files || files.length === 0) return
+  const paths: string[] = []
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]
+    // webkitRelativePath has folder info; path may be available in Electron/Tauri
+    const p = (f as any).path || f.name
+    if (p) paths.push(p)
+  }
+  if (paths.length === 0) return
+  const text = paths.join('\n')
+  if (target === 'desc') {
+    projectForm.customDescription = projectForm.customDescription
+      ? projectForm.customDescription + '\n' + text
+      : text
+  } else if (docEditText.value !== null) {
+    docEditText.value = docEditText.value
+      ? docEditText.value + '\n' + text
+      : text
+  }
+}
+
 async function openProjectSettings(task: Task) {
   isBatchMode.value = false;
   batchProjectName.value = '';
   currentEditTask.value = task;
   projectForm.projectPath = task.projectPath || '';
   projectForm.gitBranch = task.gitBranch || '';
-  projectForm.taskPageUrl = task.taskPageUrl || '';
   projectForm.customDescription = task.customDescription || '';
   selectedProjectName.value = '';
   selectedProjectBranches.value = [];
@@ -636,6 +637,16 @@ async function openProjectSettings(task: Task) {
     selectedProjectBranches.value = [...match.branches];
     if (!projectForm.projectPath && match.localPath) projectForm.projectPath = match.localPath;
     if (!projectForm.gitBranch && match.defaultBranch) projectForm.gitBranch = match.defaultBranch;
+  }
+
+  // 需求文档：已有文字直接编辑，有文件名但未提取则自动提取
+  if (task.reqDocText) {
+    docEditText.value = task.reqDocText
+  } else if (task.reqDocName) {
+    docEditText.value = ''
+    await handleExtractPdf()
+  } else {
+    docEditText.value = null
   }
 
   drawerOpen.value = true;
@@ -655,7 +666,6 @@ async function handleBatchSettings() {
   batchProjectName.value = projectName;
   projectForm.projectPath = '';
   projectForm.gitBranch = '';
-  projectForm.taskPageUrl = '';
   projectForm.customDescription = '';
   selectedProjectName.value = '';
   selectedProjectBranches.value = [];
@@ -679,7 +689,6 @@ async function saveProjectSettings() {
     const payload: Record<string, string> = {};
     if (projectForm.projectPath) payload.projectPath = projectForm.projectPath;
     if (projectForm.gitBranch) payload.gitBranch = projectForm.gitBranch;
-    if (projectForm.taskPageUrl) payload.taskPageUrl = projectForm.taskPageUrl;
     if (projectForm.customDescription) payload.customDescription = projectForm.customDescription;
 
     if (isBatchMode.value) {
@@ -688,11 +697,13 @@ async function saveProjectSettings() {
       }
       ElMessage.success(`已批量配置 ${activeSelected.value.length} 个任务`);
     } else if (currentEditTask.value) {
+      if (docEditText.value !== null) {
+        payload.reqDocText = docEditText.value
+      }
       await taskStore.updateTask(currentEditTask.value.id, payload);
       ElMessage.success('配置已保存');
     }
     drawerOpen.value = false;
-    docEditing.value = false;
   } catch {
     ElMessage.error('保存失败');
   } finally {
@@ -946,6 +957,8 @@ onUnmounted(() => {
   }
 }
 
+.op-vscode { color: #409EFF; &:hover { background: rgba(64, 158, 255, 0.12); } }
+
 .title-cell {
   display: flex;
   align-items: center;
@@ -1135,7 +1148,7 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center;
 }
 .config-modal {
-  width: var(--dialog-lg); max-height: 80vh; border-radius: 14px; overflow: hidden;
+  width: clamp(620px, 65vw, 900px); max-height: 85vh; border-radius: 14px; overflow: hidden;
   background: var(--cyber-glass-bg-strong); border: 1px solid var(--cyber-glass-border);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
   display: flex; flex-direction: column;
@@ -1224,6 +1237,8 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.req-doc-hint { font-size: 12px; color: rgba(0,229,255,0.6); }
 
 .req-doc-empty {
   text-align: center;
