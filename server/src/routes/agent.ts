@@ -99,7 +99,7 @@ router.post('/todo-order', (req, res) => {
  * GET /api/agent/next-task
  * 从待办队列取下一个任务，返回完整开发上下文
  */
-router.get('/next-task', (req, res) => {
+router.get('/next-task', async (req, res) => {
   try {
     if (!req.userId) return res.status(401).json({ code: 401, message: '未登录', data: null })
     const db = getDb()
@@ -192,6 +192,18 @@ router.get('/next-task', (req, res) => {
           return !!t
         }).length
         groupData = { id: groupRow.id, name: groupRow.name, description: groupRow.description || '', taskCount: groupTaskIds.length, completedInGroup: completedCount, siblingTasks: siblings }
+      }
+    }
+
+    // 按需提取需求文档：有文档URL但没文本时自动提取（只取当前这一个任务的PDF）
+    if ((row.req_doc_url as string) && !(row.req_doc_text as string)) {
+      try {
+        const { extractTaskDoc } = await import('../services/doc-extractor.js')
+        await extractTaskDoc(taskId)
+        const updated = db.prepare('SELECT req_doc_text FROM tasks WHERE id = ?').get(taskId) as { req_doc_text: string } | undefined
+        if (updated?.req_doc_text) row.req_doc_text = updated.req_doc_text
+      } catch (err) {
+        console.error('[agent] 需求文档提取失败:', err)
       }
     }
 
@@ -521,7 +533,7 @@ router.post('/sync', async (req, res) => {
       else unchangedTasks++
     }
 
-    // 同步后自动关联项目配置
+    // 同步后自动关联项目配置（精确匹配）
     const configs = db.prepare("SELECT name, local_path, default_branch FROM project_configs WHERE local_path != '' AND user_id = ?").all(req.userId) as { name: string; local_path: string; default_branch: string }[]
     if (configs.length > 0) {
       const updateStmt = db.prepare("UPDATE tasks SET project_path = ?, git_branch = ? WHERE project = ? AND user_id = ? AND (project_path = '' OR project_path IS NULL)")
@@ -529,6 +541,16 @@ router.post('/sync', async (req, res) => {
         updateStmt.run(cfg.local_path, cfg.default_branch, cfg.name, req.userId)
       }
     }
+
+    // 同步后对未匹配任务尝试规则+历史匹配
+    try {
+      const { batchMatchProjects } = await import('../services/project-matcher.js')
+      const unmatched = db.prepare("SELECT id FROM tasks WHERE user_id = ? AND (project_path = '' OR project_path IS NULL) AND is_closed = 0").all(req.userId).map((r: any) => r.id)
+      if (unmatched.length > 0) {
+        const ruleMatched = batchMatchProjects(unmatched, req.userId)
+        if (ruleMatched > 0) console.log(`[Sync] 规则/历史匹配了 ${ruleMatched} 个任务`)
+      }
+    } catch { /* 匹配服务不可用时不影响同步 */ }
 
     db.prepare(`
       INSERT INTO sync_records (id, status, total_tasks, new_tasks, updated_tasks, unchanged_tasks, user_id)

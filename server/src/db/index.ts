@@ -338,6 +338,67 @@ export function initDatabase(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_sessions_status ON chat_sessions(status)')
 
+  // ========== 预处理相关表 ==========
+
+  // 项目规则表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_rules (
+      id TEXT PRIMARY KEY,
+      project_config_id TEXT NOT NULL,
+      rule_type TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      field TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      user_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_project_rules_user ON project_rules(user_id)')
+
+  // 项目关联历史表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_history (
+      id TEXT PRIMARY KEY,
+      task_module TEXT NOT NULL,
+      task_project TEXT NOT NULL,
+      task_customer TEXT NOT NULL,
+      task_title_keyword TEXT DEFAULT '',
+      assigned_project_config_id TEXT NOT NULL,
+      match_method TEXT DEFAULT 'manual',
+      user_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_project_history_user ON project_history(user_id)')
+
+  // 任务模板表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      task_type TEXT NOT NULL,
+      description_template TEXT DEFAULT '',
+      acceptance_template TEXT DEFAULT '',
+      priority_hint TEXT DEFAULT 'medium',
+      risk_level TEXT DEFAULT 'L2',
+      default_tags TEXT DEFAULT '[]',
+      user_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+
+  // tasks 表新增拆分字段
+  const preprocessColumns: [string, string][] = [
+    ['parent_task_id', 'TEXT DEFAULT ""'],
+    ['split_source', 'TEXT DEFAULT ""'],
+    ['risk_level', 'TEXT DEFAULT ""'],
+    ['risk_score', 'INTEGER DEFAULT 0'],
+  ]
+  for (const [col, type] of preprocessColumns) {
+    try { db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${type}`) } catch { /* 已存在 */ }
+  }
+
   // ========== 索引 ==========
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);

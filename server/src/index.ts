@@ -17,6 +17,7 @@ import groupRoutes from './routes/groups.js'
 import versionRoutes from './routes/versions.js'
 import projectRoutes from './routes/projects.js'
 import settingsRoutes from './routes/settings.js'
+import preprocessRoutes from './routes/preprocess.js'
 import userRoutes from './routes/users.js'
 import { startCookieRefresh, stopCookieRefresh } from './scraper/intranet.js'
 import { initWebSocket } from './websocket.js'
@@ -50,6 +51,7 @@ app.use('/api/agent', agentRoutes)
 app.use('/api/groups', groupRoutes)
 app.use('/api/versions', versionRoutes)
 app.use('/api/projects', projectRoutes)
+app.use('/api/preprocess', preprocessRoutes)
 
 // 健康检查
 app.get('/api/health', (_req, res) => {

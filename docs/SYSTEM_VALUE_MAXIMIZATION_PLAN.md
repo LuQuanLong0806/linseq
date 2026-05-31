@@ -55,9 +55,9 @@
 | 无风险评估 | 复杂度完全靠 Agent 自行判断，缺乏预警 |
 | 无步骤级回滚 | 只能整体回退版本，无法回到某个中间步骤 |
 | 无验收清单 | 完成后需人工逐条对照验收标准 |
-| 无回传内网 | 同步是单向的，完成状态需手动更新内网 |
 | 无成功率统计 | 无法量化 Agent 表现、无法优化瓶颈 |
 | 无习惯学习 | 用户反复做相同的手动配置 |
+| 无文档拆分 | 产品一个文档放多任务，无法自动拆分为独立任务 |
 
 ---
 
@@ -292,24 +292,7 @@ CREATE TABLE task_checklists (
 
 ---
 
-### 3.7 回传内网
-
-**可行性：低中**（需要逆向内网提交流程）
-
-**现状**：内网同步是只读的（抓取任务），无任何写回操作。
-
-**风险**：内网可能有 CSRF Token、特殊表单字段、反自动化保护，需要专门调查。
-
-**分阶段**：
-1. **调查阶段**（1-2 天）：用 Puppeteer 探索内网的"提交测试"/"更新状态"表单，确认可行性
-2. **实现阶段**（3-4 天）：新增 `server/src/scraper/intranet-pushback.ts`，写回任务状态
-3. **安全措施**：仅用户手动触发、操作前确认（L4）、每次操作留痕
-
-**工作量**：4-6 天（含调查，可能发现不可行需放弃）
-
----
-
-### 3.8 成功率统计
+### 3.7 成功率统计
 
 **可行性：非常高**（所有原始数据已在数据库中）
 
@@ -336,7 +319,7 @@ CREATE TABLE task_checklists (
 
 ---
 
-### 3.9 习惯学习
+### 3.8 习惯学习
 
 **可行性：高**
 
@@ -371,6 +354,131 @@ CREATE TABLE user_preferences (
 
 ---
 
+### 3.9 文档拆分（多任务提取）
+
+**可行性：高**
+
+**痛点**：产品把多个任务的需求写在同一个文档/内网工单里，同步进来是一条记录，实际包含 N 个独立任务。不拆分就无法正确关联项目、估算工时、分配给 Agent。
+
+**方案**：预处理 Agent 新增"文档拆分"职责，自动识别并拆分多任务文档。
+
+**触发判断**：
+
+```typescript
+const needsSplit = (task) => {
+  // 线索1：描述里有编号（1. 2. 3. 或 一、二、三、或 - 开头）
+  const hasNumbering = /\n\s*(\d+[.、)）]|\s[-•‣]\s)/.test(task.description)
+  // 线索2：描述超长（>500字大概率是多任务）
+  const isLong = task.description.length > 500
+  // 线索3：标题含版本/迭代/批次/需求包
+  const hasVersion = /V\d|版本|迭代|批次|需求包|合集/.test(task.title)
+  return (hasNumbering && isLong) || (hasVersion && isLong)
+}
+```
+
+**新增 API `POST /api/preprocess/split`**：
+
+```typescript
+// 输入
+{
+  "taskId": "原始任务ID",
+  "task": {
+    "title": "XX系统V2.1需求",
+    "description": "1. 登录页面增加验证码...\n2. 用户列表加导出功能...\n3. 权限管理增加角色分配...",
+    "module": "XX系统",
+    "customer": "XX科技"
+  }
+}
+
+// 输出：拆分后的子任务数组
+{
+  "parentTaskId": "原始任务ID",
+  "subTasks": [
+    {
+      "title": "登录页面增加验证码",
+      "description": "在现有登录页面增加图形验证码功能...",
+      "module": "登录模块",
+      "bugOrReq": "req",
+      "estimatedHours": 4,
+      "riskLevel": "L2",
+      "acceptanceCriteria": "1. 验证码正常显示\n2. 验证失败有提示\n3. 刷新验证码可用"
+    },
+    {
+      "title": "用户列表加导出功能",
+      "description": "...",
+      "riskLevel": "L2"
+    }
+  ],
+  "confidence": 0.85,
+  "splitReason": "按序号和功能模块拆分为3个独立任务"
+}
+```
+
+**数据库改动**：
+
+```sql
+ALTER TABLE tasks ADD COLUMN parent_task_id TEXT DEFAULT '';
+ALTER TABLE tasks ADD COLUMN split_source TEXT DEFAULT '';  -- 'manual' | 'agent'
+```
+
+- 子任务的 `parent_task_id` 指向原始任务
+- 原始任务标记为 `status: 'split'`，不再进入开发队列
+- 子任务各自独立流转（各自关联项目、唤醒 Agent）
+
+**前端交互**：
+
+1. 任务详情页检测到需要拆分时，显示"智能拆分"按钮
+2. 点击后调用 `/split`，弹出确认面板（可编辑每个子任务的标题、描述、模块）
+3. 用户确认后批量创建子任务，原始任务标记为已拆分
+4. 子任务各自走正常的关联项目 → 启动流程
+
+**关联项目维度（从强到弱）**：
+
+| 维度 | 数据来源 | 匹配方式 | 置信度 |
+| --- | --- | --- | --- |
+| project 精确匹配 | `tasks.project` = `project_configs.name` | 精确 | 0.95 |
+| module 匹配 | `tasks.module` ∈ `project_configs.tags` | 模糊 | +0.3 |
+| customer 匹配 | `tasks.customer` = 历史中同客户关联的项目 | 统计 | +0.2 |
+| 路径匹配 | `tasks.project_path` 前缀匹配 `project_configs.localPath` | 精确 | 0.95 |
+| Agent 语义分析 | 标题/描述 vs 项目标签/路径 | AI | 辅助 |
+
+**字段映射关系**：
+
+```
+tasks.project        → 内网项目名（只读，同步来源）
+tasks.project_path   → 本地项目路径（用户/规则/Agent 填充）
+tasks.module         → 模块名（辅助匹配维度）
+tasks.customer       → 客户名（辅助匹配维度）
+
+project_configs.name → 本地项目配置名
+project_configs.localPath → 本地路径
+project_configs.tags → 标签（匹配关键词）
+```
+
+关联的本质：根据上述维度找到 `project_configs.id`，取其 `localPath` 和 `gitBranch` 填入 task。
+
+**关联流转链**：
+
+```
+任务同步进来
+  ↓
+① tasks.project 精确匹配 project_configs.name → 直接关联（现有逻辑）
+  ↓ 失败
+② 规则引擎：keyword/regex 匹配 → 命中则关联
+  ↓ 失败
+③ 历史学习：module + customer 组合查历史 → 命中则推荐
+  ↓ 失败
+④ 预处理 Agent 语义分析 → 推荐候选（confidence 0.5-0.9）
+  ↓ 失败
+⑤ 标记 project_path 为空，等待用户手动配置
+  ↓ 用户手动选择
+⑥ 记录到 project_history，下次同类任务自动匹配
+```
+
+**工作量**：2-3 天（含预处理 Agent 指南更新）
+
+---
+
 ## 四、分阶段实施计划
 
 ### 第一阶段：立竿见影（第 1-2 周）
@@ -395,18 +503,21 @@ CREATE TABLE user_preferences (
 
 | 优先级 | 功能 | 工作量 | 价值 |
 | --- | --- | --- | --- |
+| P0 | 文档拆分（多任务提取） | 2-3 天 | 极高 — 解决产品一个文档放多任务的痛点 |
 | P0 | 项目自动识别（规则+历史） | 4-5 天 | 极高 — 消除大部分手动配置 |
 | P1 | 风险评估 | 2-3 天 | 中高 — 预警 + Agent 安全 |
 | P2 | 习惯学习 | 2-3 天 | 中 — 越用越准 |
 
 **交付物**：
+- `server/src/routes/preprocess.ts`（拆分 API）
 - `server/src/routes/rules.ts`
 - `server/src/services/project-matcher.ts`
 - `server/src/services/risk-assessor.ts`
 - `server/src/services/habit-learner.ts`
-- 前端：规则编辑器、风险标签、智能推荐
+- 前端：任务详情"智能拆分"按钮、规则编辑器、风险标签、智能推荐
 
 **新增 3 张表**：`project_rules`、`project_history`、`user_preferences`。
+**tasks 表新增 2 字段**：`parent_task_id`、`split_source`。
 
 ---
 
@@ -416,11 +527,9 @@ CREATE TABLE user_preferences (
 | --- | --- | --- | --- |
 | P1 | 验收清单 | 2-3 天 | 中 — 半自动验收 |
 | P1 | 步骤级回滚 | 3-4 天 | 高 — 安全网（需更新 QClaw 指南 v10） |
-| P2 | 回传内网 | 4-6 天 | 高（但风险也高） |
 | P2 | Agent 兜底识别 | 1 天 | 低中 — 极端场景 |
 
 **风险控制**：
-- 回传内网先做 1-2 天调查，确认可行再投入
 - 步骤级回滚需更新 QClaw 指南（v10），预处理 Agent 变更写在独立指南 `PREPROCESS_AGENT_GUIDE.md`，不合并
 
 ---
@@ -429,11 +538,11 @@ CREATE TABLE user_preferences (
 
 | 风险 | 影响 | 应对 |
 | --- | --- | --- |
-| 内网回传 API 不可用或反自动化 | 功能 7 受阻 | 先调查再投入；备选方案：生成操作指引让用户手动提交 |
 | 规则匹配过度激进，关联错项目 | 任务路由到错误仓库 | 低置信度时必须用户确认；所有自动操作可撤销 |
 | Agent 协议变更（步骤级 commit）破坏兼容性 | 功能 5 影响现有 Agent | 步骤 commit 可选，仅新版 Agent 启用；向后兼容 |
 | 大量规则影响同步性能 | 同步变慢 | 只对新任务/未匹配任务执行规则；结果缓存 |
 | SQLite 并发写入 | DB 锁竞争 | 规则匹配在同步事务内执行，复用 better-sqlite3 同步模型 |
+| 文档拆分不准确 | 拆出错误的子任务 | 拆分结果必须用户确认才生效；Agent 置信度 < 0.7 时不自动拆分 |
 
 ---
 
@@ -451,7 +560,14 @@ CREATE TABLE user_preferences (
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ 内网系统                                                      │
-│ 自动拉取任务 ←─────────────────────────── 回传完成状态（P3）   │
+│ 自动拉取任务                                                  │
+└───────────────┬──────────────────────────────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 文档拆分（P2 新增）                                            │
+│ 检测多任务文档 → 预处理 Agent 拆分为独立子任务 → 用户确认       │
+│ 单任务文档直接通过                                             │
 └───────────────┬──────────────────────────────────────────────┘
                 │
                 ▼
@@ -478,7 +594,6 @@ CREATE TABLE user_preferences (
 ┌──────────────────────────────────────────────────────────────┐
 │ 验收闭环（P3）                                                 │
 │ 自动生成验收清单 → 人类勾选确认 → 统计成功率 → 优化规则        │
-│ 完成状态回传内网                                               │
 └──────────────────────────────────────────────────────────────┘
 ```
 

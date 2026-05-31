@@ -18,12 +18,24 @@
               <el-tag v-if="task.reworkCount > 0" type="danger" size="small" effect="dark">返工{{ task.reworkCount }}次</el-tag>
               <el-tag v-if="task.project" type="info" size="default">{{ task.project }}</el-tag>
               <el-tag v-if="task.bugOrReq" size="default" effect="plain">{{ getBugOrReqLabel(task.bugOrReq) }}</el-tag>
+              <el-tag v-if="riskResult" :type="riskLevelType" size="default" effect="dark">{{ riskResult.level }} 风险{{ riskResult.score }}分</el-tag>
               <span class="meta-id">#{{ task.sourceId }}</span>
               <span v-if="task.workHours" class="meta-hours">工时: {{ task.workHours }}h</span>
             </div>
           </div>
         </div>
         <div class="header-right">
+          <el-dropdown trigger="click" @command="handlePreprocess" style="margin-right:8px;">
+            <el-button :icon="MagicStick">智能分析</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="split">智能拆分</el-dropdown-item>
+                <el-dropdown-item command="match">匹配项目</el-dropdown-item>
+                <el-dropdown-item command="risk">风险评估</el-dropdown-item>
+                <el-dropdown-item command="extract" :disabled="!task.req_doc_name">提取需求文档</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button type="primary" @click="handleStartDev" v-if="task.status === 'pending'" :icon="VideoPlay">开始开发</el-button>
           <el-button type="success" @click="handleSelfTest" v-if="task.status === 'in_progress'" :icon="CircleCheck">自测完成</el-button>
           <el-button type="warning" @click="handleSubmit" v-if="task.status === 'self_test'" :icon="Upload">提交测试</el-button>
@@ -442,6 +454,60 @@
       </div>
       <div v-else style="color:#909399;text-align:center;padding:20px;">请选择两个不同版本进行对比</div>
     </el-dialog>
+
+    <!-- 拆分确认对话框 -->
+    <el-dialog v-model="showSplitDialog" title="智能拆分" width="700px" :close-on-click-modal="false">
+      <div v-if="splitSubTasks.length" class="split-list">
+        <p style="margin:0 0 12px;color:var(--cyber-text-secondary);font-size:13px;">
+          检测到多任务文档，已拆分为 {{ splitSubTasks.length }} 个子任务，请确认后创建：
+        </p>
+        <div v-for="(sub, i) in splitSubTasks" :key="i" class="split-item">
+          <div class="split-item-header">
+            <el-tag size="small" type="primary">子任务 {{ i + 1 }}</el-tag>
+            <el-button type="danger" link size="small" @click="splitSubTasks.splice(i, 1)">移除</el-button>
+          </div>
+          <el-input v-model="sub.title" size="small" placeholder="标题" style="margin-bottom:6px;" />
+          <el-input v-model="sub.description" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" size="small" placeholder="描述" />
+        </div>
+      </div>
+      <div v-else style="color:#909399;text-align:center;padding:20px;">未检测到可拆分内容</div>
+      <template #footer>
+        <el-button @click="showSplitDialog = false">取消</el-button>
+        <el-button type="primary" :loading="splitting" @click="handleConfirmSplit">确认拆分 ({{ splitSubTasks.length }})</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 匹配结果对话框 -->
+    <el-dialog v-model="showMatchDialog" title="项目匹配结果" width="500px">
+      <div v-if="matchResult" class="match-result">
+        <el-result v-if="matchResult.matched" icon="success" :title="`匹配成功: ${matchResult.projectConfigName}`" :sub-title="`${matchResult.reason}（置信度 ${(matchResult.confidence * 100).toFixed(0)}%）`">
+          <template #extra>
+            <el-button type="primary" @click="handleConfirmMatchAction">确认关联</el-button>
+          </template>
+        </el-result>
+        <el-result v-else icon="warning" title="未找到匹配项目" sub-title="请手动配置项目路径">
+          <template #extra>
+            <el-button @click="openDevConfig">手动配置</el-button>
+          </template>
+        </el-result>
+      </div>
+      <div v-else style="color:#909399;text-align:center;padding:20px;">匹配中...</div>
+    </el-dialog>
+
+    <!-- 风险评估对话框 -->
+    <el-dialog v-model="showRiskDialog" title="风险评估" width="500px">
+      <div v-if="riskResult" class="risk-result">
+        <div class="risk-score-display">
+          <span class="risk-level-tag" :class="`risk-${riskResult.level.toLowerCase()}`">{{ riskResult.level }}</span>
+          <span class="risk-score">{{ riskResult.score }}</span>
+          <span class="risk-unit">/ 100</span>
+        </div>
+        <div v-if="riskResult.factors.length" class="risk-factors">
+          <div class="risk-factor-label">风险因素：</div>
+          <el-tag v-for="(f, i) in riskResult.factors" :key="i" size="small" style="margin:4px;" effect="plain">{{ f }}</el-tag>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -452,13 +518,29 @@ import { useTaskStore } from '@/stores/task'
 import { taskApi } from '@/api/task'
 import { versionApi } from '@/api/version'
 import type { TaskVersion } from '@/types'
-import { ArrowLeft, ArrowDown, VideoPlay, CircleCheck, Upload } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowDown, VideoPlay, CircleCheck, Upload, MagicStick } from '@element-plus/icons-vue'
 import type { TaskStatus } from '@/types'
 import dayjs from 'dayjs'
 import { ElMessage } from 'element-plus'
+import { usePreprocess } from '@/composables/usePreprocess'
+import type { SplitSubTask, MatchResult, RiskResult } from '@/api/preprocess'
 
 const route = useRoute()
 const taskStore = useTaskStore()
+const { splitting, matching, handleSplit, confirmSplit, handleMatch, confirmMatch, handleRiskAssess, extractTaskDoc } = usePreprocess()
+
+// 预处理状态
+const showSplitDialog = ref(false)
+const splitSubTasks = ref<SplitSubTask[]>([])
+const showMatchDialog = ref(false)
+const matchResult = ref<MatchResult | null>(null)
+const showRiskDialog = ref(false)
+const riskResult = ref<RiskResult | null>(null)
+const riskLevelType = computed(() => {
+  if (!riskResult.value) return 'info'
+  const map: Record<string, string> = { L1: 'success', L2: 'info', L3: 'warning', L4: 'danger' }
+  return map[riskResult.value.level] || 'info'
+})
 
 const error = ref<string>('')
 const saving = ref(false)
@@ -766,6 +848,52 @@ async function handleAddLog() {
   } catch { ElMessage.error('添加失败') }
 }
 
+// ===== 预处理功能 =====
+async function handlePreprocess(command: string) {
+  if (!task.value) return
+  if (command === 'split') {
+    const result = await handleSplit(task.value.id)
+    if (result) {
+      splitSubTasks.value = result.subTasks
+      showSplitDialog.value = true
+    }
+  } else if (command === 'match') {
+    const result = await handleMatch(task.value.id)
+    matchResult.value = result
+    showMatchDialog.value = true
+  } else if (command === 'risk') {
+    const result = await handleRiskAssess(task.value.id)
+    if (result) {
+      riskResult.value = result
+      showRiskDialog.value = true
+    }
+  } else if (command === 'extract') {
+    const result = await extractTaskDoc(task.value.id)
+    if (result?.extracted) {
+      await taskStore.fetchTaskById(task.value.id)
+    }
+  }
+}
+
+async function handleConfirmSplit() {
+  if (!task.value || !splitSubTasks.value.length) return
+  const ids = await confirmSplit(task.value.id, splitSubTasks.value)
+  if (ids) {
+    showSplitDialog.value = false
+    splitSubTasks.value = []
+    await taskStore.fetchTaskById(task.value.id)
+  }
+}
+
+async function handleConfirmMatchAction() {
+  if (!task.value || !matchResult.value) return
+  const ok = await confirmMatch(task.value.id, matchResult.value.projectConfigId)
+  if (ok) {
+    showMatchDialog.value = false
+    await taskStore.fetchTaskById(task.value.id)
+  }
+}
+
 onMounted(async () => {
   const id = route.params.id as string
   if (id) {
@@ -924,4 +1052,38 @@ onMounted(async () => {
   .log-content { font-size: 13px; color: var(--cyber-text-secondary); }
 }
 .empty-log { text-align: center; color: var(--cyber-text-muted); padding: 20px; }
+
+// 拆分对话框
+.split-list { max-height: 500px; overflow-y: auto; }
+.split-item {
+  padding: 12px; margin-bottom: 10px; border-radius: 8px;
+  border: 1px solid var(--cyber-border, rgba(0,229,255,0.15));
+  background: var(--cyber-panel-bg, rgba(10,16,31,0.6));
+  .split-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+}
+
+// 匹配结果
+.match-result { padding: 10px 0; }
+
+// 风险评估
+.risk-result { padding: 10px 0; }
+.risk-score-display {
+  display: flex; align-items: baseline; justify-content: center;
+  gap: 8px; margin: 20px 0;
+  .risk-level-tag {
+    display: inline-block; padding: 4px 16px; border-radius: 6px;
+    font-weight: 700; font-size: 18px; color: #fff;
+    &.risk-l1 { background: #67c23a; }
+    &.risk-l2 { background: #409eff; }
+    &.risk-l3 { background: #e6a23c; }
+    &.risk-l4 { background: #f56c6c; }
+  }
+  .risk-score { font-size: 48px; font-weight: 800; color: var(--cyber-text-primary); }
+  .risk-unit { font-size: 16px; color: var(--cyber-text-secondary); }
+}
+.risk-factors {
+  margin-top: 16px; padding: 12px; border-radius: 8px;
+  background: var(--cyber-panel-bg, rgba(10,16,31,0.4));
+  .risk-factor-label { font-size: 13px; color: var(--cyber-text-secondary); margin-bottom: 8px; }
+}
 </style>

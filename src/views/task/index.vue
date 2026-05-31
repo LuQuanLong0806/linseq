@@ -81,6 +81,14 @@
           @click="handleBatchRemove"
           >批量移出待办</el-button
         >
+        <el-button
+          type="warning"
+          size="small"
+          :disabled="activeSelected.length === 0"
+          :loading="batchAnalyzing"
+          @click="handleBatchAnalyze"
+          >智能分析</el-button
+        >
       </div>
     </div>
 
@@ -365,9 +373,11 @@ import { taskApi } from '@/api/task';
 import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { ElTable } from 'element-plus';
+import { usePreprocess } from '@/composables/usePreprocess';
 
 const router = useRouter();
 const taskStore = useTaskStore();
+const { batchAnalyze, analyzing: batchAnalyzing } = usePreprocess();
 
 const currentPage = ref(1);
 const pageSize = ref(20);
@@ -452,6 +462,19 @@ async function handleBatchRemove() {
     if (taskStore.isInTodoList(task.id)) taskStore.toggleTodo(task);
   }
   ElMessage.success(`已将 ${count} 个任务移出 AI 待办`);
+}
+
+async function handleBatchAnalyze() {
+  const ids = activeSelected.value.map(t => t.id)
+  if (!ids.length) return
+  const results = await batchAnalyze(ids)
+  if (results.length) {
+    const matched = results.filter(r => r.projectMatch?.matched).length
+    const risks = results.reduce((acc, r) => { acc[r.risk.level] = (acc[r.risk.level] || 0) + 1; return acc }, {} as Record<string, number>)
+    const riskSummary = Object.entries(risks).map(([k, v]) => `${k}:${v}`).join(' ')
+    ElMessage.success(`分析完成: ${matched}/${results.length} 匹配项目 | 风险分布 ${riskSummary}`)
+    await loadData()
+  }
 }
 
 async function handleBatchStatusChange(status: string) {
